@@ -1,0 +1,26 @@
+# build
+build/
+out/
+cmake-build-*/
+CMakeUserPresets.json
+
+# audio output; golden fixtures stay tracked
+*.wav
+!tests/fixtures/**/*.wav
+
+# third-party instrument audio is a build artifact, never history
+assets/
+tools/mkinst/out/
+
+# IDE / editor / OS
+.vs/
+.vscode/
+.idea/
+.qoder/
+.claude/
+*.user
+Thumbs.db
+.DS_Store
+
+# machine-local config and secrets
+.env
