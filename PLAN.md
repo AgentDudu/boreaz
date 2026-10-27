@@ -14,8 +14,9 @@ Settled while planning: **16 voices**, latency "feels instant" (~8–12 ms on WA
 shared, we print the real number), **mono voices into a stereo FX bus**, **no zones**,
 `.mid` **playback is a feature**, GUI is **keyboard along the bottom (all 88 keys, always
 full width) → switchable visualiser panel → slim transport strip that never disappears**.
-Licence: MIT unless overruled. **Boreaz is also a sample player for a real recorded grand
-piano** — that decision and its consequences are in §1 "The piano (sampled)".
+Licence: **PolyForm Noncommercial 1.0.0** (decided, see §7). **Boreaz is also a sample player
+for a real recorded grand piano** — that decision and its consequences are in §1 "The piano
+(sampled)".
 
 ### Non-goals (explicit, so we do not build them by accident)
 - No plugin formats (VST3/AU/CLAP). No JUCE.
@@ -248,7 +249,7 @@ pass. Phases never appear in commit messages — branch name + PR carry that.
 
 | # | Branch | Deliverable | Exit criteria |
 |---|---|---|---|
-| 0 | `feature/project-scaffold` | CMake project, FetchContent pins, dir tree, `.clang-format`, `.gitignore`, `.env.example` (empty values only), warnings-as-errors, empty `boreaz` exe linking miniaudio/GLFW/imgui/doctest | clean build with GCC **and** Clang; `boreaz --version` prints; `ctest` runs 1 trivial test; a grep gate fails the build on a machine-absolute path, a committed `BOREAZ_*` value carrying real data, or a model name in any tracked file |
+| 0 | `feature/project-scaffold` | CMake project, FetchContent pins, dir tree, `.clang-format`, `.gitignore`, `.env.example` (empty values only), warnings-as-errors, empty `boreaz` exe linking miniaudio/GLFW/imgui/doctest | clean build with GCC **and** Clang; `boreaz --version` prints; `ctest` runs 1 trivial test; a hygiene gate (`tests/test_hygiene.cpp`, run by `ctest`) fails the build on a machine-absolute path, a committed `BOREAZ_*` value carrying real data, or an embedded credential or token; assistant/model names are a review rule, not a regex |
 | 1 | `feature/dsp-primitives` | `Tuning` 128-entry LUT + `note_name()`, `Oscillator` (sine/saw/square/tri, phase accumulator), `SVF` filter (LP/HP/BP, resonance, per-block coeffs, double-precision coeffs), `ADSR` (accurate exponential-ish, retrigger-correct), `Gain`/`SoftClip` | unit tests: freq accuracy < 0.5 cent **at A0, C4, A4 and C8** (not 440 Hz alone); LUT holds 27.5 Hz and 4186.009 Hz and is monotonic over all 88 keys; `note_name(21)=="A0"`, `note_name(60)=="C4"`, `note_name(108)=="C8"`; ADSR segment durations ±1 sample; filter passes DC at 0 resonance and stays stable/bounded at A0 + max resonance; no NaN/denormal after 10⁶ samples |
 | 2 | `feature/voice-engine` | `Voice` = 3 osc + noise → mix → SVF → ADSR amp (one class here; phase 6 splits synth/sampled behind it, so keep the boundary clean). `VoiceAllocator`, pool of 16, steal oldest+quietest. Note on/off, velocity, pitch bend, sustain, all-notes-off, transpose/octave. `Engine::process(block)` | render 16-note chord + held pedal: exactly 16 voices, no stuck notes after panic, output peak ≤ 1.0, deterministic (same MIDI + params → byte-identical WAV); **full 88-key chromatic sweep A0→C8 renders with no silence, no NaN, and peak ≤ 1.0 on every key**; notes 0–20 and 109–127 are accepted and reported as extended range |
 | 3 | `feature/live-audio-midi` | miniaudio device open/choose, `ma_midi` input, SPSC event ring, real-time safety pass, CLI flags (`--device`, `--midi`, `--list`, `--latency`), auto-restart on device loss | real keyboard plays with no audible glitch at 512 samples period; CPU < 3% of one core; unplug/replug MIDI does not crash or leak voices |
@@ -287,8 +288,8 @@ apply during file playback).
   machine data, and `docs/PRIVACY.md` says what we store and why. Runtime config (devices,
   last patch) lives in `%APPDATA%\Boreaz\`. Deleting `.env` must still leave a build that runs
   with sane defaults — a missing `.env` is never a crash.
-- No machine-absolute paths in tracked files. No `gpt5.4-codex`/`glm-5.2` in names, comments,
-  logs, or fixtures. `.gitignore` covers `build/`, `out/`, `*.wav` except fixtures, IDE dirs
+- No machine-absolute paths in tracked files. No assistant or model names in names,
+  comments, logs, or fixtures. `.gitignore` covers `build/`, `out/`, `*.wav` except fixtures, IDE dirs
   and `.env`.
 - **No binary assets in git.** Neither the 394 MB instrument source nor the ~100 MB subset.
   No git-lfs either: the instrument is a build artifact and a release attachment, not
@@ -352,29 +353,28 @@ Answered during planning, so nobody re-litigates them in a code review:
 | Asset in git | **Never.** Text recipe in, binary asset out, release artifact only, no git-lfs. |
 | `Leethring/piano-sound-samples` | **Evaluated and rejected as the instrument** (MuseScore-rendered 128 kbit MP3, 1 velocity layer, no release samples, ~5 s cut tails, 5.5 dB key-to-key level spread). May be used as throwaway test data only. |
 | Per-key gain normalisation | **Not required** for Salamander (properly voiced); `mkinst` reports per-region peak so a lumpy library is visible. |
+| Licence | **PolyForm Noncommercial 1.0.0** (`PolyForm-Noncommercial-1.0.0`) on Boreaz's own source: free to use, study, change and share non-commercially; selling it or commercial use needs a separate agreement. `LICENSE` is byte-identical to the SPDX canonical text. Bundled code and the sampled instrument keep their own terms in `NOTICE` — the CC-BY-3.0 piano is deliberately **not** re-covered by the non-commercial clause. MIT stays available later: while the authorship is sole, relicensing is one commit. |
 
 Still open, none of them blocking phase 0:
 
-1. **Licence** — MIT by default (my assumption until you say otherwise). Nothing is
-   published, so deciding late costs nothing; deciding before phase 0 means the scaffold
-   commits carry a `LICENSE` file.
-2. **Which velocity layers** of Salamander's 16 go into the ~100 MB subset, and where the
+1. **Which velocity layers** of Salamander's 16 go into the ~100 MB subset, and where the
    crossfade boundaries sit. A listening decision, made in phase 6, not now.
-3. **Release region groups** — include the chromatic hammer-noise and minor-third string
+2. **Release region groups** — include the chromatic hammer-noise and minor-third string
    resonance releases in the first subset, or ship attacks first and add them once the
    release pool exists? They cost size and they are most of the realism.
-4. **Who runs `mkinst`** — we publish the ~100 MB subset as a release artifact, or the user
+3. **Who runs `mkinst`** — we publish the ~100 MB subset as a release artifact, or the user
    runs the subsetter after downloading the upstream library. Publishing is friendlier and
    puts the redistribution on us, which CC-BY allows.
-5. **A/B patch compare** — parked in the optional list.
+4. **A/B patch compare** — parked in the optional list.
 
 ## 8. Commands (phase 0 onward)
 
 ```bash
-cd C:/Users/Rafael/VSC_Projects/boreaz
-cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
+cd "$(git rev-parse --show-toplevel)"
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
 ctest --test-dir build --output-on-failure
+./build/boreaz --version         # works from phase 0 on
 ./build/boreaz --list            # audio + MIDI devices
 ./build/boreaz --range           # print the 88-key compass: A0 27.5 Hz .. C8 4186.0 Hz
 ./build/boreaz                   # start the app (sampled piano if an instrument is set)
@@ -386,3 +386,18 @@ ctest --test-dir build --output-on-failure
 # build the shipped instrument from the upstream library (network, ~394 MB in, ~100 MB out)
 bash tools/mkinst/mkinst.sh tools/mkinst/salamander.recipe   # pins URL + sha256, writes NOTICE.txt
 ```
+
+Toolchain facts, measured in phase 0 rather than assumed:
+
+- **Ninja + GCC (MinGW-w64 UCRT)** is the primary configuration. Clang is built as a second
+  build directory; both have to stay warning-free because our own targets compile with
+  `-Werror`. Dependency headers are included as *system* headers so third-party warnings
+  cannot break our build.
+- **Executables link `libgcc`/`libstdc++`/`libwinpthread` statically.** This machine has two
+  MinGW runtimes on `PATH` (`mingw64` and a bundled one) and the loader takes the first
+  match, so a dynamically linked binary can die at load with `0xc0000139` — an
+  entry-point-not-found with no line number, far from any real bug. Static linking also
+  keeps the shipped exe portable, which is the point of "lightweight".
+- **Only `third_party/` is committed empty.** The rest of the §3 tree is created by the phase
+  that first fills it. Any directory named `build*` is git-ignored and skipped by the
+  hygiene test, because CMake caches are full of this machine's absolute paths.

@@ -1,0 +1,33 @@
+Required Notice: Copyright (c) 2026 Rafael D. T. B. — Boreaz is licensed under the
+PolyForm Noncommercial License 1.0.0. See LICENSE.
+
+Third-party material
+--------------------
+
+Boreaz bundles or links the following. Their own terms are preserved; nothing here
+re-licenses them.
+
+Code, linked at build time (fetched by CMake FetchContent at the pinned tags in
+CMakeLists.txt):
+
+  miniaudio          (c) Andrew Molloy and contributors, Unlicense / public domain
+  GLFW               (c) 1999-2006 Seth Davis and contributors, zlib
+  Dear ImGui         (c) The ImGui Developers, MIT
+  doctest            (c) Viktor Kirilov, MIT
+
+Instrument data (built by tools/mkinst, distributed separately from the source repo):
+
+  Salamander Grand Piano v3
+    (c) Alexander Holm — http://freepats.zenvoid.org/Piano/
+    Creative Commons Attribution 3.0 (https://creativecommons.org/licenses/by/3.0/)
+
+    This instrument is included as a modified subset: velocity layers were reduced, the
+    signal was downmixed to mono, and loop points may have been written where the source
+    had none. The unmodified upstream library is also licensed under CC-BY-3.0 and remains
+    freely reusable under those terms; the attribution above is supplied for that library
+    and for our subset. Per CC-BY-3.0 section 4, this file is the "specified acknowledgment"
+    and the statement in this paragraph is the required indication of changes.
+
+Note: the instrument's CC-BY-3.0 terms are more permissive than the PolyForm terms that
+cover Boreaz's own source. That is deliberate. The two covers apply to different material
+and are shipped in separate artifacts.
