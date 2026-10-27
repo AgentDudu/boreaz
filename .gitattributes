@@ -1,0 +1,34 @@
+# Normalize line endings in the repo, check out LF by default.
+* text=auto eol=lf
+
+# Shell scripts must stay LF or they will not run.
+*.sh        text eol=lf
+*.bash      text eol=lf
+
+# Windows-only helpers want CRLF.
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+
+# Never touch binary bytes: golden audio fixtures and assets are content-addressed by
+# their bytes, and a silent CRLF rewrite would break every golden test.
+*.wav       binary
+*.flac      binary
+*.ogg       binary
+*.mp3       binary
+*.sf2       binary
+*.sf3       binary
+*.png       binary
+*.jpg       binary
+*.ttf       binary
+*.otf       binary
+*.dll       binary
+*.exe       binary
+*.lib       binary
+*.a         binary
+*.zip       binary
+
+# Treat as text even though git cannot guess it.
+*.hlsl      text eol=lf
+*.vert      text eol=lf
+*.frag      text eol=lf
+.env.example text eol=lf
