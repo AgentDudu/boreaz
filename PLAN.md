@@ -233,6 +233,7 @@ tools/mkinst/          offline subsetter: Salamander → ~100 MB instrument + NO
 src/seq/               transport, sample-clock, tempo map → event ring
 tests/                 doctest units, golden .wav fixtures
 third_party/           empty by design — FetchContent downloads elsewhere
+.env.example           every BOREAZ_* key, empty values, no machine data (.env stays ignored)
 ```
 Dependency direction: `app → {gui, io, seq, offline} → engine → {dsp, samples, sfz}`;
 `midifile`, `samples` and `sfz` are leaves that never include engine types, and `mkinst`
@@ -247,7 +248,7 @@ pass. Phases never appear in commit messages — branch name + PR carry that.
 
 | # | Branch | Deliverable | Exit criteria |
 |---|---|---|---|
-| 0 | `feature/project-scaffold` | CMake project, FetchContent pins, dir tree, `.clang-format`, `.gitignore`, warnings-as-errors, empty `boreaz` exe linking miniaudio/GLFW/imgui/doctest | clean build with GCC **and** Clang; `boreaz --version` prints; `ctest` runs 1 trivial test |
+| 0 | `feature/project-scaffold` | CMake project, FetchContent pins, dir tree, `.clang-format`, `.gitignore`, `.env.example` (empty values only), warnings-as-errors, empty `boreaz` exe linking miniaudio/GLFW/imgui/doctest | clean build with GCC **and** Clang; `boreaz --version` prints; `ctest` runs 1 trivial test; a grep gate fails the build on a machine-absolute path, a committed `BOREAZ_*` value carrying real data, or a model name in any tracked file |
 | 1 | `feature/dsp-primitives` | `Tuning` 128-entry LUT + `note_name()`, `Oscillator` (sine/saw/square/tri, phase accumulator), `SVF` filter (LP/HP/BP, resonance, per-block coeffs, double-precision coeffs), `ADSR` (accurate exponential-ish, retrigger-correct), `Gain`/`SoftClip` | unit tests: freq accuracy < 0.5 cent **at A0, C4, A4 and C8** (not 440 Hz alone); LUT holds 27.5 Hz and 4186.009 Hz and is monotonic over all 88 keys; `note_name(21)=="A0"`, `note_name(60)=="C4"`, `note_name(108)=="C8"`; ADSR segment durations ±1 sample; filter passes DC at 0 resonance and stays stable/bounded at A0 + max resonance; no NaN/denormal after 10⁶ samples |
 | 2 | `feature/voice-engine` | `Voice` = 3 osc + noise → mix → SVF → ADSR amp (one class here; phase 6 splits synth/sampled behind it, so keep the boundary clean). `VoiceAllocator`, pool of 16, steal oldest+quietest. Note on/off, velocity, pitch bend, sustain, all-notes-off, transpose/octave. `Engine::process(block)` | render 16-note chord + held pedal: exactly 16 voices, no stuck notes after panic, output peak ≤ 1.0, deterministic (same MIDI + params → byte-identical WAV); **full 88-key chromatic sweep A0→C8 renders with no silence, no NaN, and peak ≤ 1.0 on every key**; notes 0–20 and 109–127 are accepted and reported as extended range |
 | 3 | `feature/live-audio-midi` | miniaudio device open/choose, `ma_midi` input, SPSC event ring, real-time safety pass, CLI flags (`--device`, `--midi`, `--list`, `--latency`), auto-restart on device loss | real keyboard plays with no audible glitch at 512 samples period; CPU < 3% of one core; unplug/replug MIDI does not crash or leak voices |
@@ -279,9 +280,16 @@ apply during file playback).
   `chore: ignore build dir`. Scope is the module, not the phase: `feat(dsp):`, not
   `feat(phase-1):`. No stage/phase/TODO-ticket wording.
 - Every phase = one PR into `develop`, reviewed before merge.
-- No secrets: devices/user paths live in `%APPDATA%\Boreaz\`, never in the repo. No
-  machine-absolute paths in tracked files, no tokens, no `.env`. `.gitignore` covers
-  `build/`, `out/`, `*.wav` except fixtures, IDE dirs.
+- **No secret and no machine-specific value is ever written in code.** Anything the code needs
+  but must not ship — audio/MIDI device names, ports, paths, cache dirs, tokens — is read from
+  the environment, backed by a `.env` loaded at startup (`BOREAZ_*` keys). **`.env` is never
+  committed**; a committed `.env.example` lists every key with an **empty value** and no real
+  machine data, and `docs/PRIVACY.md` says what we store and why. Runtime config (devices,
+  last patch) lives in `%APPDATA%\Boreaz\`. Deleting `.env` must still leave a build that runs
+  with sane defaults — a missing `.env` is never a crash.
+- No machine-absolute paths in tracked files. No `gpt5.4-codex`/`glm-5.2` in names, comments,
+  logs, or fixtures. `.gitignore` covers `build/`, `out/`, `*.wav` except fixtures, IDE dirs
+  and `.env`.
 - **No binary assets in git.** Neither the 394 MB instrument source nor the ~100 MB subset.
   No git-lfs either: the instrument is a build artifact and a release attachment, not
   history. Third-party audio is fetched by `mkinst` from a pinned URL + sha256 recorded in
