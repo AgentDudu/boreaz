@@ -140,10 +140,19 @@ function(boreaz_link_runtime_staticly target)
   endif()
 endfunction()
 
+# ---------------------------------------------------------------- synthesis
+#
+# Header-only: these are per-sample primitives that must inline into the voice loop, and an
+# INTERFACE target is also the dependency rule made structural — boreaz_dsp links nothing, so
+# it cannot accidentally grow an I/O dependency.
+add_library(boreaz_dsp INTERFACE)
+target_include_directories(boreaz_dsp INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_compile_features(boreaz_dsp INTERFACE cxx_std_20)
+
 # ---------------------------------------------------------------- application
 add_executable(boreaz src/app/main.cpp)
 target_include_directories(boreaz PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(boreaz PRIVATE imgui miniaudio)
+target_link_libraries(boreaz PRIVATE imgui miniaudio boreaz_dsp)
 boreaz_set_warnings(boreaz)
 boreaz_link_runtime_staticly(boreaz)
 
@@ -151,10 +160,18 @@ boreaz_link_runtime_staticly(boreaz)
 if(BOREAZ_BUILD_TESTS)
   enable_testing()
 
-  add_executable(boreaz_tests tests/test_version.cpp tests/test_hygiene.cpp)
+  add_executable(
+    boreaz_tests
+    tests/test_version.cpp
+    tests/test_hygiene.cpp
+    tests/test_tuning.cpp
+    tests/test_oscillator.cpp
+    tests/test_svf.cpp
+    tests/test_envelope.cpp
+    tests/test_gain.cpp)
   target_include_directories(boreaz_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
   target_compile_definitions(boreaz_tests PRIVATE BOREAZ_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-  target_link_libraries(boreaz_tests PRIVATE doctest::doctest)
+  target_link_libraries(boreaz_tests PRIVATE doctest::doctest boreaz_dsp)
   boreaz_set_warnings(boreaz_tests)
   boreaz_link_runtime_staticly(boreaz_tests)
 
