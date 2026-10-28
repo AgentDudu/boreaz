@@ -149,10 +149,30 @@ add_library(boreaz_dsp INTERFACE)
 target_include_directories(boreaz_dsp INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_compile_features(boreaz_dsp INTERFACE cxx_std_20)
 
+# ---------------------------------------------------------------- engine
+#
+# Compiled, not header-only: a voice is real code with real state. A static target that links
+# boreaz_dsp and nothing else is what makes the plan's dependency direction checkable - the
+# engine has no miniaudio or ImGui include path at all, which is what keeps it testable
+# headless.
+add_library(
+  boreaz_engine
+  STATIC src/engine/voice.cpp src/engine/voice_allocator.cpp src/engine/engine.cpp)
+target_include_directories(boreaz_engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(boreaz_engine PUBLIC boreaz_dsp)
+target_compile_features(boreaz_engine PUBLIC cxx_std_20)
+boreaz_set_warnings(boreaz_engine)
+
+# The rule as a build failure rather than a comment.
+get_target_property(_boreaz_engine_links boreaz_engine INTERFACE_LINK_LIBRARIES)
+if(_boreaz_engine_links MATCHES "miniaudio|imgui|glfw")
+  message(FATAL_ERROR "boreaz_engine must not link an I/O or GUI library, got ${_boreaz_engine_links}")
+endif()
+
 # ---------------------------------------------------------------- application
 add_executable(boreaz src/app/main.cpp)
 target_include_directories(boreaz PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(boreaz PRIVATE imgui miniaudio boreaz_dsp)
+target_link_libraries(boreaz PRIVATE imgui miniaudio boreaz_engine boreaz_dsp)
 boreaz_set_warnings(boreaz)
 boreaz_link_runtime_staticly(boreaz)
 
@@ -168,10 +188,20 @@ if(BOREAZ_BUILD_TESTS)
     tests/test_oscillator.cpp
     tests/test_svf.cpp
     tests/test_envelope.cpp
-    tests/test_gain.cpp)
+    tests/test_gain.cpp
+    tests/test_voice.cpp
+    tests/test_voice_allocator.cpp
+    tests/test_param_bus.cpp
+    tests/test_engine.cpp
+    tests/test_engine_events.cpp)
   target_include_directories(boreaz_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
   target_compile_definitions(boreaz_tests PRIVATE BOREAZ_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-  target_link_libraries(boreaz_tests PRIVATE doctest::doctest boreaz_dsp)
+  target_link_libraries(boreaz_tests PRIVATE doctest::doctest boreaz_engine boreaz_dsp)
+  # The param-bus test runs a real writer thread, which on MinGW needs the pthread shim that
+  # find_package(THREADS) already located.
+  if(TARGET Threads::Threads)
+    target_link_libraries(boreaz_tests PRIVATE Threads::Threads)
+  endif()
   boreaz_set_warnings(boreaz_tests)
   boreaz_link_runtime_staticly(boreaz_tests)
 
