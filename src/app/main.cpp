@@ -316,6 +316,19 @@ int main(int argc, char** argv) {
     const auto deadline = started + std::chrono::duration<double>(options.demo ? options.seconds
                                                                               : 3600.0);
     std::uint64_t losses = 0;
+    // Enter, or the end of stdin, ends the run. The blocking read belongs on a thread of its own:
+    // on a terminal `in_avail()` reports nothing until the C runtime buffer fills, and at EOF it
+    // reports nothing forever, so `boreaz < file` or a CI harness would run to the deadline with
+    // no way to stop it. A thread parked in getline costs one thread and cannot stall the loop
+    // below, which is the one polling for an unplugged keyboard.
+    std::atomic<bool> input_finished{false};
+    if (!options.demo) {
+        std::thread([&input_finished] {
+            std::string line;
+            std::getline(std::cin, line); // arriving at all is the signal; the text is not read
+            input_finished.store(true);
+        }).detach();
+    }
     bool stopped = false;
     // Enumerating MIDI ports costs a winmm call per pass, so only do it when there is a port to
     // keep or reconnect. With no keyboard asked for, the loop must not touch winmm at all.
@@ -336,7 +349,7 @@ int main(int argc, char** argv) {
 
         if (std::chrono::steady_clock::now() >= deadline)
             stopped = true;
-        if (!options.demo && !stopped && std::cin.rdbuf()->in_avail() > 0)
+        if (input_finished.load())
             stopped = true; // Enter ends it cleanly; Ctrl+C ends it now
     }
     const double ran_seconds =
