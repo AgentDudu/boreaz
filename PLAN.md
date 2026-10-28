@@ -399,5 +399,8 @@ Toolchain facts, measured in phase 0 rather than assumed:
   entry-point-not-found with no line number, far from any real bug. Static linking also
   keeps the shipped exe portable, which is the point of "lightweight".
 - **Only `third_party/` is committed empty.** The rest of the §3 tree is created by the phase
-  that first fills it. Any directory named `build*` is git-ignored and skipped by the
-  hygiene test, because CMake caches are full of this machine's absolute paths.
+  that first fills it. A CMake binary directory is git-ignored and skipped by the hygiene
+  test *by the presence of `CMakeCache.txt`*, not by directory name: CMake caches are full of
+  this machine's absolute paths, and a build tree called `b` or `_build` is still a build
+  tree. Related habit, because it has already caught two things: run `ctest` once from a
+  fresh clone with a non-default `cmake -B <dir>` before calling a phase done.
