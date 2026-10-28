@@ -169,10 +169,33 @@ if(_boreaz_engine_links MATCHES "miniaudio|imgui|glfw")
   message(FATAL_ERROR "boreaz_engine must not link an I/O or GUI library, got ${_boreaz_engine_links}")
 endif()
 
+# ---------------------------------------------------------------- i/o
+#
+# Devices and MIDI. This is the only Boreaz library allowed to reach a driver: miniaudio for the
+# output, winmm for the keyboard. Note that miniaudio has no MIDI API at all, so MIDI In is our
+# own thin winmm wrapper (see include/boreaz/io/midi_input.h).
+add_library(
+  boreaz_io
+  STATIC src/io/midi_parser.cpp src/io/midi_input.cpp src/io/audio_device.cpp)
+target_include_directories(boreaz_io PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(boreaz_io PUBLIC boreaz_engine miniaudio)
+target_compile_features(boreaz_io PUBLIC cxx_std_20)
+if(WIN32)
+  target_link_libraries(boreaz_io PUBLIC winmm)
+endif()
+boreaz_set_warnings(boreaz_io)
+
+# The GUI stays out of here: a phase 5 window must call into i/o, never the other way round, and
+# that is what lets the same engine run headless.
+get_target_property(_boreaz_io_links boreaz_io INTERFACE_LINK_LIBRARIES)
+if(_boreaz_io_links MATCHES "imgui|glfw")
+  message(FATAL_ERROR "boreaz_io must not link a GUI library, got ${_boreaz_io_links}")
+endif()
+
 # ---------------------------------------------------------------- application
 add_executable(boreaz src/app/main.cpp)
 target_include_directories(boreaz PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(boreaz PRIVATE imgui miniaudio boreaz_engine boreaz_dsp)
+target_link_libraries(boreaz PRIVATE imgui boreaz_io boreaz_engine boreaz_dsp)
 boreaz_set_warnings(boreaz)
 boreaz_link_runtime_staticly(boreaz)
 
@@ -193,10 +216,12 @@ if(BOREAZ_BUILD_TESTS)
     tests/test_voice_allocator.cpp
     tests/test_param_bus.cpp
     tests/test_engine.cpp
-    tests/test_engine_events.cpp)
+    tests/test_engine_events.cpp
+    tests/test_midi_parser.cpp
+    tests/test_io.cpp)
   target_include_directories(boreaz_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
   target_compile_definitions(boreaz_tests PRIVATE BOREAZ_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-  target_link_libraries(boreaz_tests PRIVATE doctest::doctest boreaz_engine boreaz_dsp)
+  target_link_libraries(boreaz_tests PRIVATE doctest::doctest boreaz_io boreaz_engine boreaz_dsp)
   # The param-bus test runs a real writer thread, which on MinGW needs the pthread shim that
   # find_package(THREADS) already located.
   if(TARGET Threads::Threads)
