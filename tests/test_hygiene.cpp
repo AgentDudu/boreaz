@@ -37,8 +37,15 @@ bool skip_dir(const std::string& name) {
             return true;
         }
     }
-    // CMake caches hold absolute paths of this machine, which is exactly what we look for.
     return name.rfind("build", 0) == 0 || name.rfind("cmake-build", 0) == 0;
+}
+
+// A CMake binary directory by any other name. People configure into `b`, `out`, `_build` or
+// their IDE's own folder, and every one of them holds this machine's absolute paths, which is
+// precisely what the rules below are looking for.
+bool is_build_tree(const std::filesystem::path& dir) {
+    std::error_code ec;
+    return std::filesystem::exists(dir / "CMakeCache.txt", ec);
 }
 
 // A file is treated as text when its first kilobyte holds no NUL byte. Cheaper and more
@@ -89,7 +96,7 @@ TEST_CASE("no tracked file contains a machine path or a credential") {
     for (auto it = std::filesystem::recursive_directory_iterator(root());
          it != std::filesystem::recursive_directory_iterator(); ++it) {
         if (it->is_directory()) {
-            if (skip_dir(it->path().filename().string())) {
+            if (skip_dir(it->path().filename().string()) || is_build_tree(it->path())) {
                 it.disable_recursion_pending();
             }
             continue;
