@@ -181,8 +181,14 @@ tap behave identically whichever is playing. Release samples (`trigger=release`)
 outside the pool, because they must outlive the voice that spawned them.
 
 Three data paths, deliberately separate:
-1. **Params** — UI owns a `Params` struct, on change makes a copy and atomically swaps a
-   pointer. Audio thread reloads it once per block. No locks, never per-sample.
+1. **Params** — UI owns a `Params` struct and publishes a copy through a handoff the audio
+   thread tries once per block and never waits on; a failed try costs one block of the
+   previous parameters, which is one frame of slider lag. An atomic pointer swap was the
+   original wording, and it is what the diagrams still show, but a swap has to free the old
+   block while the audio thread may be reading it. `engine/param_bus.h` records why the
+   copy-based lock-free variants (two slots and a claim, three slots) were rejected: both
+   either lose the newest publish or can recycle a slot mid-copy. No locks in the sense this
+   rule means — the audio thread is never blocked, and the try is uncontended at 60 fps.
 2. **Note events** — one SPSC ring (`Event{tick, type, chan, note, vel}`) fed by MIDI
    callback, the `.mid` sequencer, the offline renderer, and the GUI "test note" buttons.
    Same code path for all four; the sequencer is just another MIDI source, which is what

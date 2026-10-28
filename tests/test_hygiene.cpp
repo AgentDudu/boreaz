@@ -169,3 +169,56 @@ TEST_CASE("the repo cannot forget its own guardrails") {
     // A .env present in the tree means someone is about to commit one.
     CHECK(!std::filesystem::exists(root() / ".env"));
 }
+
+TEST_CASE("the synthesis core never includes a device, a file, or a window") {
+    // Plan 3's dependency direction, checked instead of hoped for. `dsp` and `engine` are the
+    // leaves that must never learn about miniaudio, a GUI toolkit, the Windows API, files, or
+    // the sample/SFZ/midi layers: that is what keeps the engine testable headless and what stops
+    // an I/O call creeping into the audio callback. CMakeLists.txt refuses to *link* those into
+    // boreaz_engine; this catches the include that would come before the link.
+    static const std::regex include_re{R"(^\s*#\s*include\s*[<"]([^>"]+)[>"])"};
+    static const std::vector<std::string> kForbidden = {
+        "miniaudio", "imgui",     "glfw",       "GLFW",        "d3d11",
+        "dxgi",      "windows.h", "fstream",    "iostream",    "sfz",
+        "samples/",  "midifile",  "boreaz/io/", "boreaz/gui/", "boreaz/seq/"};
+    static const std::vector<std::string> kDirs = {"include/boreaz/dsp", "include/boreaz/engine",
+                                                   "src/dsp", "src/engine"};
+
+    std::string offenders;
+    int files = 0;
+    for (const auto& dir : kDirs) {
+        const auto base = root() / dir;
+        std::error_code ec;
+        if (!std::filesystem::exists(base, ec)) {
+            continue;
+        }
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(base)) {
+            if (!entry.is_regular_file()) {
+                continue;
+            }
+            const std::string extension = entry.path().extension().string();
+            if (extension != ".h" && extension != ".cpp") {
+                continue;
+            }
+            ++files;
+            std::istringstream stream(read_file(entry.path()));
+            std::string line;
+            std::smatch match;
+            while (std::getline(stream, line)) {
+                if (!std::regex_search(line, match, include_re)) {
+                    continue;
+                }
+                for (const auto& token : kForbidden) {
+                    if (match[1].str().find(token) != std::string::npos) {
+                        offenders += "\n  " + rel_path(entry.path()) + ": " + line;
+                    }
+                }
+            }
+        }
+    }
+
+    INFO("files checked: " << files);
+    INFO("offenders:" << offenders);
+    CHECK(files > 0);
+    CHECK(offenders.empty());
+}
