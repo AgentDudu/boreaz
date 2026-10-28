@@ -9,13 +9,22 @@ MIDI file to WAV from the command line.
 
 ## Status
 
-Early. The repo currently holds the development plan and the build scaffold, so there is no
-sound yet. `PLAN.md` is the contract for what is being built and in which order; phases 0-12
-are listed there with exit criteria.
+Phases 0-3 of 12. **There is sound.** A 16 voice synth engine plays the full A0–C8 compass
+through a real WASAPI output and takes a MIDI keyboard, with device and buffer selection from
+the command line. No window yet (phase 5) and no sampled piano yet (phase 6). `PLAN.md` is the
+contract for what is being built and in which order; phases 0-12 are listed there with exit
+criteria.
 
+```bash
+./build/boreaz --list                   # this machine's outputs and MIDI inputs
+./build/boreaz --demo --report          # hear it with no keyboard attached
+./build/boreaz                          # default output, wait for a keyboard
+./build/boreaz --device 1 --latency 256 # choose the output and the buffer
 ```
-boreaz --version      # works today
-```
+
+`--report` prints the counters the exit criteria are quoted against: delivered rate and period,
+gaps between callbacks sorted by size, and engine CPU. Without a keyboard it still opens the
+device and prints what it found, which is the usual first move when sound does not appear.
 
 ## Requirements
 
@@ -32,8 +41,10 @@ ctest --test-dir build --output-on-failure
 ./build/boreaz --version
 ```
 
-Sound, device selection and MIDI input arrive with the later phases; until then
-`--list` and audio flags are not implemented.
+Sound comes out of the default output with no configuration. If the wrong device answers —
+or a virtual cable is in the list — `--device` picks by index or by part of the name, and
+`--list` shows what is there. Exit status is 0 ok, 2 bad usage, 3 no such audio output, 4 MIDI
+refused.
 
 ## Configuration
 

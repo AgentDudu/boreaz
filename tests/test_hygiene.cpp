@@ -222,3 +222,54 @@ TEST_CASE("the synthesis core never includes a device, a file, or a window") {
     CHECK(files > 0);
     CHECK(offenders.empty());
 }
+
+TEST_CASE("the io layer prints nothing and waits for nothing") {
+    // From phase 3 on, the audio callback lives in this layer. Printing is the classic way a
+    // callback becomes a glitch - a console write can take milliseconds and can block on a
+    // terminal nobody is reading - and sleeping in it is the same mistake with a different name.
+    // The code comments ask for this; here it is checked. Reports belong to main().
+    static const std::vector<std::regex> kForbidden = {
+        std::regex{R"(\bprintf\s*\()"}, std::regex{R"(\bputs\s*\()"},
+        std::regex{R"(\bcout\s*<<)"},   std::regex{R"(\bcerr\s*<<)"},
+        std::regex{R"(std::exit\s*\()"}, std::regex{R"(std::abort\s*\()"},
+        std::regex{R"(sleep_for\s*\()"}, std::regex{R"(\bSleep\s*\()"},
+    };
+    static const std::vector<std::string> kDirs = {"include/boreaz/io", "src/io"};
+
+    std::string offenders;
+    int files = 0;
+    for (const auto& dir : kDirs) {
+        const auto base = root() / dir;
+        std::error_code ec;
+        if (!std::filesystem::exists(base, ec)) {
+            continue;
+        }
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(base)) {
+            if (!entry.is_regular_file()) {
+                continue;
+            }
+            const std::string extension = entry.path().extension().string();
+            if (extension != ".h" && extension != ".cpp") {
+                continue;
+            }
+            ++files;
+            std::istringstream stream(read_file(entry.path()));
+            std::string line;
+            int line_number = 0;
+            while (std::getline(stream, line)) {
+                ++line_number;
+                for (const auto& forbidden : kForbidden) {
+                    if (std::regex_search(line, forbidden)) {
+                        offenders += "\n  " + rel_path(entry.path()) + ":" +
+                                     std::to_string(line_number) + ": " + line;
+                    }
+                }
+            }
+        }
+    }
+
+    INFO("files checked: " << files);
+    INFO("offenders:" << offenders);
+    CHECK(files > 0);
+    CHECK(offenders.empty());
+}
