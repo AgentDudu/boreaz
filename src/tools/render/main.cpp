@@ -1,0 +1,412 @@
+// boreaz-render: a Standard MIDI File and a parameter file in, one WAV file out, no device and
+// no window. This is the tool that makes the engine's behaviour observable in CI - a render is a
+// file, a file has a checksum, and a checksum cannot say "it sounded fine to me".
+//
+// It streams: one block of floats at a time, so a 40 minute song costs the same memory as a
+// 4 second one, and it never holds the whole render in memory.
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
+
+#include "boreaz/engine/engine.h"
+#include "boreaz/midifile/midifile.h"
+
+namespace {
+
+using boreaz::engine::Engine;
+using boreaz::engine::Params;
+
+constexpr double kDefaultRate = 44100.0;
+// 256 frames: under the engine's 512 frame scratch limit, and small enough that a render of any
+// length costs the same handful of kilobytes.
+constexpr int kBlock = 256;
+
+constexpr int kOk = 0;
+constexpr int kUsage = 2;
+constexpr int kInputFailed = 3;
+constexpr int kOutputFailed = 4;
+
+struct Options {
+    std::string input;
+    std::string output;
+    std::string params_path; // optional
+    double rate = kDefaultRate;
+    bool golden = false; // print a golden line instead of writing a file
+};
+
+void usage() {
+    std::printf(
+        "boreaz-render - a MIDI file in, a WAV file out\n"
+        "\n"
+        "usage: boreaz-render IN.mid OUT.wav [PARAMS] [--rate N]\n"
+        "       boreaz-render --golden IN.mid [--rate N] [PARAMS]\n"
+        "\n"
+        "  --golden    render, then print one line of measurements instead of a file. The\n"
+        "              committed goldens are regenerated with:\n"
+        "                for f in tests/fixtures/midifile/*.mid; do\n"
+        "                  build/boreaz-render --golden \"$f\"\ndone > tests/golden/midifile.txt\n"
+        "  IN.mid      format 0 or 1, ticks per quarter note (see --help of boreaz for the\n"
+        "              subset, or rather: boreaz-midifile refuses what it cannot honour)\n"
+        "  OUT.wav     16 bit PCM, stereo, overwritten if it exists\n"
+        "  PARAMS      optional 'key = value' file, one per line, # for comments.\n"
+        "              Keys are the engine parameters: master_gain_db, osc2_level,\n"
+        "              osc3_level, osc_detune_cents, noise_level, noise_decay_s,\n"
+        "              filter_cutoff_ratio, filter_resonance, filter_keytrack, amp_attack_s,\n"
+        "              amp_decay_s, amp_sustain, amp_release_s, pan_spread,\n"
+        "              bend_range_semitones, transpose_semitones, octave_shift\n"
+        "  --rate N    output sample rate in Hz (default 44100)\n"
+        "\n"
+        "Exit status: 0 ok, 2 bad usage, 3 input unreadable, 4 output unwritable.\n");
+}
+
+bool parse_arguments(int argc, char** argv, Options& options, std::string& error) {
+    std::vector<std::string> positional;
+    for (int i = 1; i < argc; ++i) {
+        const std::string argument = argv[i];
+        if (argument == "--rate") {
+            if (i + 1 >= argc) {
+                error = "--rate needs a value";
+                return false;
+            }
+            const std::string value = argv[++i];
+            double rate = 0.0;
+            if (std::sscanf(value.c_str(), "%lf", &rate) != 1 || rate < 3000.0 || rate > 384000.0) {
+                error = "--rate wants 3000 to 384000 Hz, got '" + value + "'";
+                return false;
+            }
+            options.rate = rate;
+            continue;
+        }
+        if (argument == "-h" || argument == "--help") {
+            usage();
+            std::exit(kOk); // NOLINT: a tool exiting on --help is the tool working
+        }
+        if (argument == "--golden") {
+            options.golden = true;
+            continue;
+        }
+        if (argument.rfind("--", 0) == 0) {
+            error = "unknown option '" + argument + "'";
+            return false;
+        }
+        positional.push_back(argument);
+    }
+    if (options.golden && positional.size() != 1) {
+        error = "--golden takes exactly one input MIDI file and writes no output file";
+        return false;
+    }
+    if (!options.golden && (positional.size() < 2 || positional.size() > 3)) {
+        error = positional.empty() ? "an input MIDI file and an output WAV file are required"
+                                   : "expected IN.mid OUT.wav and at most one parameter file";
+        return false;
+    }
+    options.input = positional[0];
+    // Only --golden may be called with one name, and reading positional[1] there is reading past
+    // the end of the vector: the tool died with std::length_error before printing anything.
+    if (positional.size() >= 2)
+        options.output = positional[1];
+    if (positional.size() == 3)
+        options.params_path = positional[2];
+    return true;
+}
+
+// ---------------------------------------------------------------- parameters
+//
+// `key = value`, one per line, `#` starts a comment. Deliberately the same shape as the patch
+// files the preset phase will ship: a render parameter file and a preset are the same thing with
+// a different extension.
+//
+// shortcut: this lives in the tool. The preset phase should lift it into a library instead of
+// copying it, and add the descriptor table the parameter UI phase owns.
+bool load_params_file(const std::string& path, Params& params, std::string& error) {
+    std::ifstream file(path);
+    if (!file) {
+        error = "cannot open the parameter file '" + path + "'";
+        return false;
+    }
+
+    struct Field {
+        const char* name;
+        float Params::*real;
+        int Params::*integer;
+    };
+    static constexpr Field kFields[] = {
+        {"master_gain_db", &Params::master_gain_db, nullptr},
+        {"osc2_level", &Params::osc2_level, nullptr},
+        {"osc3_level", &Params::osc3_level, nullptr},
+        {"osc_detune_cents", &Params::osc_detune_cents, nullptr},
+        {"noise_level", &Params::noise_level, nullptr},
+        {"noise_decay_s", &Params::noise_decay_s, nullptr},
+        {"filter_cutoff_ratio", &Params::filter_cutoff_ratio, nullptr},
+        {"filter_resonance", &Params::filter_resonance, nullptr},
+        {"filter_keytrack", &Params::filter_keytrack, nullptr},
+        {"amp_attack_s", &Params::amp_attack_s, nullptr},
+        {"amp_decay_s", &Params::amp_decay_s, nullptr},
+        {"amp_sustain", &Params::amp_sustain, nullptr},
+        {"amp_release_s", &Params::amp_release_s, nullptr},
+        {"pan_spread", &Params::pan_spread, nullptr},
+        {"bend_range_semitones", &Params::bend_range_semitones, nullptr},
+        {"transpose_semitones", nullptr, &Params::transpose_semitones},
+        {"octave_shift", nullptr, &Params::octave_shift},
+    };
+
+    std::string line;
+    int number = 0;
+    for (; std::getline(file, line); ++number) {
+        const std::size_t comment = line.find('#');
+        if (comment != std::string::npos)
+            line.erase(comment);
+        const std::size_t equals = line.find('=');
+        if (equals == std::string::npos)
+            continue; // blank or a stray line: nothing asked of us
+
+        const auto trim = [](std::string& text) {
+            const char* whitespace = " \t\r\n";
+            const std::size_t begin = text.find_first_not_of(whitespace);
+            if (begin == std::string::npos) {
+                text.clear();
+                return;
+            }
+            const std::size_t end = text.find_last_not_of(whitespace);
+            text = text.substr(begin, end - begin + 1);
+        };
+
+        std::string key = line.substr(0, equals);
+        std::string value = line.substr(equals + 1);
+        trim(key);
+        trim(value);
+        if (key.empty())
+            continue;
+
+        const Field* field = nullptr;
+        for (const Field& candidate : kFields) {
+            if (key == candidate.name) {
+                field = &candidate;
+                break;
+            }
+        }
+        if (field == nullptr) {
+            error = "line " + std::to_string(number + 1) + ": '" + key +
+                    "' is not an engine parameter. Known keys are listed in --help";
+            return false;
+        }
+        if (field->real != nullptr) {
+            float parsed = 0.0f;
+            if (std::sscanf(value.c_str(), "%f", &parsed) != 1) {
+                error = "line " + std::to_string(number + 1) + ": '" + key + "' wants a number, got '" +
+                        value + "'";
+                return false;
+            }
+            params.*field->real = parsed;
+        } else {
+            int parsed = 0;
+            if (std::sscanf(value.c_str(), "%d", &parsed) != 1) {
+                error = "line " + std::to_string(number + 1) + ": '" + key +
+                        "' wants a whole number, got '" + value + "'";
+                return false;
+            }
+            params.*field->integer = parsed;
+        }
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------- wav
+//
+// Canonical 16 bit PCM stereo, written by hand: 44 bytes of header is not worth a dependency,
+// and an offline tool that gets its own output format wrong has nowhere to hide.
+void put_u16(std::ostream& out, std::uint16_t value) {
+    const char bytes[2] = {static_cast<char>(value & 0xFF), static_cast<char>((value >> 8) & 0xFF)};
+    out.write(bytes, 2);
+}
+
+void put_u32(std::ostream& out, std::uint32_t value) {
+    char bytes[4];
+    for (int i = 0; i < 4; ++i)
+        bytes[i] = static_cast<char>((value >> (8 * i)) & 0xFF);
+    out.write(bytes, 4);
+}
+
+bool write_wav_header(std::ofstream& out, double rate, std::uint32_t frames) {
+    const std::uint32_t sample_rate = static_cast<std::uint32_t>(rate);
+    if (sample_rate == 0)
+        return false;
+    const std::uint32_t bytes_per_second = sample_rate * 4u; // 2 channels, 16 bit
+
+    out.write("RIFF", 4);
+    put_u32(out, 44u - 8u + frames * 4u); // the whole file minus this field and the size field
+    out.write("WAVE", 4);
+    out.write("fmt ", 4);
+    put_u32(out, 16);                 // the canonical PCM format chunk
+    put_u16(out, 1);                  // 1 is PCM, not a codec we would have to name
+    put_u16(out, 2);                  // the engine is stereo out
+    put_u32(out, sample_rate);
+    put_u32(out, bytes_per_second);
+    put_u16(out, 4);                  // one frame of both channels
+    put_u16(out, 16);
+    out.write("data", 4);
+    put_u32(out, frames * 4u);
+    return static_cast<bool>(out);
+}
+
+// The two size fields, now that the data exists.
+void patch_sizes(std::ofstream& out, std::uint32_t frames) {
+    out.seekp(4);
+    put_u32(out, 44u - 8u + frames * 4u);
+    out.seekp(40);
+    put_u32(out, frames * 4u);
+    out.seekp(0, std::ios::end);
+}
+
+// FNV-1a, 64 bit: not for anything adversarial, only for noticing that a render moved. A golden
+// line of checksum, peak and steal count tells a reviewer that the synthesis changed and roughly
+// how, which is more than a wall of audio bytes would say in a diff.
+void fnv(std::uint64_t& hash, const std::int16_t* samples, std::size_t count) {
+    const unsigned char* bytes = reinterpret_cast<const unsigned char*>(samples);
+    for (std::size_t i = 0; i < count * sizeof(std::int16_t); ++i) {
+        hash ^= bytes[i];
+        hash *= 0x00000100000001B3ull;
+    }
+}
+
+std::int16_t to_pcm(float sample) {
+    // The engine promises +/-1.0, so this clamp is a seatbelt rather than a limiter: it exists so
+    // a hypothetical 1.0000001 from a rounding path cannot wrap to -32768 and pop.
+    const double scaled = std::clamp(sample, -1.0f, 1.0f) * 32768.0;
+    return static_cast<std::int16_t>(std::lround(std::max(-32768.0, std::min(32767.0, scaled))));
+}
+
+double decibels(float peak) {
+    if (!(peak > 0.0f))
+        return -120.0;
+    return 20.0 * std::log10(static_cast<double>(peak));
+}
+
+} // namespace
+
+int main(int argc, char** argv) {
+    Options options;
+    std::string error;
+    if (!parse_arguments(argc, argv, options, error)) {
+        std::fprintf(stderr, "boreaz-render: %s (try --help)\n", error.c_str());
+        return kUsage;
+    }
+
+    Params params;
+    if (!options.params_path.empty() && !load_params_file(options.params_path, params, error)) {
+        std::fprintf(stderr, "boreaz-render: %s\n", error.c_str());
+        return kUsage;
+    }
+    params.clamp_all(); // a parameter file may ask for nonsense, and nonsense gets clamped loudly
+    params.sanitize();
+
+    boreaz::midifile::LoadResult loaded = boreaz::midifile::load_file(options.input, options.rate);
+    if (!loaded.ok) {
+        std::fprintf(stderr, "boreaz-render: %s\n", loaded.error.c_str());
+        return kInputFailed;
+    }
+    for (const std::string& warning : loaded.warnings)
+        std::fprintf(stderr, "boreaz-render: %s: %s\n", options.input.c_str(), warning.c_str());
+
+    const boreaz::midifile::Song& song = loaded.song;
+    const std::int64_t frames = boreaz::midifile::render_length(song);
+    if (frames > static_cast<std::int64_t>(0xFFFFFFFFu)) {
+        std::fprintf(stderr,
+                     "boreaz-render: that render would be %lld seconds, which does not fit the "
+                     "WAV format's 32 bit sizes\n",
+                     static_cast<long long>(frames / static_cast<std::int64_t>(options.rate)));
+        return kOutputFailed;
+    }
+
+    std::ofstream out;
+    std::uint64_t hash = 0xCBF29CE484222325ull;
+    if (!options.golden) {
+        out.open(options.output, std::ios::binary | std::ios::trunc);
+        if (!out) {
+            std::fprintf(stderr, "boreaz-render: cannot write '%s'\n", options.output.c_str());
+            return kOutputFailed;
+        }
+        if (!write_wav_header(out, options.rate, static_cast<std::uint32_t>(frames))) {
+            std::fprintf(stderr, "boreaz-render: writing '%s' failed part way through\n",
+                         options.output.c_str());
+            return kOutputFailed;
+        }
+    }
+
+    Engine engine(params);
+    engine.prepare(options.rate);
+
+    std::vector<float> block(static_cast<std::size_t>(kBlock) * 2u, 0.0f);
+    std::vector<std::int16_t> pcm(static_cast<std::size_t>(kBlock) * 2u, 0);
+    std::size_t cursor = 0;
+    std::size_t dropped = 0;
+    float peak = 0.0f;
+    int loudest_voice_count = 0;
+    std::int64_t written = 0;
+
+    while (written < frames) {
+        const int chunk = static_cast<int>(
+            std::min<std::int64_t>(kBlock, static_cast<std::int64_t>(block.size() / 2u)));
+        const std::int64_t want =
+            static_cast<std::int64_t>(std::min<std::int64_t>(chunk, frames - written));
+        const boreaz::midifile::FeedResult fed = boreaz::midifile::feed_and_render(
+            engine, song, cursor, block.data(), static_cast<int>(want));
+        cursor = fed.cursor;
+        dropped += fed.dropped;
+        for (std::int64_t i = 0; i < want * 2; ++i) {
+            const float sample = block[static_cast<std::size_t>(i)];
+            peak = std::max(peak, std::abs(sample));
+            pcm[static_cast<std::size_t>(i)] = to_pcm(sample);
+        }
+        if (options.golden)
+            fnv(hash, pcm.data(), static_cast<std::size_t>(want * 2));
+        else
+            out.write(reinterpret_cast<const char*>(pcm.data()),
+                      static_cast<std::streamsize>(
+                          want * 2 * static_cast<std::int64_t>(sizeof(std::int16_t))));
+        written += want;
+        loudest_voice_count = std::max(loudest_voice_count, engine.active_voices());
+    }
+
+    if (options.golden) {
+        // A basename, so a golden never carries this machine's paths into the repository.
+        const std::string name = std::filesystem::path(options.input).filename().string();
+        std::printf("name=%s rate=%.0f frames=%lld fnv1a64=%016llx peak=%.6f steals=%d\n",
+                    name.c_str(), options.rate, static_cast<long long>(frames),
+                    static_cast<unsigned long long>(hash), static_cast<double>(peak),
+                    engine.steal_count());
+        return kOk;
+    }
+
+    if (!out) {
+        std::fprintf(stderr, "boreaz-render: writing '%s' failed\n", options.output.c_str());
+        return kOutputFailed;
+    }
+    patch_sizes(out, static_cast<std::uint32_t>(frames));
+    out.close();
+
+    std::printf("%s -> %s\n", options.input.c_str(), options.output.c_str());
+    std::printf("  source           format %d, %d ticks per quarter note, %zu event(s), %zu "
+                "tempo change(s)\n",
+                song.format, song.ticks_per_quarter, song.events.size(), song.tempos.size());
+    std::printf("  output           %lld frames at %.0f Hz, 16 bit stereo, %.2f s\n",
+                static_cast<long long>(frames), options.rate,
+                static_cast<double>(frames) / options.rate);
+    std::printf("  peak             %.1f dBFS (%.4f), loudest moment %d voice(s)\n",
+                decibels(peak), static_cast<double>(peak), loudest_voice_count);
+    if (engine.steal_count() > 0)
+        std::printf("  voice stealing   %d voice(s) were stolen: the file wants more than %d notes\n",
+                    engine.steal_count(), Engine::kMaxPolyphony);
+    if (dropped > 0)
+        std::printf("  lost events      %zu could not be queued, so they are not in this file\n",
+                    dropped);
+    return kOk;
+}

@@ -223,18 +223,23 @@ TEST_CASE("the synthesis core never includes a device, a file, or a window") {
     CHECK(offenders.empty());
 }
 
-TEST_CASE("the io layer prints nothing and waits for nothing") {
+TEST_CASE("the io and midifile layers print nothing and wait for nothing") {
     // From phase 3 on, the audio callback lives in this layer. Printing is the classic way a
     // callback becomes a glitch - a console write can take milliseconds and can block on a
     // terminal nobody is reading - and sleeping in it is the same mistake with a different name.
     // The code comments ask for this; here it is checked. Reports belong to main().
+    //
+    // midifile is in scope for the same reason even though no audio callback runs in it: it feeds
+    // that callback, and a library that prints to a console the GUI application does not have is
+    // a report that goes nowhere while the notes keep vanishing.
     static const std::vector<std::regex> kForbidden = {
         std::regex{R"(\bprintf\s*\()"}, std::regex{R"(\bputs\s*\()"},
         std::regex{R"(\bcout\s*<<)"},   std::regex{R"(\bcerr\s*<<)"},
         std::regex{R"(std::exit\s*\()"}, std::regex{R"(std::abort\s*\()"},
         std::regex{R"(sleep_for\s*\()"}, std::regex{R"(\bSleep\s*\()"},
     };
-    static const std::vector<std::string> kDirs = {"include/boreaz/io", "src/io"};
+    static const std::vector<std::string> kDirs = {
+        "include/boreaz/io", "src/io", "include/boreaz/midifile", "src/midifile"};
 
     std::string offenders;
     int files = 0;

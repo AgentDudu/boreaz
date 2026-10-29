@@ -9,11 +9,19 @@ MIDI file to WAV from the command line.
 
 ## Status
 
-Phases 0-3 of 12. **There is sound.** A 16 voice synth engine plays the full A0–C8 compass
+Phases 0-4 of 12. **There is sound.** A 16 voice synth engine plays the full A0–C8 compass
 through a real WASAPI output and takes a MIDI keyboard, with device and buffer selection from
-the command line. No window yet (phase 5) and no sampled piano yet (phase 6). `PLAN.md` is the
-contract for what is being built and in which order; phases 0-12 are listed there with exit
-criteria.
+the command line — and a `.mid` file now renders to a `.wav` without any device at all:
+
+```bash
+./build/boreaz-render tests/fixtures/midifile/pad-chords.mid build/pad.wav
+./build/boreaz-render --golden tests/fixtures/midifile/sweep-88.mid
+```
+
+The file reader is a library (`boreaz-midifile`), so the in-app transport plays the same bytes
+through the same merge and the same parser in phase 10. No window yet (phase 5) and no sampled
+piano yet (phase 6). `PLAN.md` is the contract for what is being built and in which order;
+phases 0-12 are listed there with exit criteria.
 
 ```bash
 ./build/boreaz --list                   # this machine's outputs and MIDI inputs

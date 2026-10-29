@@ -1,5 +1,7 @@
 #include "boreaz/io/midi_parser.h"
 
+#include "boreaz/engine/message.h"
+
 namespace boreaz::io {
 
 using engine::Event;
@@ -86,32 +88,20 @@ std::optional<Event> MidiParser::feed(std::uint8_t byte) {
     if (have_ < want_)
         return std::nullopt;
 
-    const std::uint8_t type = status_ & 0xF0;
-    const std::uint8_t channel = status_ & 0x0F;
+    const std::uint8_t finished = status_;
     const std::uint8_t one = pending_[0];
     const std::uint8_t two = pending_[1];
     status_ = 0;
 
-    switch (type) {
-    case 0x80:
+    // What the message means is one function for the whole program, shared with MIDI files and the
+    // offline renderer, so a keyboard and a file cannot disagree about "note on, velocity zero" or
+    // about how many bits a pitch wheel has. This layer's job stops at message boundaries: running
+    // status, realtime bytes arriving in the middle of a dump, and bytes that cannot start anything.
+    const std::optional<Event> event =
+        engine::decode_message(engine::MidiMessage{finished, one, two}, tick_);
+    if (event)
         ++events_out_;
-        return Event::note_off(tick_, channel, one);
-    case 0x90:
-        // Velocity 0 is a note off on the wire. It stays a note_on with velocity 0 so that the
-        // one place deciding what that means is the engine.
-        ++events_out_;
-        return Event::note_on(tick_, channel, one, two);
-    case 0xB0:
-        ++events_out_;
-        return Event::control(tick_, channel, one, two);
-    case 0xE0:
-        ++events_out_;
-        return Event::bend(tick_, channel, static_cast<std::int16_t>(one | (two << 7)));
-    default:
-        // Aftertouch, program change, channel pressure, and every system common message: read
-        // for length, then dropped, because the engine has nothing to do with them yet.
-        return std::nullopt;
-    }
+    return event;
 }
 
 std::optional<Event> MidiParser::feed_packed(std::uint32_t packed) {

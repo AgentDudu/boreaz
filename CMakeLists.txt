@@ -157,7 +157,8 @@ target_compile_features(boreaz_dsp INTERFACE cxx_std_20)
 # headless.
 add_library(
   boreaz_engine
-  STATIC src/engine/voice.cpp src/engine/voice_allocator.cpp src/engine/engine.cpp)
+  STATIC src/engine/voice.cpp src/engine/voice_allocator.cpp src/engine/engine.cpp
+         src/engine/message.cpp)
 target_include_directories(boreaz_engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(boreaz_engine PUBLIC boreaz_dsp)
 target_compile_features(boreaz_engine PUBLIC cxx_std_20)
@@ -192,12 +193,41 @@ if(_boreaz_io_links MATCHES "imgui|glfw")
   message(FATAL_ERROR "boreaz_io must not link a GUI library, got ${_boreaz_io_links}")
 endif()
 
+# ---------------------------------------------------------------- midifile
+#
+# Standard MIDI File reading, shared by the offline renderer (phase 4) and the in-app sequencer
+# (phase 10). It reads files and knows the tempo map; it may not touch a device, which is why it
+# links the engine and stops there. The parser is ours rather than a dependency: PLAN.md §2 named
+# `midicpp`, which turned out to be a SourceForge-era library with no licence text and no header
+# only build, and the subset we accept is six message kinds - see the header.
+add_library(boreaz_midifile STATIC src/midifile/midifile.cpp)
+target_include_directories(boreaz_midifile PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(boreaz_midifile PUBLIC boreaz_engine)
+target_compile_features(boreaz_midifile PUBLIC cxx_std_20)
+boreaz_set_warnings(boreaz_midifile)
+
+get_target_property(_boreaz_midifile_links boreaz_midifile INTERFACE_LINK_LIBRARIES)
+if(_boreaz_midifile_links MATCHES "miniaudio|imgui|glfw|winmm")
+  message(FATAL_ERROR "boreaz_midifile must not link a device library, got ${_boreaz_midifile_links}")
+endif()
+
 # ---------------------------------------------------------------- application
 add_executable(boreaz src/app/main.cpp)
 target_include_directories(boreaz PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(boreaz PRIVATE imgui boreaz_io boreaz_engine boreaz_dsp)
 boreaz_set_warnings(boreaz)
 boreaz_link_runtime_staticly(boreaz)
+
+# ---------------------------------------------------------------- tools
+#
+# Offline tools that are not the app: a render is a file, a file has a checksum, and a checksum
+# cannot say "it sounded fine to me". Built from the same libraries the app uses, so a render in
+# CI is the same synthesis the user hears.
+add_executable(boreaz-render src/tools/render/main.cpp)
+target_include_directories(boreaz-render PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(boreaz-render PRIVATE boreaz_midifile boreaz_engine boreaz_dsp)
+boreaz_set_warnings(boreaz-render)
+boreaz_link_runtime_staticly(boreaz-render)
 
 # ---------------------------------------------------------------- tests
 if(BOREAZ_BUILD_TESTS)
@@ -215,13 +245,25 @@ if(BOREAZ_BUILD_TESTS)
     tests/test_voice.cpp
     tests/test_voice_allocator.cpp
     tests/test_param_bus.cpp
+    tests/test_message.cpp
     tests/test_engine.cpp
     tests/test_engine_events.cpp
     tests/test_midi_parser.cpp
+    tests/test_midifile.cpp
     tests/test_io.cpp)
   target_include_directories(boreaz_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
   target_compile_definitions(boreaz_tests PRIVATE BOREAZ_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-  target_link_libraries(boreaz_tests PRIVATE doctest::doctest boreaz_io boreaz_engine boreaz_dsp)
+  # The render tests run the tool rather than reimplementing its argument handling, and the golden
+  # tests read fixtures from the source tree, so both paths arrive at compile time.
+  target_compile_definitions(
+    boreaz_tests
+    PRIVATE BOREAZ_RENDER_TOOL="$<TARGET_FILE:boreaz-render>"
+            BOREAZ_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/midifile")
+  target_link_libraries(
+    boreaz_tests PRIVATE doctest::doctest boreaz_io boreaz_midifile boreaz_engine boreaz_dsp)
+  # A target-file generator expression says where a binary will be, it does not make CMake build it,
+  # and the tool tests shell out to it.
+  add_dependencies(boreaz_tests boreaz-render)
   # The param-bus test runs a real writer thread, which on MinGW needs the pthread shim that
   # find_package(THREADS) already located.
   if(TARGET Threads::Threads)

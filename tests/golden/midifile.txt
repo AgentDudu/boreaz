@@ -1,0 +1,15 @@
+# Committed audio measurements for boreaz-render --golden, one line per fixture in
+# tests/fixtures/midifile. Regenerate with:
+#   for f in tests/fixtures/midifile/*.mid; do build/boreaz-render --golden "$f"; done
+# and say why in the commit message. A golden refreshed quietly has stopped protecting anything:
+# it is the only thing between "the piano voice changed" and "the piano voice changed on Tuesday
+# and nobody noticed", and it is measurements rather than waveform bytes so a legitimate change
+# costs one line instead of a diff nobody can read.
+#   frames  samples the render wrote, which is the file's own length plus one second of release
+#   fnv1a64 every output sample, so any change anywhere in the mix, the tuning, or the steal order shows
+#   peak    the loudest sample, which catches a limiter moving and a channel summing wrong
+#   steals  voices taken from holders: the only number that describes the voice pool under load
+name=bass-running-status.mid rate=44100 frames=214988 fnv1a64=e9d96e5b5aabfb52 peak=0.299295 steals=0
+name=glissando-88.mid rate=44100 frames=782775 fnv1a64=2858a99348d6766f peak=0.647880 steals=0
+name=lead-simple.mid rate=44100 frames=130463 fnv1a64=c60f388204cb55a0 peak=0.382302 steals=0
+name=pad-chords.mid rate=44100 frames=286650 fnv1a64=9f068796427c4931 peak=0.604739 steals=8
