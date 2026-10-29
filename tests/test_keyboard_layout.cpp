@@ -128,14 +128,15 @@ TEST_CASE("keyboard layout: the ends of the strip clamp instead of running off")
 
 TEST_CASE("keyboard layout: where the key is struck is how hard it was struck") {
     CHECK(KeyboardLayout::velocity_at(0.0f, 0.0f, 200.0f) == 127);
-    CHECK(KeyboardLayout::velocity_at(199.0f, 0.0f, 200.0f) < 10);
-    CHECK(KeyboardLayout::velocity_at(100.0f, 0.0f, 200.0f) == 64); // the exact middle
-    // Monotonic down the key, and never 0: MIDI reads a note-on at velocity 0 as a note-off, so a
-    // click at the bottom of a key would otherwise be a silent misfire.
+    CHECK(KeyboardLayout::velocity_at(199.0f, 0.0f, 200.0f) == 72);
+    CHECK(KeyboardLayout::velocity_at(100.0f, 0.0f, 200.0f) == 100); // the exact middle
+    // Monotonic down the key, and never below a strike you can hear. The floor is the point of the
+    // test: a click near the bottom of a tall key used to answer at MIDI velocity 1, which the
+    // engine turns into a note roughly 50 dB down, and the whole keyboard then sounds broken.
     int previous = 128;
     for (float py = 0.0f; py <= 200.0f; py += 4.0f) {
         const int velocity = KeyboardLayout::velocity_at(py, 0.0f, 200.0f);
-        CHECK(velocity >= 1);
+        CHECK(velocity >= 72);
         CHECK(velocity <= 127);
         CHECK(velocity <= previous);
         previous = velocity;
@@ -144,7 +145,7 @@ TEST_CASE("keyboard layout: where the key is struck is how hard it was struck") 
     // the range, not zero.
     CHECK(KeyboardLayout::velocity_at(0.0f, 0.0f, 0.0f) == 127);
     CHECK(KeyboardLayout::velocity_at(-50.0f, 0.0f, 200.0f) == 127);
-    CHECK(KeyboardLayout::velocity_at(500.0f, 0.0f, 200.0f) == 1);
+    CHECK(KeyboardLayout::velocity_at(500.0f, 0.0f, 200.0f) == 72);
 }
 
 TEST_CASE("keyboard layout: a strip too narrow to play says so") {

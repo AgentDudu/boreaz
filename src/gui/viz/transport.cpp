@@ -130,25 +130,45 @@ void transport(const FrameView& view) {
     if (lane_width <= 160.0f)
         ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y));
 
-    line("device", view.device.open ? view.device.name : "not started");
-    line("callback", std::to_string(view.device.callback_frames) + " frames, " +
-                         std::to_string(static_cast<int>(view.device.sample_rate)) + " Hz");
-    line("cpu", std::to_string(static_cast<int>(view.device.cpu_fraction * 100.0)) + " %");
+    // What the instrument is, in three lines, and then quiet. Every number below is still
+    // published by the audio thread and still printed in full when the app exits; what a panel
+    // during a performance has to earn is the right to be looked at, and "steals 0" in the same
+    // weight as "cpu 47 %" teaches a player to read none of them.
+    line("output", view.device.open
+                       ? view.device.name + "  \xc2\xb7  " +
+                             std::to_string(static_cast<int>(view.device.sample_rate)) + " Hz" +
+                             "  \xc2\xb7  " + std::to_string(view.device.callback_frames) + " fr"
+                       : "not started");
+    line("load", std::to_string(static_cast<int>(view.device.cpu_fraction * 100.0)) + " %" +
+                     "  \xc2\xb7  " + std::to_string(view.active_voices) + " / " +
+                     std::to_string(view.pool_size) + " voices");
     bar("cpu", static_cast<float>(view.device.cpu_fraction), ImVec4(0.45f, 0.78f, 0.55f, 1.0f));
-    const bool over = view.device.late_callbacks > 0 || view.device.restarts > 0;
-    line("late callbacks", std::to_string(view.device.late_callbacks) +
-                               ", " + std::to_string(view.device.restarts) + " restarts", over);
-    line("voices", std::to_string(view.active_voices) + " / " + std::to_string(view.pool_size) +
-                       ", " + std::to_string(view.ext_voices) + " off the keys");
-    line("steals", std::to_string(view.steals));
-    line("dropped events", std::to_string(view.dropped_events), view.dropped_events > 0);
-    line("midi", view.midi.open ? view.midi.name + ", " + std::to_string(view.midi.events) +
-                                     " messages"
-                                : "none");
-    if (view.midi.losses > 0)
-        line("midi losses", std::to_string(view.midi.losses), true);
-    line("sustain", view.sustain ? "pedal down" : "up");
-    line("window", std::to_string(static_cast<int>(view.frames_per_second())) + " fps");
+    line("midi", view.midi.open ? view.midi.name + "  \xc2\xb7  " +
+                                      std::to_string(view.midi.events) + " messages"
+                                : "no keyboard");
+
+    // A counter that reads zero is not information, so the trouble line appears the moment any of
+    // them stops being zero - in the colour that means look here, next to the words that say what
+    // broke. Nothing is hidden from anyone: the exit line in the terminal keeps every one of them.
+    std::string trouble;
+    const auto plus = [&](const char* what, long long count) {
+        if (count <= 0)
+            return;
+        if (!trouble.empty())
+            trouble += "  \xc2\xb7  ";
+        trouble += what;
+        trouble += " " + std::to_string(count);
+    };
+    plus("late", static_cast<long long>(view.device.late_callbacks));
+    plus("restarts", static_cast<long long>(view.device.restarts));
+    plus("steals", static_cast<long long>(view.steals));
+    plus("dropped", static_cast<long long>(view.dropped_events));
+    plus("midi lost", static_cast<long long>(view.midi.losses));
+    plus("off-key notes", static_cast<long long>(view.ext_voices));
+    if (!trouble.empty())
+        line("trouble", trouble, true);
+    else if (view.sustain)
+        line("sustain", "pedal down");
 
     // The panel consumed its region; without this the child window would size itself to the text
     // column and clip the ruler on a short frame.

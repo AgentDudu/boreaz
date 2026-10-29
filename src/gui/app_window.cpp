@@ -33,8 +33,9 @@ namespace {
 // The strip gets the bottom of the window and at least this much height: below it, 88 keys are
 // too narrow to aim at, and a strip that cannot reach that width has to scroll rather than shrink
 // the keys, which is the same promise the plan makes about window resizing.
-constexpr float kPanelHeight = 190.0f;
-constexpr float kMinimumKeyboardHeight = 96.0f;
+constexpr float kMinimumKeyboardHeight = 72.0f;
+constexpr float kMaximumKeyboardHeight = 150.0f;
+constexpr float kKeyboardShare = 0.36f;
 constexpr float kWindowPadding = 12.0f;
 
 void glfw_error(int code, const char* description) {
@@ -301,17 +302,24 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
     ImGui::SameLine();
     ImGui::TextUnformatted(impl_->driver.c_str());
 
-    if (ImGui::BeginChild("panel", ImVec2(0.0f, kPanelHeight), ImGuiChildFlags_None)) {
+    // Both halves come from the window, in proportion. The strip takes a share of the height and
+    // never more than a cap, because a maximised window should buy the readout room, not turn
+    // middle C into a floor tile; whatever is left belongs to the panel, which is where the
+    // waterfall and the piano roll are going to want it.
+    const float below_switcher = ImGui::GetContentRegionAvail().y;
+    const float keyboard_height = std::clamp(below_switcher * kKeyboardShare, kMinimumKeyboardHeight,
+                                             kMaximumKeyboardHeight);
+    const float panel_height =
+        std::max(0.0f, below_switcher - keyboard_height - kWindowPadding);
+
+    if (ImGui::BeginChild("panel", ImVec2(0.0f, panel_height), ImGuiChildFlags_None)) {
         panel(panel_).draw(view);
         ImGui::EndChild();
     }
     ImGui::Spacing();
 
-    // The strip owns whatever height is left, and its geometry is recomputed from the window size
-    // every frame: that is the whole resize story, because every hit test is arithmetic on these
-    // four numbers and no pixel position is ever stored.
-    const float available = ImGui::GetContentRegionAvail().y;
-    const float keyboard_height = std::max(kMinimumKeyboardHeight, available - kWindowPadding);
+    // Every hit test is arithmetic on these four numbers and no pixel position is ever stored,
+    // which is the whole resize story: the layout is recomputed from the window every frame.
     const ImVec2 origin = ImGui::GetCursorScreenPos();
     const float width = ImGui::GetContentRegionAvail().x;
     layout_ = KeyboardLayout{origin.x, origin.y, width, keyboard_height};
@@ -332,7 +340,8 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
     // The computer keyboard. The notes enter at the audio thread's current tick through the same
     // queue a click or a cable message uses, so nothing downstream can tell them apart, which is
     // the point: a desk with no instrument and no mouse still makes a sound. A key press has no
-    // velocity, so it arrives at a middling 96 rather than the 127 a maximum strike would mean.
+    // velocity, so it arrives at a firm 112 - not the 127 a maximum strike means, and not the 96
+    // that made every note played this way audibly softer than one clicked on screen.
     while (impl_->stroke_count > 0) {
         const AppWindow::Impl::Stroke stroke = impl_->strokes[impl_->stroke_head];
         impl_->stroke_head = (impl_->stroke_head + 1) % AppWindow::Impl::kStrokes;
@@ -345,7 +354,7 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
                                   ? boreaz::engine::Event::note_off(
                                         tick, options_.channel, static_cast<std::uint8_t>(note))
                                   : boreaz::engine::Event::note_on(
-                                        tick, options_.channel, static_cast<std::uint8_t>(note), 96));
+                                        tick, options_.channel, static_cast<std::uint8_t>(note), 112));
             continue;
         }
         if (key_is_sustain_pedal(stroke.key)) {
