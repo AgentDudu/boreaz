@@ -1,9 +1,11 @@
 // The transport panel: the timeline the instrument plays along, and one line saying what is
 // answering.
 //
-// Read-only. There is no song to seek through yet - the MIDI file player arrives with the
-// scheduler - so the window scrolls backwards from now and the playhead stays pinned to the right
-// edge, which shows motion without pretending to know how long the song is.
+// Read-only, and it only moves when the music does: the window scrolls backwards from the
+// transport's position, which sits still until a song is loaded or a note is played, and parks when
+// the song ends. There is no song to seek through yet - the MIDI file player arrives with the
+// scheduler - so while it runs the playhead stays pinned to the right edge, which shows motion
+// without pretending to know how long the song is.
 //
 // It draws into whatever rectangle the app gave it, fills it, and reads nothing but the FrameView.
 // That is the whole contract between a panel and the audio path (plan 3): no engine pointer, no
@@ -83,10 +85,11 @@ void transport(const FrameView& view) {
     // The clock is the song's position, so it appears when a song does. The audio thread has been
     // counting since the device opened whether or not anything is going to play, and a number in
     // the middle of an empty screen reads like a transport that is about to move. The file player
-    // sets `song_loaded`; until it exists, this draws nothing, which is the honest state.
-    if (view.song_loaded) {
+    // sets `transport_running`; until it is true, this draws nothing, which is the honest state.
+    const bool rolling = view.transport_running;
+    if (rolling) {
         char elapsed[32];
-        clock_text(elapsed, sizeof(elapsed), view.position_seconds());
+        clock_text(elapsed, sizeof(elapsed), view.transport_seconds);
         // Drawn rather than printed: it is the one number the player reads from across the room, and
         // a draw-list call with an explicit font size stays that size at any content scale.
         const float clock_height = 26.0f;
@@ -110,26 +113,44 @@ void transport(const FrameView& view) {
         draw->AddRect(ImVec2(origin.x, lane_top), ImVec2(origin.x + lane_width, lane_bottom), frame,
                       0.0f, 0, 1.0f);
 
-        // Gridlines every second of the window, labelled along the top, moving with the scroll, so
-        // what scrolls past reads as time and not as a bar animating for no reason.
-        const double now = view.position_seconds();
+        // The window the strip is showing. While it rolls the window ends at now, so the past
+        // scrolls leftwards under a playhead pinned to the right edge. At rest the window runs
+        // forward from zero and nothing moves: the same frame, the same gridlines, a playhead at the
+        // left where a song would start, and no motion to misread as a transport that is running.
+        const double now = rolling ? view.transport_seconds : 0.0;
+        const double first = rolling ? now - kWindowSeconds : 0.0;
+        const double last = rolling ? now : kWindowSeconds;
         const float pixels_per_second = lane_width / static_cast<float>(kWindowSeconds);
-        for (double second = std::ceil(now - kWindowSeconds); second <= now;
-             second += kSecondsPerRulerLine) {
-            const float x = origin.x +
-                            static_cast<float>((second - (now - kWindowSeconds)) * pixels_per_second);
+        for (double second = std::ceil(first); second <= last; second += kSecondsPerRulerLine) {
+            const float x = origin.x + static_cast<float>((second - first) * pixels_per_second);
             draw->AddLine(ImVec2(x, lane_top), ImVec2(x, lane_bottom), tick, 1.0f);
+            // The ticks reach behind the playhead because that is what a ruler does, but before the
+            // first note that distance is negative, and a transport printing "-3s" looks like it is
+            // running backwards. The numbers start at zero; the ticks do not need to say otherwise.
+            if (second < 0.0)
+                continue;
             char mark[16];
-            std::snprintf(mark, sizeof(mark), "%ds", static_cast<int>(std::lround(second)) % 60);
+            std::snprintf(mark, sizeof(mark), "%ds", static_cast<int>(std::lround(second)));
             draw->AddText(ImVec2(x + 3.0f, lane_top + 2.0f), ImGui::GetColorU32(dim), mark);
         }
 
         // The playhead is pinned to the right edge because the window ends at now. One colour, one
         // width, everywhere it appears - the waterfall will use the identical line, because it is
         // the same object seen from a different view.
-        const float head = origin.x + lane_width - 1.0f;
+        const float head = rolling ? origin.x + lane_width - 1.0f : origin.x;
         const ImU32 accent = ImGui::GetColorU32(ImVec4(0.45f, 0.86f, 0.72f, 1.0f));
         draw->AddLine(ImVec2(head, lane_top - 3.0f), ImVec2(head, lane_bottom + 3.0f), accent, 2.0f);
+
+        if (!rolling) {
+            // Why nothing is moving, in the one place the eye goes looking for motion.
+            const char* waiting = "no song  Â·  play a key to start the clock";
+            const float size = ImGui::GetFontSize();
+            const float width = ImGui::GetFont()->CalcTextSizeA(size, FLT_MAX, 0.0f, waiting).x;
+            draw->AddText(ImGui::GetFont(), size,
+                          ImVec2(origin.x + (area.x - width) * 0.5f,
+                                 lane_top + (lane_height - size) * 0.5f),
+                          ImGui::GetColorU32(dim), waiting);
+        }
     }
 
     // Meters across the foot of the strip, so the panel's bottom edge is the load and the top edge

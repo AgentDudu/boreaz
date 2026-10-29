@@ -19,9 +19,9 @@ namespace {
 constexpr PanelEntry kTable[] = {
     {PanelKind::kTransport,
      "Transport",
-     "Where the song is: a strip that scrolls with the audio clock, the playhead at the right, and "
-     "two meters at its foot. A view, not a remote - the clock appears when a song is loaded, and "
-     "seeking needs the scheduler, which is a later phase.",
+     "Where the song is: a strip that sits still until a note or a song starts it and then rolls, "
+     "the playhead at the right, two meters at its foot. A view, not a remote - seeking needs the "
+     "scheduler, which is a later phase.",
      &viz::transport},
 };
 

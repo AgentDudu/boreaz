@@ -183,22 +183,26 @@ TEST_CASE("one key with two voices keeps both envelopes apart") {
 
 TEST_SUITE_END();
 
-TEST_CASE("a frame with no song says nothing about a song") {
-    INFO("The transport's clock is the position of a song, not the uptime of the driver: the audio "
-         "thread counts samples from the moment the device opens, so a panel that prints that number "
-         "on an empty screen shows a transport that looks like it is about to move. The gate is this "
-         "one flag, which is why it is on the frame the panel reads and not inside the drawing.");
+TEST_CASE("a frame the audio thread built has no transport") {
+    INFO("The transport's position is a song's position, not the uptime of the driver: the audio "
+         "thread counts samples from the moment the device opens, so a panel that reads that number "
+         "shows a stopwatch on an empty screen. The frame carries the transport separately, and a "
+         "frame built straight off a running engine - device open, position advancing, nothing played "
+         "- carries one that has not started.");
     FrameView empty;
     empty.device.sample_rate = 48000.0;
     empty.sample_position = 48000;
-    CHECK_FALSE(empty.song_loaded);
-    CHECK(empty.position_seconds() == doctest::Approx(1.0)); // the clock exists and is ticking
-    CHECK_FALSE(empty.song_loaded);                          // and it is still not a song
+    CHECK(empty.position_seconds() == doctest::Approx(1.0)); // the audio clock is ticking
+    CHECK_FALSE(empty.transport_running);                    // and it is still not a transport
+    CHECK(empty.transport_seconds == 0.0);
+
     Params params;
     boreaz::engine::Engine engine(params);
     engine.prepare(kRate);
     render(engine, 512);
-    CHECK_FALSE(view_of(engine).song_loaded); // a frame built from a live engine invents none
+    const FrameView from_engine = view_of(engine);
+    CHECK_FALSE(from_engine.transport_running); // the copy that builds a frame invents no song
+    CHECK(from_engine.transport_seconds == 0.0);
 }
 
 TEST_SUITE("computer keyboard") {

@@ -64,11 +64,13 @@ struct FrameView {
     std::size_t dropped_events = 0;
     bool sustain = false;
 
-    // Whether there is a song at all. The audio clock runs from the moment the device opens, which
-    // is not the same thing as a transport having something to play, so a panel that shows a
-    // stopwatch on an empty screen is describing the driver rather than the music. The file loader
-    // raises this when it has a song loaded and stops raising it when the song ends or is unloaded.
-    bool song_loaded = false;
+    // The transport, not the audio clock. The audio thread counts samples from the moment the device
+    // opens, which is not when music starts, so a panel that prints that number shows a stopwatch
+    // where a player expects a song position. Both fields come from TransportClock: not running and
+    // zero seconds until a song is loaded or a note is played, and parked at the last value when the
+    // song ends.
+    bool transport_running = false;
+    double transport_seconds = 0.0;
 
     // The notes themselves, plus the ones this keyboard cannot show. A voice playing note 9 is
     // real and audible, and an 88 key display that silently drops it is lying about the pitch, so

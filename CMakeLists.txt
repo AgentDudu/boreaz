@@ -237,7 +237,7 @@ if(WIN32)
   add_library(
     boreaz_gui
     STATIC src/gui/app_window.cpp src/gui/frame_view.cpp src/gui/keyboard_view.cpp
-           src/gui/panel.cpp src/gui/viz/transport.cpp)
+           src/gui/panel.cpp src/gui/transport_clock.cpp src/gui/viz/transport.cpp)
   target_include_directories(boreaz_gui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
   target_link_libraries(boreaz_gui PUBLIC imgui boreaz_io boreaz_engine boreaz_dsp)
   target_compile_features(boreaz_gui PUBLIC cxx_std_20)
@@ -295,7 +295,7 @@ if(BOREAZ_BUILD_TESTS)
     tests/test_midifile.cpp
     tests/test_io.cpp)
   if(WIN32)
-    list(APPEND boreaz_test_sources tests/test_gui.cpp)
+    list(APPEND boreaz_test_sources tests/test_gui.cpp tests/test_transport_clock.cpp)
   endif()
 
   add_executable(boreaz_tests ${boreaz_test_sources})

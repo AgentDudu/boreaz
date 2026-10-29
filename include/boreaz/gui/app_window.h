@@ -8,6 +8,7 @@
 #include "boreaz/gui/frame_view.h"
 #include "boreaz/gui/keyboard_view.h"
 #include "boreaz/gui/panel.h"
+#include "boreaz/gui/transport_clock.h"
 
 namespace boreaz::gui {
 
@@ -67,6 +68,7 @@ class AppWindow {
     KeyboardView keyboard_;
     KeyboardLayout layout_;
     PanelKind panel_ = PanelKind::kTransport;
+    TransportClock transport_;
     double frames_ = 0.0;
     bool was_focused_ = true;
 };

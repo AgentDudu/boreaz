@@ -287,6 +287,13 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
     view.frames = frames_;
     view.seconds = seconds_elapsed();
 
+    // The transport starts on music and not on the driver: a song loaded, or a note sounding
+    // right now. Nothing loads a song until the scheduler exists, so until then a window that
+    // has been open for ten minutes reads zero, which is the truth about the music.
+    transport_.update(view.position_seconds(), view.active_voices > 0);
+    view.transport_running = transport_.running();
+    view.transport_seconds = transport_.seconds();
+
     // The switcher. Every panel is one button and nothing else in the program knows how many
     // there are; the tooltip is what tells the player that this one is a view, not a remote.
     int count = 0;
