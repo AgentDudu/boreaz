@@ -26,9 +26,17 @@ float bend_factor(float semitones) {
 Engine::Engine(const Params& initial) {
     Params params = initial;
     params.sanitize();
+    // Publish the starting parameters to the bus the audio thread reads. A bus nobody published to
+    // hands back defaults, so an engine built from a parameter file would play its first block as
+    // configured and every block after that at defaults - which is how boreaz-render produced byte
+    // identical audio for master_gain_db = -40 and -12 while reporting both as success.
+    params_.publish(params);
     applied_ = params;
+    live_ = params; // until a block is processed, this is what the engine would play
     applied_master_gain_db_ = params.master_gain_db;
-    master_.set_linear(db_to_linear(params.master_gain_db));
+    // Immediately, not with a ramp: this is the level the engine starts at, and ramping to it from
+    // unity is a click at the top of every render and every patch load.
+    master_.set_linear_immediate(db_to_linear(params.master_gain_db));
     // From here to the first process() call is setup, not the audio path.
     clip_.prepare(sample_rate_);
 }

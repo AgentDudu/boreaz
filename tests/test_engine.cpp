@@ -29,6 +29,42 @@ void push_chord(Engine& engine, std::int64_t tick, int first = 48, int count = 1
 
 } // namespace
 
+TEST_CASE("an engine built with parameters keeps playing them, not falling back to defaults") {
+    // Parameters arrive twice: once in the constructor, and once per block from the bus the UI
+    // publishes to. An engine that never published its own starting parameters played block one as
+    // configured and every block after at defaults, which is how boreaz-render produced byte
+    // identical audio for master_gain_db = -40 and -12 and reported success both times.
+    // One note at a moderate velocity, on purpose: a four note chord overloads the soft clipper,
+    // whose output is not proportional to its input, and a test that measures a saturated sum cannot
+    // say anything about a gain 28 dB apart.
+    auto peak_with = [](float master_gain_db) {
+        Params params;
+        params.master_gain_db = master_gain_db;
+        Engine engine(params);
+        engine.prepare(fixture::kRate);
+        REQUIRE(engine.push_event(Event::note_on(0, 0, byte(60), byte(64))));
+        return fixture::render(engine, 4410).peak;
+    };
+    const float loud = peak_with(-12.0F);
+    const float quiet = peak_with(-40.0F);
+    INFO("loud peak " << loud << ", quiet peak " << quiet << ", ratio " << loud / quiet);
+    REQUIRE(loud > fixture::kSilence);
+    // Twenty-eight decibels should be a factor of twelve; the test asks for a factor of six, which
+    // is still far more than "slightly quieter" and would not budge if a later change moved the
+    // master gain by a decibel or two somewhere else.
+    CHECK(quiet < loud / 6.0F);
+
+    Params tuned;
+    tuned.transpose_semitones = 12;
+    Engine engine(tuned);
+    engine.prepare(fixture::kRate);
+    CHECK(engine.sounding_note(60) == 72); // before a block: what it was built to play
+    fixture::render(engine, 64);
+    // ...and still the same after a block has been processed, which is the half that broke: the
+    // block reads the parameter bus, and a bus nobody published to is a tray of defaults.
+    CHECK(engine.sounding_note(60) == 72);
+}
+
 TEST_CASE("a sixteen-note chord with the pedal down uses exactly sixteen voices") {
     Engine engine;
     engine.prepare(fixture::kRate);
