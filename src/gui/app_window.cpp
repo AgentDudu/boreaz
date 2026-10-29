@@ -413,9 +413,11 @@ bool AppWindow::frame(boreaz::engine::Engine& engine, const StatsFn& stats) {
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
     }
     // One-sync presents, so the window is frame rate limited by the monitor and never races ahead
-    // of the audio thread by burning CPU on frames nobody can see.
-    if (impl_->swap_chain->Present(1, 0) == DXGI_ERROR_DEVICE_REMOVED ||
-        impl_->swap_chain->Present(1, 0) == DXGI_ERROR_DEVICE_RESET) {
+    // of the audio thread by burning CPU on frames nobody can see. Exactly once per frame, and not
+    // inside a condition: `a == X || b == Y` with a Present on each side presents twice whenever
+    // the device is healthy, and a second Present in the same frame waits for a second vsync.
+    const HRESULT presented = impl_->swap_chain->Present(1, 0);
+    if (presented == DXGI_ERROR_DEVICE_REMOVED || presented == DXGI_ERROR_DEVICE_RESET) {
         // Deliberately not handled beyond saying so: the audio keeps running and the app exits on
         // the player's cue. A driver reset that re-creates the device is a real feature and is not
         // in the plan, and an unhandled case that announces itself beats one that goes quiet.

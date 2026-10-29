@@ -182,8 +182,12 @@ int main(int argc, char** argv) {
     std::signal(SIGTERM, &asked_to_stop);
 #endif
 
+    // The period the callback is really getting is a number the audio thread only knows once it has
+    // run, and the panel shows it from the first frame. Before any callback has happened this line
+    // can honestly say only what the player asked for, so it says that instead of a zero that
+    // reads like a broken device.
     std::cout << "boreaz: " << device.name() << ", " << static_cast<int>(device.sample_rate())
-              << " Hz, " << device.callback_frames() << " frame period, "
+              << " Hz, " << options.period << " frame period, "
               << (options.gui ? "window" : "headless") << ". Ctrl+C stops." << std::endl;
 
     const std::string port_name = device.name();
