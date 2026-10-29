@@ -288,7 +288,7 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
     view.seconds = seconds_elapsed();
 
     // The switcher. Every panel is one button and nothing else in the program knows how many
-    // there are; the tooltip is what tells the player that this one is a readout, not a remote.
+    // there are; the tooltip is what tells the player that this one is a view, not a remote.
     int count = 0;
     const PanelEntry* table = panel_table(&count);
     for (int index = 0; index < count; ++index) {
@@ -302,10 +302,10 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
     ImGui::SameLine();
     ImGui::TextUnformatted(impl_->driver.c_str());
 
-    // Both halves come from the window, in proportion. The strip takes a share of the height and
-    // never more than a cap, because a maximised window should buy the readout room, not turn
-    // middle C into a floor tile; whatever is left belongs to the panel, which is where the
-    // waterfall and the piano roll are going to want it.
+    // Both halves come from the window, in proportion. The keyboard takes a share of the height
+    // and never more than a cap, because a maximised window should buy the strip room, not turn
+    // middle C into a floor tile; whatever is left belongs to the panel, and the strip fills
+    // all of it - the waterfall and the piano roll are going to want exactly this rectangle.
     const float below_switcher = ImGui::GetContentRegionAvail().y;
     const float keyboard_height = std::clamp(below_switcher * kKeyboardShare, kMinimumKeyboardHeight,
                                              kMaximumKeyboardHeight);

@@ -183,6 +183,24 @@ TEST_CASE("one key with two voices keeps both envelopes apart") {
 
 TEST_SUITE_END();
 
+TEST_CASE("a frame with no song says nothing about a song") {
+    INFO("The transport's clock is the position of a song, not the uptime of the driver: the audio "
+         "thread counts samples from the moment the device opens, so a panel that prints that number "
+         "on an empty screen shows a transport that looks like it is about to move. The gate is this "
+         "one flag, which is why it is on the frame the panel reads and not inside the drawing.");
+    FrameView empty;
+    empty.device.sample_rate = 48000.0;
+    empty.sample_position = 48000;
+    CHECK_FALSE(empty.song_loaded);
+    CHECK(empty.position_seconds() == doctest::Approx(1.0)); // the clock exists and is ticking
+    CHECK_FALSE(empty.song_loaded);                          // and it is still not a song
+    Params params;
+    boreaz::engine::Engine engine(params);
+    engine.prepare(kRate);
+    render(engine, 512);
+    CHECK_FALSE(view_of(engine).song_loaded); // a frame built from a live engine invents none
+}
+
 TEST_SUITE("computer keyboard") {
 
 TEST_CASE("the letter rows play two octaves, and every one of them has a key") {

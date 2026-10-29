@@ -17,9 +17,11 @@ void transport(const FrameView& view);
 namespace {
 
 constexpr PanelEntry kTable[] = {
-    {PanelKind::kTransport, "Transport",
-     "Where the song is: elapsed time, the beat grid, the playhead. A readout - the keys and the "
-     "space bar play, this strip only tells you where the playback has got to.",
+    {PanelKind::kTransport,
+     "Transport",
+     "Where the song is: a strip that scrolls with the audio clock, the playhead at the right, and "
+     "two meters at its foot. A view, not a remote - the clock appears when a song is loaded, and "
+     "seeking needs the scheduler, which is a later phase.",
      &viz::transport},
 };
 
