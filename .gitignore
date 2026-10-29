@@ -9,6 +9,10 @@ CMakeUserPresets.json
 *.wav
 !tests/fixtures/**/*.wav
 
+# python helper bytecode (tools/*.py are read in place, never installed)
+__pycache__/
+*.pyc
+
 # third-party instrument audio is a build artifact, never history
 assets/
 tools/mkinst/out/

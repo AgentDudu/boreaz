@@ -11,6 +11,14 @@ class Gain {
   public:
     void set_linear(float linear) noexcept { target_ = linear; }
 
+    // Startup and reset, where there is no previous level to glide from. `set_linear` alone leaves
+    // the internal value at unity, so an engine built with master_gain_db = -40 spent its first
+    // block ramping down from 0 dB: a 40 dB click, and the loudest sample any render wrote.
+    void set_linear_immediate(float linear) noexcept {
+        current_ = linear;
+        target_ = linear;
+    }
+
     // Called from the GUI and from parameter loading, never from the audio callback: pow()
     // there would be the usual self-inflicted wound.
     void set_gain_db(float db) noexcept {
