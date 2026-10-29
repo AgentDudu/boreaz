@@ -87,10 +87,19 @@ class SoftClip {
         return saturate(in / coefficient_) * coefficient_;
     }
 
-    void process_block(float* buffer, int frames) noexcept {
+    // Returns the loudest sample it saw on the way in, which is the number a clip light is
+    // allowed to be: above ~1 the tanh is doing real work and the mix is being squashed. Costing
+    // one compare next to the tanh it is already walking is not a second pass worth avoiding.
+    float process_block(float* buffer, int frames) noexcept {
+        float peak = 0.0f;
         for (int i = 0; i < frames; ++i) {
-            buffer[i] = process(buffer[i]);
+            const float in = buffer[i];
+            const float magnitude = in >= 0.0f ? in : -in;
+            if (magnitude > peak)
+                peak = magnitude;
+            buffer[i] = process(in);
         }
+        return peak;
     }
 
     // std::tanh, not an approximation of it: this sits on the master bus, once per sample, and

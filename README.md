@@ -9,30 +9,31 @@ MIDI file to WAV from the command line.
 
 ## Status
 
-Phases 0-4 of 12. **There is sound.** A 16 voice synth engine plays the full A0–C8 compass
-through a real WASAPI output and takes a MIDI keyboard, with device and buffer selection from
-the command line — and a `.mid` file now renders to a `.wav` without any device at all:
+Phases 0-5 of 12. **There is sound, and there is a window.** A 16 voice synth engine plays the
+full A0–C8 compass through a real WASAPI output and takes a MIDI keyboard; `--gui` opens 88
+playable keys with a readout of what the audio thread is doing above them; and a `.mid` file
+renders to a `.wav` without any device at all:
 
 ```bash
+./build/boreaz --gui                            # the window: click keys, or play z s x d c v
+./build/boreaz                                  # default output, wait for a keyboard
+./build/boreaz --device 1 --period 256          # choose the output and the buffer
+./build/boreaz --list-devices                   # this machine's outputs
+./build/boreaz --list-midi                      # this machine's MIDI inputs
 ./build/boreaz-render tests/fixtures/midifile/pad-chords.mid build/pad.wav
 ./build/boreaz-render --golden tests/fixtures/midifile/sweep-88.mid
 ```
 
 The file reader is a library (`boreaz-midifile`), so the in-app transport plays the same bytes
-through the same merge and the same parser in phase 10. No window yet (phase 5) and no sampled
-piano yet (phase 6). `PLAN.md` is the contract for what is being built and in which order;
-phases 0-12 are listed there with exit criteria.
+through the same merge and the same parser in phase 10. No sampled piano yet (phase 6), and the
+window does not load a `.mid` file yet either — playing a file is the in-app sequencer's job.
+`PLAN.md` is the contract for what is being built and in which order; phases 0-12 are listed
+there with exit criteria.
 
-```bash
-./build/boreaz --list                   # this machine's outputs and MIDI inputs
-./build/boreaz --demo --report          # hear it with no keyboard attached
-./build/boreaz                          # default output, wait for a keyboard
-./build/boreaz --device 1 --latency 256 # choose the output and the buffer
-```
-
-`--report` prints the counters the exit criteria are quoted against: delivered rate and period,
-gaps between callbacks sorted by size, and engine CPU. Without a keyboard it still opens the
-device and prints what it found, which is the usual first move when sound does not appear.
+Quitting prints the counters every claim about the engine is argued from: callbacks delivered,
+how many were late, how many times the device restarted, events dropped, voices stolen, and how
+far the audio thread has got. Without a keyboard it still opens the output and prints what it
+found, which is the usual first move when sound does not appear.
 
 ## Requirements
 
@@ -46,13 +47,13 @@ device and prints what it found, which is the usual first move when sound does n
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ctest --test-dir build --output-on-failure
-./build/boreaz --version
+./build/boreaz --help
 ```
 
 Sound comes out of the default output with no configuration. If the wrong device answers —
 or a virtual cable is in the list — `--device` picks by index or by part of the name, and
-`--list` shows what is there. Exit status is 0 ok, 2 bad usage, 3 no such audio output, 4 MIDI
-refused.
+`--list-devices` shows what is there. Exit status is 0 ok, 1 for anything that stopped the app:
+bad usage, no such audio output, MIDI refused.
 
 ## Configuration
 

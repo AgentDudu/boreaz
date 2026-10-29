@@ -149,6 +149,17 @@ add_library(boreaz_dsp INTERFACE)
 target_include_directories(boreaz_dsp INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_compile_features(boreaz_dsp INTERFACE cxx_std_20)
 
+# ---------------------------------------------------------------- config
+#
+# Parameter files: the field table, the parser, and where the instrument's own defaults live. Its
+# own library because the app, the render tool and the tests all read the same files, and a table
+# that exists twice is a preset that plays one way and renders another.
+add_library(boreaz_config STATIC src/config/params_file.cpp)
+target_include_directories(boreaz_config PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(boreaz_config PUBLIC boreaz_engine)
+target_compile_features(boreaz_config PUBLIC cxx_std_20)
+boreaz_set_warnings(boreaz_config)
+
 # ---------------------------------------------------------------- engine
 #
 # Compiled, not header-only: a voice is real code with real state. A static target that links
@@ -211,12 +222,41 @@ if(_boreaz_midifile_links MATCHES "miniaudio|imgui|glfw|winmm")
   message(FATAL_ERROR "boreaz_midifile must not link a device library, got ${_boreaz_midifile_links}")
 endif()
 
+# ---------------------------------------------------------------- gui
+#
+# The window, the 88 keys, and the readout above them. Its own library, so the dependency direction
+# is a build fact rather than a wish: boreaz_engine and boreaz_io link no ImGui, no GLFW, no
+# window, and that is what lets the same synthesis run headless in a test and in a tool.
+#
+# Windows only, and that is a fact about the two things a window needs rather than laziness: the
+# draw backend (Direct3D 11, which is what the ImGui target above compiles its backend against) and
+# the host MIDI API. Porting means adding a backend file and a ports file for the next platform and
+# widening this guard - not inventing an abstraction layer with one implementation in it, which the
+# plan rejected on purpose.
+if(WIN32)
+  add_library(
+    boreaz_gui
+    STATIC src/gui/app_window.cpp src/gui/frame_view.cpp src/gui/keyboard_view.cpp
+           src/gui/panel.cpp src/gui/viz/transport.cpp)
+  target_include_directories(boreaz_gui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+  target_link_libraries(boreaz_gui PUBLIC imgui boreaz_io boreaz_engine boreaz_dsp)
+  target_compile_features(boreaz_gui PUBLIC cxx_std_20)
+  boreaz_set_warnings(boreaz_gui)
+endif()
+
 # ---------------------------------------------------------------- application
-add_executable(boreaz src/app/main.cpp)
-target_include_directories(boreaz PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(boreaz PRIVATE imgui boreaz_io boreaz_engine boreaz_dsp)
-boreaz_set_warnings(boreaz)
-boreaz_link_runtime_staticly(boreaz)
+if(WIN32)
+  add_executable(boreaz src/app/main.cpp)
+  target_include_directories(boreaz PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+  target_link_libraries(boreaz PRIVATE boreaz_gui boreaz_io boreaz_config boreaz_engine boreaz_dsp)
+  boreaz_set_warnings(boreaz)
+  boreaz_link_runtime_staticly(boreaz)
+else()
+  message(
+    STATUS
+      "boreaz: no window target on this platform yet - the instrument, the tools and the tests build without one"
+  )
+endif()
 
 # ---------------------------------------------------------------- tools
 #
@@ -225,7 +265,7 @@ boreaz_link_runtime_staticly(boreaz)
 # CI is the same synthesis the user hears.
 add_executable(boreaz-render src/tools/render/main.cpp)
 target_include_directories(boreaz-render PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(boreaz-render PRIVATE boreaz_midifile boreaz_engine boreaz_dsp)
+target_link_libraries(boreaz-render PRIVATE boreaz_midifile boreaz_config boreaz_engine boreaz_dsp)
 boreaz_set_warnings(boreaz-render)
 boreaz_link_runtime_staticly(boreaz-render)
 
@@ -233,9 +273,11 @@ boreaz_link_runtime_staticly(boreaz-render)
 if(BOREAZ_BUILD_TESTS)
   enable_testing()
 
-  add_executable(
-    boreaz_tests
-    tests/test_version.cpp
+  # The GUI suites are Windows-only with the library they test. What they test is the headless half
+  # of the GUI - which key a click hits, what a frame view copies, what the switcher offers - which
+  # is where "all 88 keys clickable" is actually decided, and none of it needs a display.
+  set(boreaz_test_sources
+      tests/test_version.cpp
     tests/test_hygiene.cpp
     tests/test_tuning.cpp
     tests/test_oscillator.cpp
@@ -248,9 +290,15 @@ if(BOREAZ_BUILD_TESTS)
     tests/test_message.cpp
     tests/test_engine.cpp
     tests/test_engine_events.cpp
+    tests/test_keyboard_layout.cpp
     tests/test_midi_parser.cpp
     tests/test_midifile.cpp
     tests/test_io.cpp)
+  if(WIN32)
+    list(APPEND boreaz_test_sources tests/test_gui.cpp)
+  endif()
+
+  add_executable(boreaz_tests ${boreaz_test_sources})
   target_include_directories(boreaz_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
   target_compile_definitions(boreaz_tests PRIVATE BOREAZ_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   # The render tests run the tool rather than reimplementing its argument handling, and the golden
@@ -260,7 +308,12 @@ if(BOREAZ_BUILD_TESTS)
     PRIVATE BOREAZ_RENDER_TOOL="$<TARGET_FILE:boreaz-render>"
             BOREAZ_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/midifile")
   target_link_libraries(
-    boreaz_tests PRIVATE doctest::doctest boreaz_io boreaz_midifile boreaz_engine boreaz_dsp)
+    boreaz_tests
+    PRIVATE doctest::doctest boreaz_io boreaz_midifile boreaz_config boreaz_engine
+            boreaz_dsp)
+  if(WIN32)
+    target_link_libraries(boreaz_tests PRIVATE boreaz_gui)
+  endif()
   # A target-file generator expression says where a binary will be, it does not make CMake build it,
   # and the tool tests shell out to it.
   add_dependencies(boreaz_tests boreaz-render)
