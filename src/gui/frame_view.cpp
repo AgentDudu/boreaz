@@ -53,6 +53,10 @@ FrameView make_frame_view(const boreaz::engine::Engine& engine, DeviceStats devi
         // nobody is touching.
         entry.held = !voice.released() && !voice.sustained();
         entry.level = std::clamp(voice.amplitude(), 0.0f, 1.0f);
+        // Samples, not seconds: the rate is the device's business, and a panel that divides by a
+        // sample rate of zero (a frame built before any device opened, which tests do constantly)
+        // would rather draw nothing than a NaN-wide bar.
+        entry.age_samples = voice.age(engine.sample_position());
     }
     return view;
 }

@@ -205,6 +205,29 @@ TEST_CASE("a frame the audio thread built has no transport") {
     CHECK(from_engine.transport_seconds == 0.0);
 }
 
+TEST_CASE("a sounding voice says how long it has been sounding") {
+    INFO("A transport that trails a note has to know where the note started, and the voice already "
+         "knows: age() is the difference between the position it started on and the position the "
+         "frame was taken at. Carrying that across is what lets a strip draw a note's length instead "
+         "of a light that says only that something is happening. It is samples, because the sample "
+         "rate belongs to a device and a frame can be built without one.");
+    constexpr int kFrames = 4800; // a tenth of a second at the fixture rate
+    Params params;
+    boreaz::engine::Engine engine(params);
+    engine.prepare(kRate);
+    engine.push_event(Event::note_on(0, 0, 60, 100));
+    render(engine, kFrames);
+
+    const FrameView view = view_of(engine);
+    const boreaz::gui::Sounding* note = find(view, 60);
+    REQUIRE(note != nullptr);
+    CHECK(note->age_samples > 0);
+    // The note began on the first block of the render, so it is as old as the render minus at most
+    // the block it began inside. Older than that would put the playhead's bar off the strip.
+    CHECK(note->age_samples <= kFrames);
+    CHECK(note->age_samples >= kFrames - 512);
+}
+
 TEST_SUITE("computer keyboard") {
 
 TEST_CASE("the letter rows play two octaves, and every one of them has a key") {

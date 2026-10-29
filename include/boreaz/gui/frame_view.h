@@ -16,6 +16,11 @@ struct Sounding {
     std::uint8_t velocity = 0; // 0-127, as it arrived
     bool held = false;         // the key is still up: false when only the pedal is holding it
     float level = 0.0f;        // 0..1, what a key or a lane is drawn with
+    // How long this voice has been sounding, in samples, taken at the same position as
+    // FrameView::sample_position. A strip that draws where a note started has to know when it
+    // started, and the voice already computes it; without this a transport can only show that
+    // something is playing, never that it started somewhere behind the playhead.
+    std::int64_t age_samples = 0;
 };
 
 // Device and port numbers the window shows. Plain data, because the window must not learn to

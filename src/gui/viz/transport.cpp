@@ -21,6 +21,7 @@
 #include <string>
 
 #include "boreaz/gui/panel.h"
+#include "boreaz/gui/keyboard_layout.h"
 
 namespace boreaz::gui {
 namespace {
@@ -139,6 +140,40 @@ void transport(const FrameView& view) {
         // the same object seen from a different view.
         const float head = rolling ? origin.x + lane_width - 1.0f : origin.x;
         const ImU32 accent = ImGui::GetColorU32(ImVec4(0.45f, 0.86f, 0.72f, 1.0f));
+
+        // What is playing, and since when: one bar per sounding voice, at its own pitch height,
+        // reaching left from the playhead to the sample the note started on. That is the difference
+        // between a clock ticking to itself and an answer to what the hands are doing. Height follows
+        // pitch, low at the bottom, so the strip and the keys under it read in the same order; the
+        // fill is opaque - the bar *is* the note, and a bar faint enough to miss is a bar that was
+        // never drawn as far as a player is concerned - brightening with the voice's own level, so a
+        // note that has decayed dims on screen the way it does in the room without vanishing while
+        // it is still sounding. The envelope this reads is the amplitude times the voice's peak gain,
+        // which for one voice of sixteen is a small number: it modulates, it does not hide.
+        //
+        // What stops being drawn is what has stopped sounding. The engine forgets a voice the moment
+        // it is freed, so a bar ends at its release, and notes that keep scrolling after they end
+        // need the note event ring the piano roll is built on - they are not hidden here, they are a
+        // feature with a phase of its own.
+        if (rolling && view.device.sample_rate > 0.0) {
+            const float height =
+                std::max(2.0f, lane_height / static_cast<float>(KeyboardLayout::kKeyCount));
+            const float span = static_cast<float>(KeyboardLayout::kKeyCount - 1);
+            for (int index = 0; index < view.sounding_count; ++index) {
+                const Sounding& voice = view.sounding[static_cast<std::size_t>(index)];
+                const float rank = std::clamp(static_cast<float>(voice.note) -
+                                                  static_cast<float>(KeyboardLayout::kFirstNote),
+                                              0.0f, span) / span;
+                const float y = lane_bottom - 1.0f - rank * (lane_height - height);
+                const float seconds = static_cast<float>(static_cast<double>(voice.age_samples) /
+                                                         view.device.sample_rate);
+                const float since = head - seconds * pixels_per_second;
+                const float alpha = 0.68f + 0.32f * voice.level;
+                draw->AddRectFilled(ImVec2(std::max(origin.x, since), y), ImVec2(head, y + height),
+                                    ImGui::GetColorU32(ImVec4(0.45f, 0.86f, 0.72f, alpha)));
+            }
+        }
+
         draw->AddLine(ImVec2(head, lane_top - 3.0f), ImVec2(head, lane_bottom + 3.0f), accent, 2.0f);
 
         if (!rolling) {
