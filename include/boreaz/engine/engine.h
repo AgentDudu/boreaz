@@ -59,6 +59,10 @@ class Engine {
     int pool_size() const { return allocator_.pool_size(); }
     int steal_count() const { return steal_count_.load(std::memory_order_relaxed); }
     std::int64_t sample_position() const { return position_; }
+    // The loudest sample of the last block, before the limiter bent it. 1.0 is where the tanh
+    // starts working, so this is the clip meter: 0.7 is a mix with room, 1.05 is a mix that is
+    // being squashed and nobody said so. Per block, not per sample, which is what a light needs.
+    float drive_peak() const { return drive_peak_.load(std::memory_order_relaxed); }
     std::size_t dropped_events() const { return queue_.dropped(); }
     bool sustain_pedal_down() const { return pedal_down_; }
     float bend_semitones(std::uint8_t channel) const { return bend_[channel % kMidiChannels]; }
@@ -102,6 +106,7 @@ class Engine {
     float bend_[kMidiChannels]{};
     bool pedal_down_ = false;
 
+    std::atomic<float> drive_peak_{0.0f};
     std::int64_t position_ = 0;
     std::atomic<int> active_voices_{0};
     std::atomic<int> steal_count_{0};

@@ -121,8 +121,12 @@ void Engine::render_chunk(float* output, int frames, const Params& params) {
     // tanh first: sixteen voices summed past full scale should saturate, not turn into a square
     // wave. The clamp after it is the promise that nothing leaves this block above full scale,
     // which the real limiter (plan 3, FX bus) takes over in the FX phase.
-    clip_.process_block(scratch_l_, frames);
-    clip_.process_block(scratch_r_, frames);
+    const float drive_l = clip_.process_block(scratch_l_, frames);
+    const float drive_r = clip_.process_block(scratch_r_, frames);
+    const float drive = drive_l > drive_r ? drive_l : drive_r;
+    // One relaxed store per block. A meter that reads a value from two blocks ago is still a
+    // working meter, and this keeps the display off the audio path's critical instructions.
+    drive_peak_.store(drive, std::memory_order_relaxed);
     for (int i = 0; i < frames; ++i) {
         output[static_cast<std::size_t>(i) * 2u] = std::clamp(scratch_l_[i], -1.0f, 1.0f);
         output[static_cast<std::size_t>(i) * 2u + 1u] = std::clamp(scratch_r_[i], -1.0f, 1.0f);
