@@ -23,6 +23,23 @@ struct Sounding {
     std::int64_t age_samples = 0;
 };
 
+// One note a strip scrolls - sounding or just stopped - placed by the transport's clock, which is
+// the only clock two notes can agree on. `end_seconds` is negative while the note is still
+// sounding, which is what tells a bar that is growing from a bar that has finished and is merely
+// travelling left: the engine forgets a voice when it is freed, so "it stopped" has to be a fact
+// the display keeps.
+struct TrailNote {
+    std::uint8_t note = 0;    // the note as it sounds - where the strip draws it
+    std::uint8_t key = 0;     // the key it came in on: how two frames know this is the same note
+    std::uint8_t channel = 0;
+    std::uint8_t velocity = 0;  // the touch it started on, which never changes again
+    float level = 0.0f;         // the last level reported while it sounded
+    double onset_seconds = 0.0;
+    double end_seconds = -1.0;  // negative while sounding
+
+    bool sounding() const { return end_seconds < 0.0; }
+};
+
 // Device and port numbers the window shows. Plain data, because the window must not learn to
 // open a device: `app` reads its own objects and hands the numbers over.
 struct DeviceStats {
@@ -54,6 +71,9 @@ struct MidiStats {
 // the plan makes that a bug (plan 3). One copy per frame, drawn all frame long.
 struct FrameView {
     static constexpr int kMaxVoices = static_cast<int>(boreaz::engine::Engine::kMaxPolyphony);
+    // Enough notes to fill the strip's window at a glissando, and no more: the ones past the window
+    // are off the left edge, and a fixed buffer is what keeps a frame allocation-free.
+    static constexpr int kMaxTrail = 96;
 
     // Where the audio thread is.
     DeviceStats device;
@@ -83,6 +103,12 @@ struct FrameView {
     int sounding_count = 0;
     int ext_voices = 0;
     Sounding sounding[static_cast<std::size_t>(kMaxVoices)]{};
+
+    // The notes the panels scroll, oldest first: the ones sounding now plus the ones that stopped
+    // too recently to have left the strip. `NoteTrail` fills these - it is the one part of the
+    // display with memory between frames, and so the one place a note that has ended still exists.
+    TrailNote trail[static_cast<std::size_t>(kMaxTrail)]{};
+    int trail_count = 0;
 
     // Window throughput, because "the window at 60 fps while audio runs" is an exit criterion and
     // a number someone has to be able to quote without a profiler.

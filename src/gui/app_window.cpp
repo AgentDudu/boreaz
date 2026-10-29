@@ -294,6 +294,11 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
     view.transport_running = transport_.running();
     view.transport_seconds = transport_.seconds();
 
+    // What has been played, in the same clock the strip scrolls by. Once per frame, before any panel
+    // draws, and here rather than inside a panel because it is the one part of the display that has
+    // to remember the last frame.
+    trail_.update(view);
+
     // The switcher. Every panel is one button and nothing else in the program knows how many
     // there are; the tooltip is what tells the player that this one is a view, not a remote.
     int count = 0;

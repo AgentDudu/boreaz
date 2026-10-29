@@ -141,35 +141,59 @@ void transport(const FrameView& view) {
         const float head = rolling ? origin.x + lane_width - 1.0f : origin.x;
         const ImU32 accent = ImGui::GetColorU32(ImVec4(0.45f, 0.86f, 0.72f, 1.0f));
 
-        // What is playing, and since when: one bar per sounding voice, at its own pitch height,
-        // reaching left from the playhead to the sample the note started on. That is the difference
-        // between a clock ticking to itself and an answer to what the hands are doing. Height follows
-        // pitch, low at the bottom, so the strip and the keys under it read in the same order; the
-        // fill is opaque - the bar *is* the note, and a bar faint enough to miss is a bar that was
-        // never drawn as far as a player is concerned - brightening with the voice's own level, so a
-        // note that has decayed dims on screen the way it does in the room without vanishing while
-        // it is still sounding. The envelope this reads is the amplitude times the voice's peak gain,
-        // which for one voice of sixteen is a small number: it modulates, it does not hide.
+        // What has been played, and when: one bar per note, at its own pitch height, from the sample
+        // it started on to the sample it stopped on - the playhead, while it still sounds. That is the
+        // difference between a clock ticking to itself and an answer to what the hands are doing.
+        // Height follows pitch, low at the bottom, so the strip and the keys under it read in the same
+        // order; the fill is opaque - the bar *is* the note, and a bar faint enough to miss is a bar
+        // that was never drawn as far as a player is concerned - brightening with the note's own
+        // level, so a note that has decayed dims on screen the way it does in the room without
+        // vanishing while it is still sounding.
         //
-        // What stops being drawn is what has stopped sounding. The engine forgets a voice the moment
-        // it is freed, so a bar ends at its release, and notes that keep scrolling after they end
-        // need the note event ring the piano roll is built on - they are not hidden here, they are a
-        // feature with a phase of its own.
-        if (rolling && view.device.sample_rate > 0.0) {
+        // A note that stops keeps travelling left and leaves slowly. It becomes a bar of its final
+        // length, and dropping it at its release would make the strip flicker at the exact moment the
+        // ear is still hearing it; instead it scrolls out of the left edge, fading over the last
+        // stretch of the strip. That is the waterfall's motion turned through ninety degrees, for the
+        // same reason: a thing leaving sight should be leaving gradually.
+        if (rolling) {
             const float height =
                 std::max(2.0f, lane_height / static_cast<float>(KeyboardLayout::kKeyCount));
             const float span = static_cast<float>(KeyboardLayout::kKeyCount - 1);
-            for (int index = 0; index < view.sounding_count; ++index) {
-                const Sounding& voice = view.sounding[static_cast<std::size_t>(index)];
-                const float rank = std::clamp(static_cast<float>(voice.note) -
+            // How much of the strip a note spends fading on its way out. A fifth of the window is
+            // over two seconds of travel, which is slow enough to read as leaving and not a glitch.
+            constexpr float kFadeFraction = 0.45f;
+            for (int index = 0; index < view.trail_count; ++index) {
+                const TrailNote& note = view.trail[static_cast<std::size_t>(index)];
+                const float start =
+                    head - static_cast<float>(now - note.onset_seconds) * pixels_per_second;
+                const float stop = note.sounding()
+                                       ? head
+                                       : head -
+                                             static_cast<float>(now - note.end_seconds) *
+                                                 pixels_per_second;
+                if (stop <= origin.x || start >= head)
+                    continue;  // off the strip at one end or the other
+                const float left = std::max(start, origin.x);
+                const float right = std::min(stop, head);
+
+                // The fade reads the bar's leading edge, so a note still sounding - whose leading
+                // edge is the playhead - is never dimmed for having been going since the beginning.
+                const float across = (right - origin.x) / lane_width;
+                float leave = 1.0f;
+                if (across < kFadeFraction) {
+                    const float t = across / kFadeFraction;
+                    leave = t * t * (3.0f - 2.0f * t);  // smoothstep: the fade has no corner
+                }
+                if (leave <= 0.002f)
+                    continue;
+
+                const float rank = std::clamp(static_cast<float>(note.note) -
                                                   static_cast<float>(KeyboardLayout::kFirstNote),
                                               0.0f, span) / span;
                 const float y = lane_bottom - 1.0f - rank * (lane_height - height);
-                const float seconds = static_cast<float>(static_cast<double>(voice.age_samples) /
-                                                         view.device.sample_rate);
-                const float since = head - seconds * pixels_per_second;
-                const float alpha = 0.68f + 0.32f * voice.level;
-                draw->AddRectFilled(ImVec2(std::max(origin.x, since), y), ImVec2(head, y + height),
+                const float alpha = (0.68f + 0.32f * note.level) * leave;
+                draw->AddRectFilled(ImVec2(left, y),
+                                    ImVec2(std::max(right, left + 1.0f), y + height),
                                     ImGui::GetColorU32(ImVec4(0.45f, 0.86f, 0.72f, alpha)));
             }
         }
