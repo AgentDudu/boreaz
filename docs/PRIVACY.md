@@ -7,6 +7,11 @@ Boreaz collects nothing.
 - **No telemetry, analytics, crash reporting, or usage tracking.** There is no code path that
   sends anything anywhere.
 - **No accounts, no sign-in, no identifiers.**
+- **One deliberate download, made by a human running a command.** `tools/mkinstrument.py` fetches
+  the CC0 instrument from its own release page, prints the URL it is fetching, and refuses the file
+  if its sha256 is not the one written in the tool. It writes to `third_party/`, which is ignored, and
+  the application never does any of this: it reads a directory of WAVs and could not fetch one if it
+  wanted to.
 
 ## What is stored, and where
 

@@ -354,6 +354,61 @@ TEST_CASE("a velocity the mapping has no layer for still plays the key") {
     CHECK(warned);
 }
 
+TEST_CASE("a loaded instrument keeps no file open: delete the WAVs underneath it") {
+    // PLAN.md phase 6: zero file I/O in the audio callback. The strong form of that claim is that
+    // the store owns its audio and needs nothing on disk to keep playing - and on Windows a file
+    // another handle has open cannot be deleted, so a `remove_all` that succeeds IS the assertion.
+    const Library library = make_library("delete-under", R"(<region> sample=high.wav key=60 pitch_keycenter=60 loop_mode=loop_continuous)");
+    SampleStore store;
+    const boreaz::samples::LoadResult result = store.load_mapping(library.mapping);
+    INFO(result.error);
+    REQUIRE(result.ok);
+
+    const boreaz::engine::VoiceSample* before = store.find(60, 100);
+    REQUIRE(before != nullptr);
+    const float first = before->data[0];
+    const std::int64_t frames = before->frames;
+    REQUIRE(frames > 0);
+
+    std::error_code ec;
+    const std::uintmax_t removed = std::filesystem::remove_all(library.directory, ec);
+    INFO("remove_all removed " << removed << " entries");
+    CHECK_FALSE(static_cast<bool>(ec));
+    CHECK(removed >= 3); // the mapping, its directory, and the recordings in it
+
+    const boreaz::engine::VoiceSample* after = store.find(60, 100);
+    REQUIRE(after != nullptr);
+    CHECK(after->frames == frames);
+    CHECK(after->data[0] == first);
+    CHECK(store.resident_bytes() == result.bytes); // still resident, still the same audio
+}
+
+TEST_CASE("two layers for one key are picked by velocity") {
+    // The shape the CC0 starter instrument actually uses: four groups, two of them `hivel=80` and
+    // two `lovel=81`, so a soft touch and a hard one are different recordings. Nothing here needs
+    // the layer choice that is not implemented: the bands cover the range, so one of them matches.
+    const Library library = make_library("two-layers", R"(<group> hivel=80
+<region> sample=low.wav key=60 pitch_keycenter=60
+<group> lovel=81
+<region> sample=mid.wav key=60 pitch_keycenter=60
+)");
+    SampleStore store;
+    const boreaz::samples::LoadResult result = store.load_mapping(library.mapping);
+    INFO(result.error);
+    INFO(joined(result.warnings));
+    REQUIRE(result.ok);
+
+    // 1000 and 2000 frames: the helper's sample counts are interleaved stereo pairs.
+    CHECK(store.find(60, 5)->frames == 1000);
+    CHECK(store.find(60, 80)->frames == 1000);
+    CHECK(store.find(60, 81)->frames == 2000);
+    CHECK(store.find(60, 127)->frames == 2000);
+
+    // Two layers that cover the range leave no velocity unanswered, so there is nothing to warn
+    // about - which is the other half of the warning test above.
+    CHECK(joined(result.warnings).find("velocity layer") == std::string::npos);
+}
+
 TEST_CASE("offset, `amp_veltrack`, and one file shared by two regions") {
     const Library library = make_library("opcodes", R"(<region> sample=mid.wav key=60 offset=0.02
 <region> sample=mid.wav key=61 offset=600

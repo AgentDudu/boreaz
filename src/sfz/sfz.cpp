@@ -148,14 +148,18 @@ struct Parser {
     std::vector<std::string> seen; // names already warned about, so a warning stays worth reading
     std::string error;
 
-    // One chain, not three scopes: SFZ defaults are "last is best" and cumulative, so everything
-    // written outside a region is simply the value in force until something replaces it. `<global>`,
-    // `<control>` and `<group>` therefore differ in which opcodes a human puts in them, not in what
-    // they inherit - and a parser that invented a reset here would silently drop a group's
-    // `hivel=` at the next `<group>` header.
-    Scope defaults;
+    // Two layers, because a real instrument needs both. `<global>` and a `<control>` before the
+    // first group are the baseline; every `<group>` starts again from that baseline and adds its
+    // own values, which is what SFZ's own defaulting model says and what the shipped CC0 instrument
+    // requires: four groups, two of which say `hivel=80` and two `lovel=81`. A parser that let one
+    // group's `hivel` fall through to the next read that instrument as lovel 81 above hivel 80 and
+    // refused the whole piano, which is how this rule was found rather than chosen.
+    Scope global_;
+    Scope defaults;    // the values in force, reset from `global_` at each `<group>`
     Scope region_scope;
     bool in_region = false;
+    bool mirror_global = false; // this section's opcodes also belong to the baseline
+    bool seen_group = false;    // a `<control>` after the first group is a group's, not the file's
     bool ignoring = false; // an unknown section: its opcodes go to a bit bucket, not to global
     int order = 0;
 
@@ -237,7 +241,18 @@ struct Parser {
 
     // One `name=value`, already split. Returns false once the file is refused; the caller stops
     // reading at that point, because every later line of a file we cannot trust is speculation.
+    // `opcode` is `apply_opcode` and the one thing a wrapper earns: a section that belongs to the
+    // baseline copies the whole scope after the write, instead of every opcode branch learning a
+    // second destination.
     bool opcode(std::string_view raw, int line) {
+        if (!apply_opcode(raw, line))
+            return false;
+        if (mirror_global)
+            global_ = defaults;
+        return true;
+    }
+
+    bool apply_opcode(std::string_view raw, int line) {
         const std::size_t equals = raw.find('=');
         if (equals == std::string_view::npos) {
             error = "line " + std::to_string(line) + ": expected name=value";
@@ -488,10 +503,22 @@ struct Parser {
         if (name == "region") {
             region_scope = defaults;
             in_region = true;
-        } else if (name == "global" || name == "group" || name == "control") {
-            // Nothing to do but stop being a region: the values written here are the ones in force,
-            // which is the whole of SFZ's defaulting model. `<control>` cares about default_path
-            // alone, and `opcode` handles that wherever it appears.
+        } else if (name == "global") {
+            // Its opcodes are the baseline, so they go to the baseline and to whatever is in force.
+            // Starting from the baseline also drops any group's values that were in force, so a
+            // second `<global>` later in the file cannot inherit group three's `hivel`.
+            defaults = global_;
+            mirror_global = true;
+        } else if (name == "control") {
+            // `default_path` before any group is the file's own; inside a group it is that group's,
+            // and the difference only matters to a mapping that puts one in a group at all.
+            mirror_global = !seen_group;
+        } else if (name == "group") {
+            seen_group = true;
+            mirror_global = false;
+            defaults = global_;
+            // Nothing else to do: the values written after this header are the ones in force until
+            // the next header says otherwise.
         } else {
             // <master>, <cite>, <curve>, an ARIA section, a typo: one branch, because the right
             // answer for every one of them is "skip its contents and say so once".

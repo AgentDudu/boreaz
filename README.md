@@ -25,10 +25,12 @@ renders to a `.wav` without any device at all:
 ./build/boreaz-render --golden tests/fixtures/midifile/sweep-88.mid
 ./build/boreaz tests/fixtures/midifile/pad-chords.mid          # play a file, exit when it ends
 ./build/boreaz --gui tests/fixtures/midifile/pad-chords.mid    # the same file, in the window
-./build/boreaz --sfz C:/pianos/upright/sf2/bundexpat.sfz       # play a sample library instead
-./build/boreaz-render --sfz C:/pianos/upright/sf2/bundexpat.sfz \
-    tests/fixtures/midifile/pad-chords.mid build/pad.wav       # the same, as a file
-./build/boreaz-sfz-probe C:/pianos/upright/sf2/bundexpat.sfz   # what the mapping actually says
+# One command, once: fetch the CC0 upright piano and decode it to PCM WAV (needs ffmpeg).
+python tools/mkinstrument.py
+./build/boreaz --gui --instrument third_party/instruments/upright-piano-KW/UprightPianoKW-20220221.sfz
+./build/boreaz-render --instrument third_party/instruments/upright-piano-KW/UprightPianoKW-20220221.sfz \
+    tests/fixtures/midifile/pad-chords.mid build/pad.wav       # the same instrument, as a file
+./build/boreaz-sfz-probe third_party/instruments/upright-piano-KW/UprightPianoKW-20220221.sfz
 ```
 
 The file reader is a library (`boreaz-midifile`), so the offline render, this app and the tests play
@@ -36,14 +38,27 @@ the same bytes through the same parser. A file plays once through and does nothi
 seeking, no loop and no open dialog, which are the controls the sequencer (phase 10) is going to
 bring.
 
-The sampled instrument is the other half of the same sentence: **the mechanism is in and the
-recording is not.** Give it an SFZ mapping and PCM WAVs — plain SFZ spellings, both opcode names for
-everything, `<control>`/`<group>` defaults inherited — and 88 keys play recordings instead of
-oscillators: resident before the device opens, one read-head per voice with cubic pitch shifting,
-loops, the mapping's own gain and velocity depth, and no file, wave or window include anywhere in the
-audio thread. A key the library never recorded replays the nearest recording shifted, and says which.
-What is missing is the instrument: the CC0 upright is fetched and wired in `feature/instrument-asset`,
-and until then `--sfz` has nothing of ours to point at.
+The sampled instrument is the other half of the same sentence. Give it an SFZ mapping and PCM WAVs —
+plain SFZ spellings, both opcode names for everything, `<global>`/`<control>`/`<group>` defaults
+inherited the way SFZ says (a group starts again from `<global>`, not from the group above it) — and
+88 keys play recordings instead of oscillators: resident before the device opens, one read-head per
+voice with pitch shifting, loops, the mapping's own gain and velocity depth, and no file, wave or
+window include anywhere in the audio thread. That last part is a test, not a promise: the WAVs are
+deleted underneath a loaded instrument and it still plays. A key the library never recorded replays
+the nearest recording shifted, and says which. `--no-instrument` declines a library, and one that
+will not load names the file, says it is playing the synthesiser instead, and keeps playing.
+
+What `python tools/mkinstrument.py` fetches is the FreePats **Upright Piano KW** (CC0, recorded by
+Gonzalo and Roberto, `github.com/freepats/upright-piano-KW`): 66 regions, **A0 to C8**, two velocity
+layers that a soft and a hard touch really choose between, the bass looped, **109 MB resident,
+150 ms to load**, and nothing written into the repository — the zip's sha256 is pinned, so the piano
+that played in a test run is the piano the recipe says it was. A live 88-key glissando through it at
+a 1024 frame period finished with **0 late, 0 xruns, 0 dropped, 0 steals**.
+
+What is still missing from a real grand: filters (`fil_type`/`cutoff` are read, ignored, and warned
+about, so a layer the recorder softened arrives bright), `trigger=release` and its second pool, and
+`boreaz-mkinst`, which is the tool that would subset the 394 MB Salamander grand into something
+playable. Nobody has heard it yet, either: every number above is objective, and none of them is an ear.
 
 `PLAN.md` is the contract for what is being built and in which order; phases 0-12 are listed
 there with exit criteria.
