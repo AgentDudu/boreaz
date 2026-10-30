@@ -3,9 +3,9 @@
 //
 // Read-only, and it only moves when the music does: the window scrolls backwards from the
 // transport's position, which sits still until a song is loaded or a note is played, and parks when
-// the song ends. There is no song to seek through yet - the MIDI file player arrives with the
-// scheduler - so while it runs the playhead stays pinned to the right edge, which shows motion
-// without pretending to know how long the song is.
+// the song ends. A file can be played through the app now, but nothing in it can be sought to -
+// scrubbing is the sequencer's job - so while it runs the playhead stays pinned to the right edge,
+// which shows motion without pretending to know how long the song is.
 //
 // It draws into whatever rectangle the app gave it, fills it, and reads nothing but the FrameView.
 // That is the whole contract between a panel and the audio path (plan 3): no engine pointer, no

@@ -777,3 +777,50 @@ TEST_CASE("boreaz-render: the committed goldens still match a render") {
     CHECK(checked == 4);
     std::filesystem::remove_all(dir);
 }
+
+TEST_CASE("a live feed takes the song as far as the clock has reached") {
+    INFO("The app feeds a running audio thread from its own loop, so a feed has to be incremental "
+         "and repeatable: everything at or before the mark, each event once, a cursor the caller "
+         "carries forward, and a full ring counted instead of a note lost in silence.");
+    Song song;
+    song.sample_rate = kRate;
+    song.end_sample = static_cast<std::int64_t>(2 * kRate);
+    song.events = {Event::note_on(0, 0, 60, 100),
+                   Event::note_off(static_cast<std::int64_t>(kRate), 0, 60),
+                   Event::note_on(static_cast<std::int64_t>(kRate), 0, 64, 100),
+                   Event::note_off(static_cast<std::int64_t>(2 * kRate), 0, 64)};
+
+    SUBCASE("only what is due, and nothing twice") {
+        boreaz::engine::Engine engine;
+        engine.prepare(kRate);
+        boreaz::midifile::FeedResult fed = boreaz::midifile::feed_up_to(engine, song, 0, 10);
+        CHECK(fed.cursor == 1); // the C4 at sample zero is due; its off is a second away
+        CHECK(fed.dropped == 0);
+        fed = boreaz::midifile::feed_up_to(engine, song, fed.cursor, 10);
+        CHECK(fed.cursor == 1); // the same mark pushes nothing a second time
+        fed = boreaz::midifile::feed_up_to(engine, song, fed.cursor, song.end_sample);
+        CHECK(fed.cursor == song.events.size());
+    }
+
+    SUBCASE("what the feed pushed is what sounds") {
+        boreaz::engine::Engine engine;
+        engine.prepare(kRate);
+        boreaz::midifile::feed_up_to(engine, song, 0, 10);
+        std::vector<float> block(1024 * 2, 0.0f);
+        engine.process(block.data(), 1024);
+        CHECK(engine.active_voices() == 1); // one note was due; its release still is not
+    }
+
+    SUBCASE("a full ring is counted, not quietly lost") {
+        boreaz::engine::Engine engine;
+        engine.prepare(kRate);
+        // Fill the ring with events so far in the future that nothing they do matters here.
+        std::size_t taken = 0;
+        while (engine.push_event(Event::note_on(1'000'000'000, 0, 60, 1)))
+            ++taken;
+        CHECK(taken > 0);
+        const boreaz::midifile::FeedResult fed = boreaz::midifile::feed_up_to(engine, song, 0, 10);
+        CHECK(fed.cursor == 1);  // the song carries on rather than stalling on one lost note
+        CHECK(fed.dropped == 1); // and the caller can see that one was lost
+    }
+}

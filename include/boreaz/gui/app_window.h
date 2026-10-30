@@ -55,6 +55,16 @@ class AppWindow {
 
     void close();
 
+    // A file the app is playing, which the window did not start and cannot see. The transport's
+    // clock starts on music, and all it can see is a sounding voice, so a file whose first events
+    // are controller messages would otherwise start its clock at the first note and be behind by
+    // whatever came before it. Pass false when the file runs out.
+    void set_external_playback(bool playing);
+
+    // Park the clock at the end of a file: the number left on screen is then its length. New music
+    // starts the clock again, so this does not put the window to sleep.
+    void park_transport();
+
     double frames() const { return frames_; }
     double seconds_elapsed() const;
     PanelKind panel_kind() const { return panel_; }
@@ -76,6 +86,8 @@ class AppWindow {
     NoteTrail trail_;
     double frames_ = 0.0;
     bool was_focused_ = true;
+    // True while the app is playing a file, which is the display's only other source of music.
+    bool external_playback_ = false;
 };
 
 } // namespace boreaz::gui

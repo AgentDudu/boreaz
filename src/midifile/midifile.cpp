@@ -613,21 +613,26 @@ LoadResult load_file(const std::string& path, double sample_rate) {
     return result;
 }
 
-FeedResult feed_and_render(boreaz::engine::Engine& engine, const Song& song, std::size_t cursor,
-                           float* output, int frames) {
-    // Push a little ahead of the block, then render it. The engine applies an event on the sample
-    // it names, so being early costs nothing and being late would move a note.
+FeedResult feed_up_to(boreaz::engine::Engine& engine, const Song& song, std::size_t cursor,
+                      std::int64_t up_to_sample) {
     FeedResult result;
-    const std::int64_t through = engine.sample_position() + frames;
-    while (cursor < song.events.size() && song.events[cursor].tick <= through) {
+    while (cursor < song.events.size() && song.events[cursor].tick <= up_to_sample) {
         // A full ring means an event was lost. Count it and carry on: stopping a four minute
         // render over one note is worse than the note, and reporting it is the caller's job.
         if (!engine.push_event(song.events[cursor]))
             ++result.dropped;
         ++cursor;
     }
-    engine.process(output, frames);
     result.cursor = cursor;
+    return result;
+}
+
+FeedResult feed_and_render(boreaz::engine::Engine& engine, const Song& song, std::size_t cursor,
+                           float* output, int frames) {
+    // Push a little ahead of the block, then render it. The engine applies an event on the sample
+    // it names, so being early costs nothing and being late would move a note.
+    const FeedResult result = feed_up_to(engine, song, cursor, engine.sample_position() + frames);
+    engine.process(output, frames);
     return result;
 }
 

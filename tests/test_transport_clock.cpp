@@ -55,14 +55,28 @@ TEST_CASE("a gap between notes is not a stopped transport") {
 TEST_CASE("a parked transport keeps the time it reached") {
     INFO("At the end of a song the transport parks rather than rewinding or scrolling on: the "
          "number left on screen is the song's length, which is a fact, and the playhead sits at the "
-         "end of the strip, which is where the music stopped.");
+         "end of the strip, which is where the music stopped. It stays parked while the room is "
+         "quiet - a device running is not music - and starts again on music, because a player who "
+         "sits down after the file wants their own playing measured and not the last song's length.");
     TransportClock clock;
     clock.update(0.0, true);
     clock.update(74.0, true);
     clock.halt();
-    clock.update(90.0, true); // the device is still running; the transport is not
-    CHECK(clock.running());   // still showing a position, just not a moving one
+    clock.update(90.0, false); // the device is still running; nothing is playing
+    CHECK(clock.running());    // still showing a position, just not a moving one
     CHECK(clock.seconds() == doctest::Approx(74.0));
+
+    SUBCASE("and a new note starts a new clock") {
+        clock.update(91.0, true);
+        CHECK(clock.seconds() == doctest::Approx(0.0)); // the new song's zero is now, not 74 ago
+        clock.update(95.5, true);
+        CHECK(clock.seconds() == doctest::Approx(4.5));
+    }
+
+    SUBCASE("and the player can rub the number out") {
+        clock.reset(90.0);
+        CHECK(clock.seconds() == doctest::Approx(0.0));
+    }
 }
 
 TEST_CASE("a reopened device does not run the transport backwards") {

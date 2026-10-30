@@ -96,6 +96,15 @@ struct FeedResult {
     std::size_t dropped = 0;
 };
 
+// Push every event at or before `up_to_sample`, starting at `cursor`. This is the feed half of
+// `feed_and_render` on its own, for a caller whose audio is already running: a live device renders
+// on its own thread, so the caller decides how far ahead of `Engine::sample_position` to be instead
+// of rendering a block to find out. Being early costs nothing - the engine applies an event on the
+// sample it names - and being late moves a note, which is why a caller feeds further ahead than its
+// own loop interval.
+FeedResult feed_up_to(boreaz::engine::Engine& engine, const Song& song, std::size_t cursor,
+                      std::int64_t up_to_sample);
+
 // Render `frames` of interleaved stereo while feeding `song` into `engine`.
 //
 // The feed is incremental because a real file holds far more events than the engine's ring

@@ -22,11 +22,14 @@ renders to a `.wav` without any device at all:
 ./build/boreaz --list-midi                      # this machine's MIDI inputs
 ./build/boreaz-render tests/fixtures/midifile/pad-chords.mid build/pad.wav
 ./build/boreaz-render --golden tests/fixtures/midifile/sweep-88.mid
+./build/boreaz tests/fixtures/midifile/pad-chords.mid          # play a file, exit when it ends
+./build/boreaz --gui tests/fixtures/midifile/pad-chords.mid    # the same file, in the window
 ```
 
-The file reader is a library (`boreaz-midifile`), so the in-app transport plays the same bytes
-through the same merge and the same parser in phase 10. No sampled piano yet (phase 6), and the
-window does not load a `.mid` file yet either — playing a file is the in-app sequencer's job.
+The file reader is a library (`boreaz-midifile`), so the offline render, this app and the tests play
+the same bytes through the same parser. A file plays once through and does nothing else: there is no
+seeking, no loop and no open dialog, which are the controls the sequencer (phase 10) is going to
+bring. No sampled piano yet (phase 6).
 `PLAN.md` is the contract for what is being built and in which order; phases 0-12 are listed
 there with exit criteria.
 

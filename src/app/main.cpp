@@ -17,6 +17,7 @@
 #include "boreaz/gui/app_window.h"
 #include "boreaz/io/audio_device.h"
 #include "boreaz/io/midi_input.h"
+#include "boreaz/midifile/midifile.h"
 
 namespace {
 
@@ -31,7 +32,7 @@ void usage() {
     std::cout << R"(boreaz - a polyphonic subtractive software synthesizer
 
   boreaz [--gui] [--device NAME] [--period 512] [--midi NAME] [--config params.ini]
-             [--params other.ini] [--list-devices] [--list-midi] [--help]
+             [--params other.ini] [song.mid] [--list-devices] [--list-midi] [--help]
 
   --gui            open the window: 88 playable keys and a readout of what the audio
                    thread is doing. Without it the app runs headless until Ctrl+C,
@@ -46,8 +47,11 @@ void usage() {
                    silent defaults are indistinguishable from working ones.
   --params FILE    a second file applied on top of --config, for a saved patch.
 
-  Nothing here loads a .mid file. Playing a file is the in-app sequencer's job, which is
-  phase 10; boreaz-render renders one to a WAV today and shares this app's synthesis.)"
+  song.mid         a Standard MIDI file, played once through: in the window with --gui,
+                   in the console without it, where the program exits when the file has
+                   finished. Name it last. Format 0 or 1 with ticks per quarter note; a
+                   file the reader does not understand is refused with a message rather
+                   than played wrong. boreaz-render renders the same files to a WAV.)"
            << std::endl;
 }
 
@@ -61,6 +65,9 @@ struct Options {
     bool gui = false;
     bool list_devices = false;
     bool list_midi = false;
+    // A file to play once through. Empty, which is how the program has always started, means no
+    // file: a blank instrument waiting for a keyboard.
+    std::string song;
 };
 
 bool parse(int argc, char** argv, Options& options, std::string& error) {
@@ -74,7 +81,11 @@ bool parse(int argc, char** argv, Options& options, std::string& error) {
             into = argv[++index];
             return true;
         };
-        if (argument == "--help" || argument == "-h") {
+        if (argument == "--") {
+            // "boreaz -- song.mid" reads the way people type it. A bare path works too, so this is
+            // a separator that means nothing else.
+            continue;
+        } else if (argument == "--help" || argument == "-h") {
             usage();
             std::exit(0);
         } else if (argument == "--gui") {
@@ -106,6 +117,12 @@ bool parse(int argc, char** argv, Options& options, std::string& error) {
                 error = "--period must be between 16 and 8192 frames";
                 return false;
             }
+        } else if (!argument.empty() && argument[0] != '-') {
+            if (!options.song.empty()) {
+                error = "one file at a time, not two (try --help)";
+                return false;
+            }
+            options.song = argument;
         } else {
             error = "unknown argument: " + argument + " (try --help)";
             return false;
@@ -171,6 +188,31 @@ int main(int argc, char** argv) {
         // a program that refused to start would be less useful than one that says so.
         std::cerr << "boreaz: MIDI in: " << error << "\n";
     }
+    // A file to play. Read after the device opens, because the sample rate is what turns its ticks
+    // into samples, and before it starts, because a file that cannot be parsed should stop the app
+    // rather than sit in silence looking like it was trying.
+    boreaz::midifile::Song song;
+    bool playing = false;
+    std::size_t song_cursor = 0;
+    std::size_t song_dropped = 0;
+    if (!options.song.empty()) {
+        boreaz::midifile::LoadResult loaded =
+            boreaz::midifile::load_file(options.song, device.sample_rate());
+        if (!loaded.ok) {
+            std::cerr << "boreaz: " << loaded.error << "\n";
+            midi.close();
+            device.close();
+            return 1;
+        }
+        for (const std::string& warning : loaded.warnings)
+            std::cerr << "boreaz: " << options.song << ": " << warning << "\n";
+        song = std::move(loaded.song);
+        playing = true;
+        std::cout << "boreaz: \"" << options.song << "\": " << song.events.size() << " events, "
+                  << static_cast<double>(song.end_sample) / device.sample_rate() << " seconds."
+                  << std::endl;
+    }
+
     if (!device.start(error)) {
         std::cerr << "boreaz: " << error << "\n";
         device.close();
@@ -216,12 +258,44 @@ int main(int argc, char** argv) {
             window.reset();
         }
     }
+    if (window != nullptr && playing)
+        window->set_external_playback(true);
+
+    // Events are queued a little ahead of the audio thread, because the engine applies an event on
+    // the sample it names: early costs nothing and late moves a note. Half a second covers this
+    // loop's own sleep, a window frame, and a driver that stalls a callback now and then, while
+    // staying far below the 4096 slots the engine's event ring holds.
+    const std::int64_t lookahead = static_cast<std::int64_t>(device.sample_rate() * 0.5);
 
     // Unplug detection is polled, because winmm does not report it. Once every quarter second,
     // not once per frame: enumeration is a driver call per port, and 60 of those a second buys
     // nothing a player would notice.
     double last_poll = 0.0;
     while (true) {
+        if (playing) {
+            const boreaz::midifile::FeedResult fed = boreaz::midifile::feed_up_to(
+                engine, song, song_cursor, engine.sample_position() + lookahead);
+            song_cursor = fed.cursor;
+            song_dropped += fed.dropped;
+            if (song_cursor >= song.events.size() &&
+                engine.sample_position() >= song.end_sample) {
+                // The last event is in and its tail has rung out. In a window a file is one song
+                // among many, so park the clock on its length and stay open; with no window the
+                // file was the whole session, so stop.
+                playing = false;
+                if (window) {
+                    window->set_external_playback(false);
+                    window->park_transport();
+                }
+                std::cout << "boreaz: \"" << options.song << "\" finished"
+                          << (song_dropped == 0u
+                                  ? ""
+                                  : " - " + std::to_string(song_dropped) + " events dropped")
+                          << "." << std::endl;
+                if (window == nullptr)
+                    break;
+            }
+        }
         const bool running = window ? window->frame(engine, stats) : !stopping.load();
         if (!running || stopping.load())
             break;
