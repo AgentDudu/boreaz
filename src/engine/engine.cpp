@@ -179,6 +179,7 @@ void Engine::note_on(const Event& event, const Params& params) {
     request.key = event.note;
     request.note = note_for_key(event.note, params);
     request.velocity = static_cast<float>(event.velocity) * (1.0f / 127.0f);
+    request.bend_semitones = bend_[event.channel % kMidiChannels];
     request.frequency =
         tuning_.frequency(request.note) * bend_factor(bend_[event.channel % kMidiChannels]);
     allocator_.allocate(request, params, sample_rate_, position_);

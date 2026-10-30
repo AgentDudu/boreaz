@@ -168,7 +168,8 @@ boreaz_set_warnings(boreaz_config)
 # headless.
 add_library(
   boreaz_engine
-  STATIC src/engine/voice.cpp src/engine/voice_allocator.cpp src/engine/engine.cpp
+  STATIC src/engine/synth_voice.cpp src/engine/sampled_voice.cpp src/engine/voice_allocator.cpp
+         src/engine/engine.cpp
          src/engine/message.cpp)
 target_include_directories(boreaz_engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(boreaz_engine PUBLIC boreaz_dsp)
@@ -211,6 +212,22 @@ endif()
 # links the engine and stops there. The parser is ours rather than a dependency: PLAN.md §2 named
 # `midicpp`, which turned out to be a SourceForge-era library with no licence text and no header
 # only build, and the subset we accept is six message kinds - see the header.
+# The SFZ reader: text parsing only - no audio, no engine, no decoder. A leaf for the same reason
+# the .mid reader is one: it is unit-testable on a machine with no sound card and no samples, and
+# `mkinst` grows onto it later without anything else having to change.
+add_library(boreaz_sfz STATIC src/sfz/sfz.cpp)
+target_include_directories(boreaz_sfz PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_compile_features(boreaz_sfz PUBLIC cxx_std_20)
+boreaz_set_warnings(boreaz_sfz)
+
+# The sample library: WAV decode plus the resident instrument. It depends on the SFZ reader and on
+# nothing else, so the audio core keeps not knowing that file formats exist.
+add_library(boreaz_samples STATIC src/samples/sample_store.cpp)
+target_link_libraries(boreaz_samples PUBLIC boreaz_sfz)
+target_include_directories(boreaz_samples PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_compile_features(boreaz_samples PUBLIC cxx_std_20)
+boreaz_set_warnings(boreaz_samples)
+
 add_library(boreaz_midifile STATIC src/midifile/midifile.cpp)
 target_include_directories(boreaz_midifile PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(boreaz_midifile PUBLIC boreaz_engine)
@@ -250,7 +267,7 @@ if(WIN32)
   add_executable(boreaz src/app/main.cpp)
   target_include_directories(boreaz PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
   target_link_libraries(boreaz PRIVATE boreaz_gui boreaz_io boreaz_config boreaz_engine boreaz_dsp
-                      boreaz_midifile)
+                      boreaz_midifile boreaz_samples boreaz_sfz)
   boreaz_set_warnings(boreaz)
   boreaz_link_runtime_staticly(boreaz)
 else()
@@ -267,9 +284,20 @@ endif()
 # CI is the same synthesis the user hears.
 add_executable(boreaz-render src/tools/render/main.cpp)
 target_include_directories(boreaz-render PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(boreaz-render PRIVATE boreaz_midifile boreaz_config boreaz_engine boreaz_dsp)
+target_link_libraries(boreaz-render PRIVATE boreaz_midifile boreaz_config boreaz_engine boreaz_dsp
+                      boreaz_samples boreaz_sfz)
 boreaz_set_warnings(boreaz-render)
 boreaz_link_runtime_staticly(boreaz-render)
+
+# What a mapping means, printed without playing it: regions, the opcodes the reader did not honour,
+# and what the library costs in RAM. It links the reader and the loader and nothing else - not the
+# engine, not a driver - so it runs on a machine with no audio and no display, which is where a
+# downloaded instrument usually gets judged.
+add_executable(boreaz-sfz-probe src/tools/sfz_probe_main.cpp)
+target_include_directories(boreaz-sfz-probe PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(boreaz-sfz-probe PRIVATE boreaz_samples boreaz_sfz)
+boreaz_set_warnings(boreaz-sfz-probe)
+boreaz_link_runtime_staticly(boreaz-sfz-probe)
 
 # ---------------------------------------------------------------- tests
 if(BOREAZ_BUILD_TESTS)
@@ -286,7 +314,10 @@ if(BOREAZ_BUILD_TESTS)
     tests/test_svf.cpp
     tests/test_envelope.cpp
     tests/test_gain.cpp
-    tests/test_voice.cpp
+    tests/test_synth_voice.cpp
+    tests/test_sfz.cpp
+    tests/test_sample_store.cpp
+    tests/test_sampled_voice.cpp
     tests/test_voice_allocator.cpp
     tests/test_param_bus.cpp
     tests/test_message.cpp
@@ -313,7 +344,7 @@ if(BOREAZ_BUILD_TESTS)
   target_link_libraries(
     boreaz_tests
     PRIVATE doctest::doctest boreaz_io boreaz_midifile boreaz_config boreaz_engine
-            boreaz_dsp)
+            boreaz_dsp boreaz_sfz boreaz_samples)
   if(WIN32)
     target_link_libraries(boreaz_tests PRIVATE boreaz_gui)
   endif()

@@ -19,6 +19,7 @@
 #include "boreaz/config/params_file.h"
 #include "boreaz/engine/engine.h"
 #include "boreaz/midifile/midifile.h"
+#include "boreaz/samples/sample_store.h"
 
 namespace {
 
@@ -40,6 +41,10 @@ struct Options {
     std::string input;
     std::string output;
     std::string params_path; // optional
+    // Render the sample library instead of the synthesiser, so the thing a listening test hears is
+    // the thing the app would play. No file, no download, no driver: the mapping and its WAVs are
+    // enough, which is why the sampled path can be checked with a rendered file.
+    std::string sfz;
     double rate = kDefaultRate;
     bool golden = false; // print a golden line instead of writing a file
 };
@@ -65,6 +70,8 @@ void usage() {
         "              amp_decay_s, amp_sustain, amp_release_s, pan_spread,\n"
         "              bend_range_semitones, transpose_semitones, octave_shift\n"
         "  --rate N    output sample rate in Hz (default 44100)\n"
+        "  --sfz FILE  play an SFZ sample library instead of the synthesiser, so a\n"
+        "              rendered WAV is the audio the app would have made\n"
         "\n"
         "Exit status: 0 ok, 2 bad usage, 3 input unreadable, 4 output unwritable.\n");
 }
@@ -85,6 +92,14 @@ bool parse_arguments(int argc, char** argv, Options& options, std::string& error
                 return false;
             }
             options.rate = rate;
+            continue;
+        }
+        if (argument == "--sfz") {
+            if (i + 1 >= argc) {
+                error = "--sfz needs a value";
+                return false;
+            }
+            options.sfz = argv[++i];
             continue;
         }
         if (argument == "-h" || argument == "--help") {
@@ -248,7 +263,18 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Before the engine, and alive longer than it: a voice holds a pointer into the store for as
+    // long as it is sounding.
+    boreaz::samples::SampleStore store;
     Engine engine(params);
+    if (!options.sfz.empty()) {
+        const boreaz::samples::LoadResult sampled = store.load_mapping(options.sfz);
+        if (!sampled.ok) {
+            std::fprintf(stderr, "boreaz-render: %s\n", sampled.error.c_str());
+            return kInputFailed;
+        }
+        engine.set_instrument(&store);
+    }
     engine.prepare(options.rate);
 
     std::vector<float> block(static_cast<std::size_t>(kBlock) * 2u, 0.0f);
