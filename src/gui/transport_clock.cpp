@@ -5,6 +5,14 @@
 namespace boreaz::gui {
 
 void TransportClock::update(double position_seconds, bool input_present) {
+    if (halted_ && input_present) {
+        // Music again after a park - a new file, or the player sitting down when the last one ended.
+        // The parked number was that song's length, which is the one thing nobody wants to read
+        // while playing, and the new song's zero is now.
+        halted_ = false;
+        started_at_ = position_seconds;
+        seconds_ = 0.0;
+    }
     if (!running_) {
         if (!input_present)
             return; // silence has no position, so there is nothing for a transport to be doing

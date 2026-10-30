@@ -12,9 +12,10 @@ namespace boreaz::gui {
 class TransportClock {
   public:
     // `position_seconds` is where the audio thread says it is. `input_present` means something is
-    // asking for music: a song is loaded, or a note is sounding right now. It only ever opens the
-    // transport and never closes it - a rolled chord has gaps in it, and a transport that stopped
-    // between two notes of a slur would be worse than one that runs.
+    // asking for music: a song is loaded, or a note is sounding right now. It opens the transport,
+    // and it opens it again after a park, because music coming back is a new song and nobody wants
+    // to play over the length of the last one. It never closes it - a rolled chord has gaps in it,
+    // and a transport that stopped between two notes of a slur would be worse than one that runs.
     void update(double position_seconds, bool input_present);
 
     // Park: stop advancing, keep reading. The end of a song does this, and the number left on

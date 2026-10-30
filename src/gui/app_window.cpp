@@ -271,6 +271,10 @@ void AppWindow::close() {
     impl_.reset();
 }
 
+void AppWindow::set_external_playback(bool playing) { external_playback_ = playing; }
+
+void AppWindow::park_transport() { transport_.halt(); }
+
 void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
     const ImVec2 display = ImGui::GetIO().DisplaySize;
     ImGui::SetNextWindowPos(ImVec2{0.0f, 0.0f});
@@ -287,10 +291,11 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
     view.frames = frames_;
     view.seconds = seconds_elapsed();
 
-    // The transport starts on music and not on the driver: a song loaded, or a note sounding
-    // right now. Nothing loads a song until the scheduler exists, so until then a window that
-    // has been open for ten minutes reads zero, which is the truth about the music.
-    transport_.update(view.position_seconds(), view.active_voices > 0);
+    // The transport starts on music and not on the driver: a file the app is playing, or a note
+    // sounding right now. A file counts on its own because its first events are often controller
+    // messages with no voice in them, and a clock opened at the first note would be behind by
+    // whatever came before it.
+    transport_.update(view.position_seconds(), view.active_voices > 0 || external_playback_);
     view.transport_running = transport_.running();
     view.transport_seconds = transport_.seconds();
 
