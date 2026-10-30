@@ -209,7 +209,7 @@ void transport(const FrameView& view) {
 
         if (!rolling) {
             // Why nothing is moving, in the one place the eye goes looking for motion.
-            const char* waiting = "no song  Â·  play a key to start the clock";
+            const char* waiting = "no song  ·  play a key to start the clock";
             const float size = ImGui::GetFontSize();
             const float width = ImGui::GetFont()->CalcTextSizeA(size, FLT_MAX, 0.0f, waiting).x;
             draw->AddText(ImGui::GetFont(), size,
