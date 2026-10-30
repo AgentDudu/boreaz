@@ -18,6 +18,7 @@
 #include "boreaz/io/audio_device.h"
 #include "boreaz/io/midi_input.h"
 #include "boreaz/midifile/midifile.h"
+#include "boreaz/samples/sample_store.h"
 
 namespace {
 
@@ -32,7 +33,8 @@ void usage() {
     std::cout << R"(boreaz - a polyphonic subtractive software synthesizer
 
   boreaz [--gui] [--device NAME] [--period 512] [--midi NAME] [--config params.ini]
-             [--params other.ini] [song.mid] [--list-devices] [--list-midi] [--help]
+             [--params other.ini] [--sfz instrument.sfz] [song.mid] [--list-devices]
+             [--list-midi] [--help]
 
   --gui            open the window: 88 playable keys and a readout of what the audio
                    thread is doing. Without it the app runs headless until Ctrl+C,
@@ -46,6 +48,11 @@ void usage() {
                    or an unknown key is an error and the app refuses to start, because
                    silent defaults are indistinguishable from working ones.
   --params FILE    a second file applied on top of --config, for a saved patch.
+  --sfz FILE       play a sample library instead of the synthesiser: an SFZ 2.0 mapping,
+                   with its WAVs next to it. Keys the library did not record play the
+                   nearest recording it has, shifted, which is what a piano with 28
+                   samples for 88 keys sounds like. A mapping that cannot be read stops
+                   the app with a message naming the file. See boreaz-sfz-probe.
 
   song.mid         a Standard MIDI file, played once through: in the window with --gui,
                    in the console without it, where the program exits when the file has
@@ -68,6 +75,9 @@ struct Options {
     // A file to play once through. Empty, which is how the program has always started, means no
     // file: a blank instrument waiting for a keyboard.
     std::string song;
+    // A sample library to play instead of the synthesiser. Empty keeps the oscillators, which is
+    // still the default instrument and the only one that needs nothing downloaded.
+    std::string sfz;
 };
 
 bool parse(int argc, char** argv, Options& options, std::string& error) {
@@ -105,6 +115,9 @@ bool parse(int argc, char** argv, Options& options, std::string& error) {
                 return false;
         } else if (argument == "--params") {
             if (!next(options.params))
+                return false;
+        } else if (argument == "--sfz") {
+            if (!next(options.sfz))
                 return false;
         } else if (argument == "--period") {
             std::string value;
@@ -156,7 +169,28 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // A sample library is declared before the engine and loaded before the device opens: a voice
+    // keeps a pointer into the instrument for as long as it is sounding, so the store has to
+    // outlive the engine, and adopting an instrument rebuilds the voice pool, which is not a thing
+    // to do underneath a running audio thread. Everything about the library is decided here, at
+    // load, because the audio thread never opens a file (PLAN.md 2).
+    boreaz::samples::SampleStore store;
     boreaz::engine::Engine engine(params);
+    if (!options.sfz.empty()) {
+        const boreaz::samples::LoadResult loaded = store.load_mapping(options.sfz);
+        if (!loaded.ok) {
+            std::cerr << "boreaz: " << loaded.error << "\n";
+            return 1;
+        }
+        engine.set_instrument(&store);
+        // What it loaded, what it cost, and what it refused: a library that arrived as 40 of its 88
+        // keys is not the library the player downloaded, and silence does not say so.
+        std::cout << "samples: " << loaded.regions << " regions from " << loaded.files
+                  << " files, " << loaded.bytes / (1024u * 1024u) << " MB resident";
+        if (loaded.refused != 0)
+            std::cout << ", " << loaded.refused << " regions refused";
+        std::cout << "\n";
+    }
     boreaz::io::AudioDevice device(engine);
     boreaz::io::MidiInput midi;
 

@@ -1,4 +1,4 @@
-#include "boreaz/engine/voice.h"
+#include "boreaz/engine/synth_voice.h"
 
 #include <algorithm>
 #include <cmath>
@@ -11,7 +11,6 @@ constexpr float kMinFrequencyHz = 1.0f;
 // Above Nyquist at any rate we support. The SVF clamps its own cutoff, so this is only there to
 // keep a wild transpose from asking an oscillator for a nonsense increment.
 constexpr float kMaxFrequencyHz = 20000.0f;
-constexpr float kQuarterPi = 0.78539816339744831f;
 
 // Cutoff for a note. keytrack 1 means the cutoff follows the note, which is what a piano does
 // (the bass is dark, the treble is not); keytrack 0 means every note gets the cutoff middle C
@@ -24,12 +23,6 @@ float cutoff_for(int note, float note_frequency, const Params& params) {
     return std::isfinite(cutoff) ? std::max(cutoff, kMinFrequencyHz) : kMinFrequencyHz;
 }
 
-// Velocity to peak gain. A straight map makes pp almost inaudible beside ff; loudness is felt
-// roughly as velocity^1.5, which is what this is.
-float velocity_gain(float velocity) {
-    return velocity * (0.25f + 0.75f * velocity);
-}
-
 void apply_envelope_times(boreaz::dsp::Adsr& amp, const Params& params) {
     amp.set_times(
         std::max(static_cast<double>(params.amp_attack_s), static_cast<double>(kMinSeconds)),
@@ -40,7 +33,7 @@ void apply_envelope_times(boreaz::dsp::Adsr& amp, const Params& params) {
 
 } // namespace
 
-void Voice::start(const NoteRequest& request, const Params& params, double sample_rate,
+void SynthVoice::start(const NoteRequest& request, const Params& params, double sample_rate,
                   std::int64_t start_tick) {
     sample_rate_ = sample_rate > 0.0 ? static_cast<float>(sample_rate) : 44100.0f;
 
@@ -79,14 +72,10 @@ void Voice::start(const NoteRequest& request, const Params& params, double sampl
     noise_step_ = 1.0f / (std::max(params.noise_decay_s, kMinSeconds) * sample_rate_);
     noise_phase_ = 1.0f;
 
-    const float pan = std::clamp(
-        (static_cast<float>(key_) - 60.0f) * (1.0f / 48.0f) * params.pan_spread, -1.0f, 1.0f);
-    const float angle = (pan + 1.0f) * kQuarterPi;
-    pan_left_ = std::cos(angle);
-    pan_right_ = std::sin(angle);
+    key_pan(key_, params.pan_spread, pan_left_, pan_right_);
 }
 
-void Voice::release(const Params& params, std::int64_t tick) {
+void SynthVoice::release(const Params& params, std::int64_t tick) {
     if (!active() || state_ == State::kReleased)
         return;
     state_ = State::kReleased;
@@ -96,14 +85,14 @@ void Voice::release(const Params& params, std::int64_t tick) {
     amp_.gate_off();
 }
 
-void Voice::silence(std::int64_t tick) {
+void SynthVoice::silence(std::int64_t tick) {
     if (state_ != State::kDown)
         return;
     state_ = State::kHeldByPedal;
     release_tick_ = tick;
 }
 
-void Voice::refresh(const Params& params, bool force) {
+void SynthVoice::refresh(const Params& params, bool force) {
     if (!active())
         return;
     if (!force && params == applied_)
@@ -114,14 +103,10 @@ void Voice::refresh(const Params& params, bool force) {
     apply_envelope_times(amp_, params);
     noise_step_ = 1.0f / (std::max(params.noise_decay_s, kMinSeconds) * sample_rate_);
 
-    const float pan = std::clamp(
-        (static_cast<float>(key_) - 60.0f) * (1.0f / 48.0f) * params.pan_spread, -1.0f, 1.0f);
-    const float angle = (pan + 1.0f) * kQuarterPi;
-    pan_left_ = std::cos(angle);
-    pan_right_ = std::sin(angle);
+    key_pan(key_, params.pan_spread, pan_left_, pan_right_);
 }
 
-void Voice::set_frequency(float hertz, const Params& params) {
+void SynthVoice::set_frequency(float hertz, const Params& params) {
     if (!std::isfinite(hertz))
         return;
     frequency_ = std::clamp(hertz, kMinFrequencyHz, kMaxFrequencyHz);
@@ -132,7 +117,7 @@ void Voice::set_frequency(float hertz, const Params& params) {
     filter_.prepare(sample_rate_, cutoff_for(note_, frequency_, params), params.filter_resonance);
 }
 
-void Voice::render(float* left, float* right, int frames) {
+void SynthVoice::render(float* left, float* right, int frames) {
     if (!active())
         return;
 

@@ -4,12 +4,12 @@
 
 #include <doctest/doctest.h>
 
-#include "boreaz/engine/voice.h"
+#include "boreaz/engine/synth_voice.h"
 #include "boreaz/engine/voice_allocator.h"
 
 using boreaz::engine::NoteRequest;
 using boreaz::engine::Params;
-using boreaz::engine::Voice;
+using boreaz::engine::SynthVoice;
 using boreaz::engine::VoiceAllocator;
 
 namespace {
@@ -28,7 +28,7 @@ NoteRequest request(int note, float velocity = 0.8f, int channel = 0) {
 }
 
 // Renders and returns the peak, so a test can say "this made sound" without a buffer of its own.
-float render(Voice& voice, int frames) {
+float render(SynthVoice& voice, int frames) {
     std::vector<float> left(static_cast<std::size_t>(frames), 0.0f);
     std::vector<float> right(static_cast<std::size_t>(frames), 0.0f);
     voice.render(left.data(), right.data(), frames);
@@ -40,7 +40,7 @@ float render(Voice& voice, int frames) {
     return peak;
 }
 
-std::vector<float> render_stereo(Voice& voice, int frames) {
+std::vector<float> render_stereo(SynthVoice& voice, int frames) {
     std::vector<float> left(static_cast<std::size_t>(frames), 0.0f);
     std::vector<float> right(static_cast<std::size_t>(frames), 0.0f);
     voice.render(left.data(), right.data(), frames);
@@ -51,7 +51,7 @@ std::vector<float> render_stereo(Voice& voice, int frames) {
 } // namespace
 
 TEST_CASE("a started voice makes sound and stays inside full scale") {
-    Voice voice;
+    SynthVoice voice;
     Params params;
     voice.start(request(60), params, kRate, 0);
     CHECK(voice.active());
@@ -63,7 +63,7 @@ TEST_CASE("a started voice makes sound and stays inside full scale") {
 }
 
 TEST_CASE("release hands the voice back to the pool when the envelope ends") {
-    Voice voice;
+    SynthVoice voice;
     Params params;
     params.amp_release_s = 0.05f;
     voice.start(request(60), params, kRate, 0);
@@ -81,7 +81,7 @@ TEST_CASE("release hands the voice back to the pool when the envelope ends") {
 }
 
 TEST_CASE("note off during the attack still releases instead of sticking") {
-    Voice voice;
+    SynthVoice voice;
     Params params;
     params.amp_attack_s = 0.2f;
     params.amp_release_s = 0.02f;
@@ -93,7 +93,7 @@ TEST_CASE("note off during the attack still releases instead of sticking") {
 }
 
 TEST_CASE("the sustain pedal keeps a note after its key goes up, then lets it go") {
-    Voice voice;
+    SynthVoice voice;
     Params params;
     params.amp_release_s = 0.05f;
     params.amp_sustain = 0.5f;
@@ -114,9 +114,9 @@ TEST_CASE("the sustain pedal keeps a note after its key goes up, then lets it go
 
 TEST_CASE("the same note renders the same bytes twice, noise transient included") {
     Params params;
-    Voice a;
+    SynthVoice a;
     a.start(request(48, 1.0f), params, kRate, 12345);
-    Voice b;
+    SynthVoice b;
     b.start(request(48, 1.0f), params, kRate, 12345);
     // Includes the hammer noise, whose generator must be seeded from the note and its tick and
     // never from a clock, or byte-identical renders are impossible.
@@ -124,7 +124,7 @@ TEST_CASE("the same note renders the same bytes twice, noise transient included"
 }
 
 TEST_CASE("a parameter change retunes a decaying note without striking it again") {
-    Voice voice;
+    SynthVoice voice;
     Params params;
     params.amp_attack_s = 0.001f;
     params.amp_decay_s = 0.05f;
@@ -146,7 +146,7 @@ TEST_CASE("a parameter change retunes a decaying note without striking it again"
 }
 
 TEST_CASE("wild parameters cannot make a voice non-finite") {
-    Voice voice;
+    SynthVoice voice;
     Params params;
     params.sanitize();
     params.filter_cutoff_ratio = 1.0e30f;
@@ -167,7 +167,7 @@ TEST_CASE("wild parameters cannot make a voice non-finite") {
 }
 
 TEST_CASE("a voice re-pitched by bend keeps its phases and its sanity") {
-    Voice voice;
+    SynthVoice voice;
     Params params;
     voice.start(request(60), params, kRate, 0);
     const float original = voice.frequency();
@@ -181,9 +181,9 @@ TEST_CASE("a voice re-pitched by bend keeps its phases and its sanity") {
 
 TEST_CASE("pan spread puts the bass on the left and the treble on the right") {
     Params params;
-    Voice bass;
+    SynthVoice bass;
     bass.start(request(21), params, kRate, 0);
-    Voice treble;
+    SynthVoice treble;
     treble.start(request(108), params, kRate, 0);
 
     std::vector<float> bl(2205, 0.0f);
@@ -201,7 +201,7 @@ TEST_CASE("pan spread puts the bass on the left and the treble on the right") {
 }
 
 TEST_CASE("zero frames render nothing and change nothing") {
-    Voice voice;
+    SynthVoice voice;
     Params params;
     voice.start(request(60), params, kRate, 0);
     std::vector<float> left(4, 0.25f);

@@ -6,6 +6,7 @@
 #include "boreaz/dsp/gain.h"
 #include "boreaz/dsp/tuning.h"
 #include "boreaz/engine/event.h"
+#include "boreaz/engine/instrument.h"
 #include "boreaz/engine/param_bus.h"
 #include "boreaz/engine/params.h"
 #include "boreaz/engine/voice_allocator.h"
@@ -68,6 +69,15 @@ class Engine {
     float bend_semitones(std::uint8_t channel) const { return bend_[channel % kMidiChannels]; }
     const VoiceAllocator& voices() const { return allocator_; }
     const boreaz::dsp::Tuning& tuning() const { return tuning_; }
+
+    // What plays: a sample library, or nothing, which is the synth. Setup path only - it rebuilds
+    // the voice pool, and a pool rebuilt while notes are sounding drops them.
+    //
+    // The instrument must outlive the engine: after the first block, a voice holds a pointer into
+    // it, and there is no way to take that pointer back.
+    void set_instrument(const boreaz::engine::Instrument* instrument) {
+        allocator_.reallocate(allocator_.pool_size(), instrument);
+    }
 
     // Test seam: a smaller pool makes the stealing rules testable without 40 held notes. Never
     // from the audio path, and never while notes are sounding.

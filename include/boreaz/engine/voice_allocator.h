@@ -1,8 +1,10 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
+#include "boreaz/engine/instrument.h"
 #include "boreaz/engine/note.h"
 #include "boreaz/engine/params.h"
 #include "boreaz/engine/voice.h"
@@ -19,7 +21,9 @@ class VoiceAllocator {
     // The 16-voice pool from the plan.
     static constexpr int kDefaultPoolSize = 16;
 
-    explicit VoiceAllocator(int pool_size = kDefaultPoolSize) { reallocate(pool_size); }
+    // An instrument makes the pool out of sampled voices; no instrument makes it out of the synth.
+    // One kind per pool, chosen before the audio thread starts - see `reallocate`.
+    explicit VoiceAllocator(int pool_size = kDefaultPoolSize, const Instrument* instrument = nullptr);
 
     // Start a note, taking a free voice or stealing one. Returns the voice index.
     int allocate(const NoteRequest& request, const Params& params, double sample_rate,
@@ -42,17 +46,18 @@ class VoiceAllocator {
     void render(float* left, float* right, int frames);
 
     // Only for resizing the pool in a test, and only before anything sounds: it drops the voices
-    // that no longer fit.
-    void reallocate(int pool_size) {
-        voices_ = std::vector<Voice>(static_cast<std::size_t>(pool_size < 1 ? 1 : pool_size));
-    }
+    // that no longer fit. The instrument is passed again because it decides what kind of voice a
+    // pool is made of, and a pool does not change species halfway through a performance.
+    // Passing no instrument keeps the pool's existing kind rather than defaulting it back to the
+    // synth, which is what makes `reallocate(4)` in a test resize a sampled pool.
+    void reallocate(int pool_size, const Instrument* instrument = nullptr);
 
     int pool_size() const { return static_cast<int>(voices_.size()); }
     int active_count() const;
     int steal_count() const { return steal_count_; }
     // Only the engine writes here; the const view is what telemetry and tests read.
-    const Voice& voice(int index) const { return voices_[static_cast<std::size_t>(index)]; }
-    Voice& voice(int index) { return voices_[static_cast<std::size_t>(index)]; }
+    const Voice& voice(int index) const { return *voices_[static_cast<std::size_t>(index)]; }
+    Voice& voice(int index) { return *voices_[static_cast<std::size_t>(index)]; }
 
   private:
     // Stealing order: an already-released voice, then one the pedal is holding, then a held key,
@@ -65,7 +70,10 @@ class VoiceAllocator {
         return 2;
     }
 
-    std::vector<Voice> voices_;
+    // Owned by the pool and fixed at construction: a voice holds no heap of its own, but the pool
+    // has to hold two different kinds behind one interface, and it may not slice either of them.
+    std::vector<std::unique_ptr<Voice>> voices_;
+    const Instrument* instrument_ = nullptr;
     int steal_count_ = 0;
 };
 

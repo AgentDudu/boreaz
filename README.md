@@ -9,7 +9,8 @@ MIDI file to WAV from the command line.
 
 ## Status
 
-Phases 0-5 of 12. **There is sound, and there is a window.** A 16 voice synth engine plays the
+Phases 0-5 of 12, plus the sampled-instrument machinery out of phase 6. **There is sound, and there
+is a window.** A 16 voice synth engine plays the
 full A0–C8 compass through a real WASAPI output and takes a MIDI keyboard; `--gui` opens 88
 playable keys under a transport strip that sits still until you play and then rolls; and a `.mid` file
 renders to a `.wav` without any device at all:
@@ -24,12 +25,26 @@ renders to a `.wav` without any device at all:
 ./build/boreaz-render --golden tests/fixtures/midifile/sweep-88.mid
 ./build/boreaz tests/fixtures/midifile/pad-chords.mid          # play a file, exit when it ends
 ./build/boreaz --gui tests/fixtures/midifile/pad-chords.mid    # the same file, in the window
+./build/boreaz --sfz C:/pianos/upright/sf2/bundexpat.sfz       # play a sample library instead
+./build/boreaz-render --sfz C:/pianos/upright/sf2/bundexpat.sfz \
+    tests/fixtures/midifile/pad-chords.mid build/pad.wav       # the same, as a file
+./build/boreaz-sfz-probe C:/pianos/upright/sf2/bundexpat.sfz   # what the mapping actually says
 ```
 
 The file reader is a library (`boreaz-midifile`), so the offline render, this app and the tests play
 the same bytes through the same parser. A file plays once through and does nothing else: there is no
 seeking, no loop and no open dialog, which are the controls the sequencer (phase 10) is going to
-bring. No sampled piano yet (phase 6).
+bring.
+
+The sampled instrument is the other half of the same sentence: **the mechanism is in and the
+recording is not.** Give it an SFZ mapping and PCM WAVs — plain SFZ spellings, both opcode names for
+everything, `<control>`/`<group>` defaults inherited — and 88 keys play recordings instead of
+oscillators: resident before the device opens, one read-head per voice with cubic pitch shifting,
+loops, the mapping's own gain and velocity depth, and no file, wave or window include anywhere in the
+audio thread. A key the library never recorded replays the nearest recording shifted, and says which.
+What is missing is the instrument: the CC0 upright is fetched and wired in `feature/instrument-asset`,
+and until then `--sfz` has nothing of ours to point at.
+
 `PLAN.md` is the contract for what is being built and in which order; phases 0-12 are listed
 there with exit criteria.
 
