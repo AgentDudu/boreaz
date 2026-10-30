@@ -30,6 +30,12 @@ namespace {
 constexpr double kWindowSeconds = 8.0;
 constexpr int kSecondsPerRulerLine = 1;
 
+// The clock, drawn twice the size of anything else in the window because it is the number read from
+// across the room. The strip starts below it and not behind it: a playhead and a ruler line running
+// through the digits the player is trying to read makes neither of them readable.
+constexpr float kClockHeight = 26.0f;
+constexpr float kClockGap = 6.0f;
+
 // The two meters at the foot of the strip: audio CPU and how hard the master is leaning on the soft
 // clipper. Bars with no labels and no numbers, because a meter that needs a number under it is a
 // table, and this is the part of the window a player glances at while both hands are busy.
@@ -93,16 +99,17 @@ void transport(const FrameView& view) {
         clock_text(elapsed, sizeof(elapsed), view.transport_seconds);
         // Drawn rather than printed: it is the one number the player reads from across the room, and
         // a draw-list call with an explicit font size stays that size at any content scale.
-        const float clock_height = 26.0f;
         const float width = ImGui::CalcTextSize(elapsed).x;
-        draw->AddText(ImGui::GetFont(), clock_height,
+        draw->AddText(ImGui::GetFont(), kClockHeight,
                       ImVec2(origin.x + area.x - width, origin.y),
                       ImGui::GetColorU32(ImVec4(0.95f, 0.96f, 0.95f, 1.0f)), elapsed);
     }
 
-    // The strip fills what it was given: everything under the status line except the two meters at
-    // its foot. A transport with a margin of unused window around it is a decoration.
-    const float lane_top = origin.y + row + 4.0f;
+    // The strip fills what it was given: everything under the header - the status line and the
+    // clock, whichever of the two reaches lower - except the two meters at its foot. A transport
+    // with a margin of unused window around it is a decoration.
+    const float clock_floor = rolling ? kClockHeight + kClockGap : 0.0f;
+    const float lane_top = origin.y + std::max(row, clock_floor) + 4.0f;
     const float lane_bottom =
         std::max(lane_top, origin.y + area.y - (kMeterHeight * 2.0f + kMeterGap));
     const float lane_width = area.x;

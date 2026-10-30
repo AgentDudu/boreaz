@@ -374,6 +374,17 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
             // knows, and the engine already knows how to hold a note through a pedal-down release.
             engine.push_event(boreaz::engine::Event::control(
                 tick, options_.channel, 64, stroke.action == GLFW_RELEASE ? 0 : 127));
+            continue;
+        }
+        if (stroke.key == GLFW_KEY_BACKSPACE && stroke.action == GLFW_PRESS) {
+            // Backspace sets the clock back to zero - time a scale run, read it, reset, run it
+            // again. The window takes the key because the window owns the clock and a panel is a
+            // view with no way to command anything, and it is not a letter because every letter on
+            // this keyboard is a note: `r` is F#, so a letter shortcut would start a sound as well
+            // as a stopwatch. This drops the bars already on the strip and starts the window again
+            // at the playhead, which is what "from here" means. The shortcut goes away when the
+            // transport gains real controls.
+            transport_.reset(view.position_seconds());
         }
     }
 

@@ -21,6 +21,12 @@ class TransportClock {
     // screen is then the song's length, which is a fact worth keeping on the screen.
     void halt();
 
+    // Back to zero. `position_seconds` is the audio position this frame, because zero is a
+    // difference against it: taking it from anywhere else makes the next frame read either a
+    // negative number or the device's uptime. Clearing a park is deliberate - asking for zero after
+    // a song ended means "from here", not "keep showing a frozen zero".
+    void reset(double position_seconds);
+
     bool running() const { return running_; }
 
     // Zero before the transport runs, and seconds since it started afterwards. Panels draw from

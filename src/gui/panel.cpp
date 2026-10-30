@@ -21,7 +21,7 @@ constexpr PanelEntry kTable[] = {
      "Transport",
      "Where the song is: a strip that sits still until a note or a song starts it and then rolls, "
      "the playhead at the right, two meters at its foot. A view, not a remote - seeking needs the "
-     "scheduler, which is a later phase.",
+     "scheduler, which is a later phase. Backspace sets the clock back to zero.",
      &viz::transport},
 };
 

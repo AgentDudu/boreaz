@@ -23,4 +23,13 @@ void TransportClock::update(double position_seconds, bool input_present) {
 
 void TransportClock::halt() { halted_ = true; }
 
+void TransportClock::reset(double position_seconds) {
+    started_at_ = position_seconds;
+    seconds_ = 0.0;
+    halted_ = false;
+    // `running_` is left as it was: a clock that was hidden because nothing had been played yet
+    // stays hidden, and setting it here would print 0:00.000 in an empty window, which is the
+    // promise this class exists to avoid.
+}
+
 } // namespace boreaz::gui

@@ -81,4 +81,42 @@ TEST_CASE("a reopened device does not run the transport backwards") {
     CHECK(clock.seconds() == doctest::Approx(2.0));
 }
 
+TEST_CASE("resetting the clock counts from the frame that asked") {
+    INFO("A transport you cannot set back to zero is a stopwatch with extra steps: time a scale "
+         "run, read the number, reset, run it again. The new zero comes from the audio position of "
+         "the frame that asked, so the frame after it reads one frame later and not the driver's "
+         "uptime.");
+    TransportClock clock;
+    clock.update(100.0, true);
+    clock.update(130.0, true);
+    CHECK(clock.seconds() == doctest::Approx(30.0));
+
+    clock.reset(130.0);
+    CHECK(clock.seconds() == doctest::Approx(0.0));
+    clock.update(131.5, true);
+    CHECK(clock.seconds() == doctest::Approx(1.5));
+}
+
+TEST_CASE("a reset un-parks the clock and does not switch it on") {
+    INFO("Two edges. A song that ended left the clock parked, and asking for zero then means "
+         "\"from here\", so it moves again. A clock that never started - nothing played yet - stays "
+         "hidden: resetting it must not print 0:00.000 in a window that has made no sound, which is "
+         "the promise this class exists to keep.");
+    TransportClock parked;
+    parked.update(10.0, true);
+    parked.update(20.0, true);
+    parked.halt();
+    parked.reset(20.0);
+    parked.update(23.0, true);
+    CHECK(parked.seconds() == doctest::Approx(3.0));
+
+    TransportClock idle;
+    idle.reset(500.0);
+    CHECK_FALSE(idle.running());
+    CHECK(idle.seconds() == doctest::Approx(0.0));
+    idle.update(501.0, false);
+    CHECK_FALSE(idle.running());
+    CHECK(idle.seconds() == doctest::Approx(0.0));
+}
+
 } // TEST_SUITE
