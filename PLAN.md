@@ -13,7 +13,9 @@ attached, and shows a window with knobs. Real-time, low latency, CPU-cheap.
 Settled while planning: **16 voices**, latency "feels instant" (~8–12 ms on WASAPI
 shared, we print the real number), **mono voices into a stereo FX bus**, **no zones**,
 `.mid` **playback is a feature**, GUI is **keyboard along the bottom (all 88 keys, always
-full width) → switchable visualiser panel → slim transport strip that never disappears**.
+full width) → switchable visualiser panel → slim transport strip that never disappears**,
+and **three views in that panel: transport, note waterfall, and a log spectrum of the master
+output**.
 Licence: **PolyForm Noncommercial 1.0.0** (decided, see §7). **Boreaz is also a sample player
 for a real recorded grand piano** — that decision and its consequences are in §1 "The piano
 (sampled)".
@@ -81,6 +83,13 @@ Three bands, top to bottom. Only the middle one switches.
 
 - Lanes in the panel sit **1:1 above the keys**, which is the only reason the keyboard is
   never windowed.
+- The spectrum uses that same geometry sideways: its band edges come from `KeyboardLayout`, so a
+  band sits above the key that plays it. One coordinate system above the keys, not two that
+  disagree.
+- A spectrum band is a frequency range, **not a pitch**. The semitones at the bottom of the compass
+  are 1.6 Hz apart at A0, which is closer than any window a display can afford to wait for, so the
+  lowest octave and a half read as a rising shape rather than as separate notes. The tooltip says
+  what a band is instead of the panel pretending.
 - The transport strip never hides, because the waterfall has no controls in it; play/stop
   must stay reachable while you watch notes.
 - Note: with the chosen source (snapshot + display tap) notes **scroll up from the
@@ -226,11 +235,12 @@ Three data paths, deliberately separate:
 ### Directory layout
 ```
 include/boreaz/        public headers (engine types, Params, Event)
-src/dsp/               osc, filter, adsr, math, waveshaper   (no I/O, no alloc)
+src/dsp/               osc, filter, adsr, math, waveshaper, analyser (window/FFT/log bands)
+                       (no I/O, no alloc)
 src/engine/            Voice, VoiceAllocator, Engine, Params, EventQueue, Tuning (128-entry LUT)
 src/io/                miniaudio device, MIDI input, ring
 src/gui/               ImGui app, widget pages
-src/gui/viz/           panel switcher + one file per visualiser (transport, waterfall)
+src/gui/viz/           panel switcher + one file per visualiser (transport, waterfall, spectrum)
 src/app/               main, CLI flags, wiring
 src/offline/           MIDI-file → WAV renderer (test/tool target)
 src/midifile/          .mid parser static lib (shared by offline + seq)
@@ -267,14 +277,17 @@ pass. Phases never appear in commit messages — branch name + PR carry that.
 | 9 | `feature/presets` | save/load patch files (`key = value`, versioned header), factory patches (one per register: sub/bass/low-mid/upper/brilliance, each written for the A0–C8 compass, plus piano presets at several dynamics), patch browser, config file for audio/MIDI device prefs + last patch + instrument path, autosave on exit | patch round-trips byte-for-byte, including transpose/octave/tuning-ref/voice-kind/instrument; a missing or unreadable instrument **falls back to the synth with a visible warning**, never silence; corrupt/unknown-key file loads with warning and keeps sane defaults instead of dying |
 | 10 | `feature/seq-playback` | in-app `.mid` playback using `boreaz-midifile`: transport (play/stop/pause, position, loop), tempo from the file + user override, sequencer clocked by the **audio thread sample counter** and pushing into the same event ring, keyboard + playhead follow, `--play file.mid` | a `.mid` plays in time with no drift against the audio clock over 3 minutes; stop and panic leave zero stuck notes; seeking/looping retrigger correctly; a file with >16 simultaneous notes plays as specified stealing, no crash; CPU stays inside the phase-8 budget; notes outside A0–C8 flagged `EXT`, not dropped (on the piano these are pitch-shifted edge samples, which must sound wrong enough to be honest) |
 | 11 | `feature/note-waterfall` | **Note waterfall** in the switchable panel: 88 lanes 1:1 with the keyboard, notes leaving the keyboard line and scrolling up, length = held duration, brightness = velocity, colour per MIDI channel, scroll-speed + lane-height controls, toggle kept in the panel switcher. Source is the display tap + voice snapshot — **held and recent notes, no look-ahead**, so nothing falls in from the top | lanes line up with the keys below them to the pixel (geometry assertion test); a 5 ms staccato note still appears (proves the tap, not frame polling); 40 concurrent notes over a glissando file drops zero notes at 60 fps; panel costs < 2 ms/frame and introduces **zero** audio glitches (glitch counter stays 0); switching to transport or back does not stop, reset or retrigger playback |
-| 12 | `feature/polish-release` | error surfacing (no silent `return`s at startup), panic button, latency readout, window icon, single-binary release build, README with build + first-sound steps + how to fetch/subset the instrument, **`NOTICE.txt` and about-box attribution generated from the recipe that built the shipped subset** | a stranger follows README and hears sound on a clean Windows machine from the release zip; the attribution in the zip matches the instrument actually in the zip (CI check, fails the build if not) |
+| 12 | `feature/spectrum-panel` | **Spectrum** in the switchable panel: log-spaced bands, one per key range from `KeyboardLayout` so a band sits over the key that plays it, with a falling peak-hold line over the top. Source is the **master output post-FX** — what the speakers get, reverb and noise included — taken by a new **audio tap**: a fixed SPSC ring the callback memcpy's into and overwrites when nobody drains, so it can never wait. `Analyser` lives in `boreaz_dsp` (Hann window, radix-2 FFT, energy summed into bands, dB, peak decay) so the panel stays one file that includes no FFT, and **the frame loop does the maths while the audio thread does the copy**. **Two window lengths**, because one window cannot do both jobs: 8192 samples (~171 ms, ~5.9 Hz per bin) where the bins have to be narrow, 2048 samples (~43 ms, ~23 Hz, about a semitone at C8) where a transient has to be lit now. Peak-decay rate is the one knob, in the `.ini` | on synthetic buffers, no window and no device: a lone −20 dBFS sine lands in the correct band and within 1 band of it for A0, C2, A2, C4, A4, C6, A6, C8, reading within 1.5 dB; sines a fifth apart (220 + 330 Hz) show two bands with a valley ≥ 6 dB deep; silence reads below −100 dB and DC does not light the lowest band; a 20 ms burst lights the top octave within two frames, which is what the short window is for. Real-time: glitch counter **0** across an 88-key sweep with the panel open; a frame loop that stops draining for 10 000 blocks neither blocks nor grows the ring, and the panel says how much it dropped; the analyser prints its own µs/frame inside the < 2 ms/frame panel budget; switching to transport or back does not stop, reset or retrigger playback (inherited from the waterfall) |
+| 13 | `feature/polish-release` | error surfacing (no silent `return`s at startup), panic button, latency readout, window icon, single-binary release build, README with build + first-sound steps + how to fetch/subset the instrument, **`NOTICE.txt` and about-box attribution generated from the recipe that built the shipped subset** | a stranger follows README and hears sound on a clean Windows machine from the release zip; the attribution in the zip matches the instrument actually in the zip (CI check, fails the build if not) |
 
 Optional, only if asked for: Linux/ALSA + macOS build, virtual MIDI
 port, MIDI clock/sync (MIDI time code / external clock), automation/param OSC, CI release
 artifacts, A/B patch compare, keyboard zones (lower/upper split or layer across the 88
 keys), a modal/inharmonic synth piano (only if sampling is ever abandoned), **waterfall
 look-ahead** (notes falling in from the top, fed by the `.mid` timeline — needs a `VizSource` abstraction and would only
-apply during file playback).
+apply during file playback), **oscilloscope and spectrogram panels** (the other two shapes a spectrum
+view could take, rejected for the shipped one and kept here: a chord is a scribble in the first and
+the second is the waterfall's motion wearing a colour ramp).
 
 ## 5. Git workflow
 
@@ -325,6 +338,9 @@ apply during file playback).
 | A `.mid` with 40 notes down lands on 16 voices and sounds like a stutter | expected, but tuned: verify on a real multi-track file and shorten release-on-steal if needed rather than raising the pool |
 | "Waterfall" is promised but the source is snapshot-only, so nothing falls in from the top and it will not look like Synthesia | **accepted deliberately.** It is a note-history waterfall: works for live playing, costs no new engine path, never misrepresents timing. `VizSource` stays an interface so look-ahead is additive, and the switcher label says what it shows |
 | UI polls at 60 fps, so a 5 ms note between two frames is invisible and the waterfall looks like it drops notes | that is why the display tap (edge ring) exists; the snapshot alone is not enough, and the 5 ms staccato test is the phase exit criterion |
+| One FFT window resolves low notes or fast notes, never both | **two window lengths** (8192 where bins have to be narrow, 2048 where a transient has to be seen now), the crossover measured, and both ends of the compass are exit criteria rather than aspirations |
+| A spectrum band at A0 would have to be 1.6 Hz wide to be a pitch, and no display can wait 600 ms for that resolution | **accepted and stated.** A band is a range with energy summed into it, the tooltip says so, and the bottom octave and a half reads as a rising shape. A spectrum that pretends to name pitches is worse than one that admits it is showing energy |
+| A tap or an FFT in the wrong thread turns a display feature into an audio glitch | the callback only copies into a fixed ring and overwrites when the UI is slow, so it cannot wait; the FFT runs on the UI thread where the worst outcome is a dropped frame; µs/frame is printed and plan §3 already rules that a visualiser costing a glitch is a bug |
 | 88 lanes + 40 quads per frame starves the audio thread of CPU | draw-list batching, no per-frame allocations, fixed < 2 ms/frame budget with a measured report; the glitch counter is the arbiter, not opinion |
 | Naive oscillators sound cheap and alias | phase 8 polyBLEP; keep the naive version behind a clear `shortcut:` comment |
 | CC-BY-3.0 needs attribution **and "indicate changes"** on a subset we modified | `NOTICE.txt` and the about-box credit are **generated** from the pinned `mkinst` recipe; CI fails a release whose instrument has no matching attribution |
@@ -351,6 +367,10 @@ Answered during planning, so nobody re-litigates them in a code review:
 | GUI layout | Keyboard along the bottom (all 88 keys), switchable visualiser panel above it, **slim transport strip always visible** above that. Layout sketch in §1. |
 | Keyboard width | **All 88 keys, always, no windowing/scrolling.** Visualiser lanes are 1:1 with keys. Removes the octave-windowing idea from the GUI phase. |
 | Waterfall source | **Display tap + voice snapshot. No look-ahead**, so notes scroll up out of the keyboard line rather than falling from the top. Look-ahead stays an optional add-on. |
+| Spectrum shape | **Bars with a falling peak-hold line.** Not an oscilloscope (a chord is a scribble) and not a spectrogram (needs a colour ramp and scrolls like the waterfall, so it adds motion rather than pitch information). Both live in the optional list. |
+| Spectrum source | **Master output, post-FX**, taken by an audio tap: the panel shows what comes out of the speakers, so reverb, distortion and the noise between notes are all in the picture. Per-key voice amplitude was rejected — it is a note display wearing a spectrum's clothes, blind to FX and to anything between the notes. |
+| Spectrum axis | **Log, spaced from `KeyboardLayout`**, so bands sit 1:1 over the keys like the waterfall lanes. Linear Hz was rejected: a piano stops at 4.2 kHz, so three quarters of a linear axis is empty, and nothing above C8 is hunted here — the aliasing report is where spurs get chased. |
+| FFT thread | **The frame loop computes, the audio thread only taps.** Two FFTs per frame is a fraction of a millisecond against a period deadline, and a stall on the UI thread costs a frame instead of a click. A dedicated analyser thread is a thread, a lifetime and a shutdown path bought for arithmetic the frame budget already affords. |
 | Sample playback | **In.** The old "no sample playback" non-goal is deleted. Boreaz ships one recorded instrument; it is not a general sampler. |
 | Instrument | **Salamander Grand Piano v3** (CC-BY-3.0), 44.1/16 build, **mono subset ~100 MB, ≥ 4 velocity layers**, loops kept. |
 | Instrument format | **SFZ read at runtime.** No home-grown index, no format converter; `mkinst` only subsets and stamps provenance. |
@@ -375,6 +395,9 @@ Still open, none of them blocking phase 0:
    runs the subsetter after downloading the upstream library. Publishing is friendlier and
    puts the redistribution on us, which CC-BY allows.
 4. **A/B patch compare** — parked in the optional list.
+5. **Where the two analyser windows cross over**, and whether the bottom two octaves are worth
+   showing at all when they resolve to one rising shape. Both are measurements to take while building
+   it, not guesses to make now.
 
 ## 8. Commands (phase 0 onward)
 
