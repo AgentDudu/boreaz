@@ -11,7 +11,7 @@ MIDI file to WAV from the command line.
 
 Phases 0-5 of 12. **There is sound, and there is a window.** A 16 voice synth engine plays the
 full A0–C8 compass through a real WASAPI output and takes a MIDI keyboard; `--gui` opens 88
-playable keys with a readout of what the audio thread is doing above them; and a `.mid` file
+playable keys under a transport strip that sits still until you play and then rolls; and a `.mid` file
 renders to a `.wav` without any device at all:
 
 ```bash

@@ -7,7 +7,9 @@
 #include "boreaz/engine/engine.h"
 #include "boreaz/gui/frame_view.h"
 #include "boreaz/gui/keyboard_view.h"
+#include "boreaz/gui/note_trail.h"
 #include "boreaz/gui/panel.h"
+#include "boreaz/gui/transport_clock.h"
 
 namespace boreaz::gui {
 
@@ -67,6 +69,11 @@ class AppWindow {
     KeyboardView keyboard_;
     KeyboardLayout layout_;
     PanelKind panel_ = PanelKind::kTransport;
+    TransportClock transport_;
+    // The notes the strip scrolls. It lives here and not in a panel because it remembers things
+    // between frames, and a panel that owned that memory would lose the past whenever the player
+    // switched views - and would be a free function with hidden state, which cannot be tested.
+    NoteTrail trail_;
     double frames_ = 0.0;
     bool was_focused_ = true;
 };

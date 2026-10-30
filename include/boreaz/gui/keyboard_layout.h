@@ -120,8 +120,10 @@ class KeyboardLayout {
     }
 
     // How hard the key was struck, from where: the top of the key bed is the far end of a real
-    // key and the loudest place to hit one. Never 0, because MIDI reads note-on at velocity 0 as
-    // a note-off, and a click at the bottom of a key must not be a silent misfire.
+    // key and the loudest place to hit one. The floor is a musical one, not MIDI's - and never 0,
+    // because MIDI reads note-on at velocity 0 as a note-off, which would make a click near the
+    // bottom of the key a silent misfire. A mouse click is a decision to hear a note, not a place
+    // on a key bed, so the softest it can ever answer is a middling strike you can actually hear.
     static int velocity_at(float py, float top, float height) {
         if (height <= 0.0f)
             return 127;
@@ -136,7 +138,7 @@ class KeyboardLayout {
     int velocity_at(float py) const { return velocity_at(py, y_, height_); }
 
   private:
-    static constexpr float kMinVelocity = 1.0f;
+    static constexpr float kMinVelocity = 72.0f;
     // A0 is the 12th natural of the MIDI scale (C0 counts as the first), which is all the offset
     // the two index conversions above need.
     static constexpr int kFirstNatural = 12;

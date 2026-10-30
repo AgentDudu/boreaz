@@ -183,6 +183,51 @@ TEST_CASE("one key with two voices keeps both envelopes apart") {
 
 TEST_SUITE_END();
 
+TEST_CASE("a frame the audio thread built has no transport") {
+    INFO("The transport's position is a song's position, not the uptime of the driver: the audio "
+         "thread counts samples from the moment the device opens, so a panel that reads that number "
+         "shows a stopwatch on an empty screen. The frame carries the transport separately, and a "
+         "frame built straight off a running engine - device open, position advancing, nothing played "
+         "- carries one that has not started.");
+    FrameView empty;
+    empty.device.sample_rate = 48000.0;
+    empty.sample_position = 48000;
+    CHECK(empty.position_seconds() == doctest::Approx(1.0)); // the audio clock is ticking
+    CHECK_FALSE(empty.transport_running);                    // and it is still not a transport
+    CHECK(empty.transport_seconds == 0.0);
+
+    Params params;
+    boreaz::engine::Engine engine(params);
+    engine.prepare(kRate);
+    render(engine, 512);
+    const FrameView from_engine = view_of(engine);
+    CHECK_FALSE(from_engine.transport_running); // the copy that builds a frame invents no song
+    CHECK(from_engine.transport_seconds == 0.0);
+}
+
+TEST_CASE("a sounding voice says how long it has been sounding") {
+    INFO("A transport that trails a note has to know where the note started, and the voice already "
+         "knows: age() is the difference between the position it started on and the position the "
+         "frame was taken at. Carrying that across is what lets a strip draw a note's length instead "
+         "of a light that says only that something is happening. It is samples, because the sample "
+         "rate belongs to a device and a frame can be built without one.");
+    constexpr int kFrames = 4800; // a tenth of a second at the fixture rate
+    Params params;
+    boreaz::engine::Engine engine(params);
+    engine.prepare(kRate);
+    engine.push_event(Event::note_on(0, 0, 60, 100));
+    render(engine, kFrames);
+
+    const FrameView view = view_of(engine);
+    const boreaz::gui::Sounding* note = find(view, 60);
+    REQUIRE(note != nullptr);
+    CHECK(note->age_samples > 0);
+    // The note began on the first block of the render, so it is as old as the render minus at most
+    // the block it began inside. Older than that would put the playhead's bar off the strip.
+    CHECK(note->age_samples <= kFrames);
+    CHECK(note->age_samples >= kFrames - 512);
+}
+
 TEST_SUITE("computer keyboard") {
 
 TEST_CASE("the letter rows play two octaves, and every one of them has a key") {
