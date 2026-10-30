@@ -9,6 +9,7 @@
 #include "boreaz/gui/keyboard_view.h"
 #include "boreaz/gui/note_trail.h"
 #include "boreaz/gui/panel.h"
+#include "boreaz/gui/params_panel.h"
 #include "boreaz/gui/transport_clock.h"
 
 namespace boreaz::gui {
@@ -24,8 +25,8 @@ namespace boreaz::gui {
 class AppWindow {
   public:
     // The surface's state. Public because GLFW calls its callbacks as plain C function pointers,
-    // and the resize callback reaches the swap chain through a pointer we set on the window; keeping
-    // the type private would mean a member function trampoline for no benefit.
+    // and the resize callback reaches the swap chain through a pointer we set on the window;
+    // keeping the type private would mean a member function trampoline for no benefit.
     struct Impl;
 
     // Fills in the device and port numbers the panels show, once per frame, on the UI thread. A
@@ -38,6 +39,10 @@ class AppWindow {
         int height = 720;
         std::string title = "Boreaz";
         std::uint8_t channel = 0; // what the on-screen keys play on
+        // What the mixer's instrument selector does. Left empty, the mixer still mixes and simply
+        // has no library to load - which is the truth on a machine where the app was started
+        // without one, and better than a button that lies.
+        ParamsPanel::Instruments instruments;
     };
 
     AppWindow();
@@ -78,6 +83,7 @@ class AppWindow {
     Options options_;
     KeyboardView keyboard_;
     KeyboardLayout layout_;
+    ParamsPanel mixer_;
     PanelKind panel_ = PanelKind::kTransport;
     TransportClock transport_;
     // The notes the strip scrolls. It lives here and not in a panel because it remembers things

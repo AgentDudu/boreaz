@@ -2,8 +2,9 @@
 // includes any of them, which is the point of AppWindow being a class with a pimpl: the engine, the
 // device, and the ports link and run with no window system present, and so does this file's test
 // coverage of the parts that matter (geometry, frame snapshots, the panel table) without one.
-#define INITGUID 1  // define the COM interface IDs in this translation unit: __uuidof, which the
-                    // DXGI helpers use, is a Microsoft extension and this project builds with GCC
+#define INITGUID                                                                                   \
+    1 // define the COM interface IDs in this translation unit: __uuidof, which the
+      // DXGI helpers use, is a Microsoft extension and this project builds with GCC
 #define WIN32_LEAN_AND_MEAN 1
 #define NOMINMAX 1
 
@@ -114,7 +115,9 @@ void key_typed(GLFWwindow* window, int key, int scancode, int action, int mods) 
 } // namespace
 
 AppWindow::AppWindow() = default;
-AppWindow::~AppWindow() { close(); }
+AppWindow::~AppWindow() {
+    close();
+}
 
 double AppWindow::seconds_elapsed() const {
     if (!impl_)
@@ -131,10 +134,10 @@ bool AppWindow::create_surface(std::string& error) {
     }
     impl_->glfw_started = true;
 
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);  // Direct3D presents to the surface itself
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // Direct3D presents to the surface itself
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-    GLFWwindow* window = glfwCreateWindow(options_.width, options_.height, options_.title.c_str(),
-                                          nullptr, nullptr);
+    GLFWwindow* window =
+        glfwCreateWindow(options_.width, options_.height, options_.title.c_str(), nullptr, nullptr);
     if (window == nullptr) {
         error = "no window. The last GLFW error above says why.";
         return false;
@@ -170,8 +173,8 @@ bool AppWindow::create_surface(std::string& error) {
         ID3D11DeviceContext* context = nullptr;
         IDXGISwapChain* swap_chain = nullptr;
         result = D3D11CreateDeviceAndSwapChain(nullptr, driver, nullptr, 0, nullptr, 0,
-                                              D3D11_SDK_VERSION, &desc, &swap_chain, &device,
-                                              nullptr, &context);
+                                               D3D11_SDK_VERSION, &desc, &swap_chain, &device,
+                                               nullptr, &context);
         if (FAILED(result))
             continue;
         impl_->device = device;
@@ -190,8 +193,7 @@ bool AppWindow::create_surface(std::string& error) {
     }
 
     ID3D11Texture2D* back = nullptr;
-    result = impl_->swap_chain->GetBuffer(0, IID_ID3D11Texture2D,
-                                          reinterpret_cast<void**>(&back));
+    result = impl_->swap_chain->GetBuffer(0, IID_ID3D11Texture2D, reinterpret_cast<void**>(&back));
     if (SUCCEEDED(result)) {
         result = impl_->device->CreateRenderTargetView(back, nullptr, &impl_->target);
         back->Release();
@@ -271,9 +273,13 @@ void AppWindow::close() {
     impl_.reset();
 }
 
-void AppWindow::set_external_playback(bool playing) { external_playback_ = playing; }
+void AppWindow::set_external_playback(bool playing) {
+    external_playback_ = playing;
+}
 
-void AppWindow::park_transport() { transport_.halt(); }
+void AppWindow::park_transport() {
+    transport_.halt();
+}
 
 void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
     const ImVec2 display = ImGui::GetIO().DisplaySize;
@@ -299,9 +305,9 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
     view.transport_running = transport_.running();
     view.transport_seconds = transport_.seconds();
 
-    // What has been played, in the same clock the strip scrolls by. Once per frame, before any panel
-    // draws, and here rather than inside a panel because it is the one part of the display that has
-    // to remember the last frame.
+    // What has been played, in the same clock the strip scrolls by. Once per frame, before any
+    // panel draws, and here rather than inside a panel because it is the one part of the display
+    // that has to remember the last frame.
     trail_.update(view);
 
     // The switcher. Every panel is one button and nothing else in the program knows how many
@@ -317,6 +323,13 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
             ImGui::SetTooltip("%s", table[index].hint);
     }
     ImGui::SameLine();
+    if (ImGui::Button("Mixer"))
+        mixer_.toggle();
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip(
+            "Every parameter the engine has, on sliders. The rows come from the same table the "
+            "parameter file is read from, so nothing here can disagree with config/params.ini.");
+    ImGui::SameLine();
     ImGui::TextUnformatted(impl_->driver.c_str());
 
     // Both halves come from the window, in proportion. The keyboard takes a share of the height
@@ -324,10 +337,9 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
     // middle C into a floor tile; whatever is left belongs to the panel, and the strip fills
     // all of it - the waterfall and the piano roll are going to want exactly this rectangle.
     const float below_switcher = ImGui::GetContentRegionAvail().y;
-    const float keyboard_height = std::clamp(below_switcher * kKeyboardShare, kMinimumKeyboardHeight,
-                                             kMaximumKeyboardHeight);
-    const float panel_height =
-        std::max(0.0f, below_switcher - keyboard_height - kWindowPadding);
+    const float keyboard_height =
+        std::clamp(below_switcher * kKeyboardShare, kMinimumKeyboardHeight, kMaximumKeyboardHeight);
+    const float panel_height = std::max(0.0f, below_switcher - keyboard_height - kWindowPadding);
 
     if (ImGui::BeginChild("panel", ImVec2(0.0f, panel_height), ImGuiChildFlags_None)) {
         panel(panel_).draw(view);
@@ -368,10 +380,11 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
         const int note = note_for_computer_key(stroke.key);
         if (note >= 0) {
             engine.push_event(stroke.action == GLFW_RELEASE
-                                  ? boreaz::engine::Event::note_off(
-                                        tick, options_.channel, static_cast<std::uint8_t>(note))
-                                  : boreaz::engine::Event::note_on(
-                                        tick, options_.channel, static_cast<std::uint8_t>(note), 112));
+                                  ? boreaz::engine::Event::note_off(tick, options_.channel,
+                                                                    static_cast<std::uint8_t>(note))
+                                  : boreaz::engine::Event::note_on(tick, options_.channel,
+                                                                   static_cast<std::uint8_t>(note),
+                                                                   112));
             continue;
         }
         if (key_is_sustain_pedal(stroke.key)) {
@@ -405,6 +418,11 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
     was_focused_ = focused;
 
     ImGui::End();
+
+    // The mixer is a second window, drawn after the main one closes: it floats over the keyboard on
+    // purpose, because it is opened to build a sound and closed to play one, and a strip of sliders
+    // permanently above the keys is the clutter that was already asked for less of.
+    mixer_.draw(engine, view, options_.instruments);
 }
 
 bool AppWindow::frame(boreaz::engine::Engine& engine, const StatsFn& stats) {

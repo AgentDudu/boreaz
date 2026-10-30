@@ -170,6 +170,20 @@ void SampledVoice::set_frequency(float hertz, const Params& params) {
     frequency_ = hertz;
 }
 
+void SampledVoice::retune(int semitones, const Params& params) {
+    if (!active() || semitones == 0)
+        return;
+    // The same recording, played at the new pitch: the head position survives, so the note keeps
+    // ringing through the change instead of restarting. This is what makes a transposed piano sound
+    // like a piano being transposed and not a tape stop.
+    note_ = std::clamp(note_ + semitones, 0, 127);
+    set_frequency(clamp_pitch(frequency_ *
+                                  static_cast<float>(
+                                      std::exp2(static_cast<double>(semitones) / 12.0)),
+                                  sample_rate_),
+                  params);
+}
+
 void SampledVoice::render(float* left, float* right, int frames) {
     if (state_ == State::kIdle || sample_ == nullptr)
         return;

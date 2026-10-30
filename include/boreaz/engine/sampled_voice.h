@@ -39,6 +39,7 @@ class SampledVoice final : public Voice {
     void silence(std::int64_t tick) override;
     void refresh(const Params& params, bool force) override;
     void set_frequency(float hertz, const Params& params) override;
+    void retune(int semitones, const Params& params) override;
     void render(float* left, float* right, int frames) override;
 
     bool active() const override { return state_ != State::kIdle; }

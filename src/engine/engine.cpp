@@ -3,8 +3,15 @@
 #include <algorithm>
 #include <cmath>
 
+#include "boreaz/engine/param_table.h"
+
 namespace boreaz::engine {
 namespace {
+
+// How long a parameter takes to get where it is going. Two to three time constants is ~30 ms, which
+// is below the ear's ability to call it a glide and above what a block boundary can turn into a
+// click.
+constexpr float kParamSlewSeconds = 0.010f;
 
 // dB to linear. One pow per master-gain *change*, never per sample; moving it to the publish
 // path is the fix if a UI ever publishes a new gain every block.
@@ -30,9 +37,10 @@ Engine::Engine(const Params& initial) {
     // hands back defaults, so an engine built from a parameter file would play its first block as
     // configured and every block after that at defaults - which is how boreaz-render produced byte
     // identical audio for master_gain_db = -40 and -12 while reporting both as success.
-    params_.publish(params);
+    set_params(params);
     applied_ = params;
     live_ = params; // until a block is processed, this is what the engine would play
+    applied_shift_ = effective_transpose(params);
     applied_master_gain_db_ = params.master_gain_db;
     // Immediately, not with a ramp: this is the level the engine starts at, and ramping to it from
     // unity is a click at the top of every render and every patch load.
@@ -65,9 +73,26 @@ void Engine::process(float* output, int frames) {
     if (output == nullptr || frames <= 0)
         return;
 
-    // Once per block: take the parameters the UI published last and hand them to the voices.
-    const Params params = params_.latest();
-    live_ = params;
+    // Once per block: take the parameters the UI published last and move toward them. The move is
+    // a ramp, not a jump - zipper smoothing, after the potentiometer that clicks when you turn it
+    // fast. A resonant filter whose cutoff goes 0 to 1 in one sample is a discontinuity, and a
+    // discontinuity is a click you can hear through a whole phrase. 10 ms is the compromise: fast
+    // enough that a key press is still a key press, slow enough that nothing in a 512-frame block
+    // moves far enough to ring.
+    const Params target = params_.latest();
+    const float block_seconds =
+        static_cast<float>(frames) / std::max(sample_rate_, 1.0f); // set once at device open
+    param_slew(live_, target, 1.0f - std::exp(-block_seconds / kParamSlewSeconds));
+
+    const Params params = live_;
+    // A transpose or an octave shift moves the keys under notes that are already sounding, and the
+    // player expects those notes to move with them. Do it before the refresh below so the cutoff a
+    // voice re-prepares is measured from the note it is now playing, not the one it started on.
+    const int shift = effective_transpose(params);
+    if (shift != applied_shift_) {
+        retune_voices(shift - applied_shift_, params);
+        applied_shift_ = shift;
+    }
     if (params != applied_) {
         allocator_.refresh(params, false);
         applied_ = params;
@@ -87,6 +112,14 @@ void Engine::process(float* output, int frames) {
 
     active_voices_.store(allocator_.active_count(), std::memory_order_relaxed);
     steal_count_.store(allocator_.steal_count(), std::memory_order_relaxed);
+}
+
+void Engine::retune_voices(int semitones, const Params& params) {
+    for (int index = 0; index < allocator_.pool_size(); ++index) {
+        Voice& voice = allocator_.voice(index);
+        if (voice.active())
+            voice.retune(semitones, params);
+    }
 }
 
 void Engine::render_chunk(float* output, int frames, const Params& params) {

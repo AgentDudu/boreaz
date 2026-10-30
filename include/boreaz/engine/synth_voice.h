@@ -43,6 +43,10 @@ class SynthVoice final : public Voice {
     // Re-pitch a sounding voice (pitch bend). Phases are kept, so it glides instead of clicking.
     void set_frequency(float hertz, const Params& params) override;
 
+    // Transpose or octave shift moved the keyboard under this note: move the note number, the pitch,
+    // and the cutoff that follows the note. See `Voice::retune`.
+    void retune(int semitones, const Params& params) override;
+
     // Adds into `left`/`right`; the caller owns the buffer and the mix.
     void render(float* left, float* right, int frames) override;
 

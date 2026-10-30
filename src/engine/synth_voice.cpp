@@ -7,10 +7,8 @@ namespace boreaz::engine {
 namespace {
 
 constexpr float kMinSeconds = 1.0e-4f; // shorter than this is a click, and a click is a bug
-constexpr float kMinFrequencyHz = 1.0f;
-// Above Nyquist at any rate we support. The SVF clamps its own cutoff, so this is only there to
-// keep a wild transpose from asking an oscillator for a nonsense increment.
-constexpr float kMaxFrequencyHz = 20000.0f;
+constexpr float kMinFrequencyHz = 1.0f;   // the floor for a cutoff, which may not be zero
+constexpr int kLastMidiNote = 127;        // the tuning table is 128 entries because MIDI is
 
 // Cutoff for a note. keytrack 1 means the cutoff follows the note, which is what a piano does
 // (the bass is dark, the treble is not); keytrack 0 means every note gets the cutoff middle C
@@ -41,9 +39,8 @@ void SynthVoice::start(const NoteRequest& request, const Params& params, double 
     key_ = request.key;
     channel_ = request.channel;
     velocity_ = std::clamp(request.velocity, 0.0f, 1.0f);
-    frequency_ = std::isfinite(request.frequency)
-                     ? std::clamp(request.frequency, kMinFrequencyHz, kMaxFrequencyHz)
-                     : 261.625565f; // middle C, the least surprising default
+    frequency_ = std::isfinite(request.frequency) ? clamp_pitch(request.frequency, sample_rate_)
+                                                  : 261.625565f; // middle C, the least surprising default
     start_tick_ = start_tick;
     release_tick_ = start_tick;
     state_ = State::kDown;
@@ -109,12 +106,26 @@ void SynthVoice::refresh(const Params& params, bool force) {
 void SynthVoice::set_frequency(float hertz, const Params& params) {
     if (!std::isfinite(hertz))
         return;
-    frequency_ = std::clamp(hertz, kMinFrequencyHz, kMaxFrequencyHz);
+    frequency_ = clamp_pitch(hertz, sample_rate_);
     const float detune = std::exp2(params.osc_detune_cents / 1200.0f);
     osc1_.set_frequency(frequency_, sample_rate_);
     osc2_.set_frequency(frequency_ * 2.0f * detune, sample_rate_);
     osc3_.set_frequency(frequency_ / detune, sample_rate_);
     filter_.prepare(sample_rate_, cutoff_for(note_, frequency_, params), params.filter_resonance);
+}
+
+void SynthVoice::retune(int semitones, const Params& params) {
+    if (!active() || semitones == 0)
+        return;
+    // The note number moves with the pitch, so everything read from it agrees with what is audible:
+    // the keytracked cutoff, the note the engine reports, and the frequency a pitch bend after this
+    // one is measured from. Clamped to the MIDI range rather than wrapped or refused, because the
+    // engine accepts the whole 0-127 range and the table is built for it.
+    note_ = std::clamp(note_ + semitones, 0, kLastMidiNote);
+    const float ratio = static_cast<float>(std::exp2(static_cast<double>(semitones) / 12.0));
+    // `set_frequency` keeps the phase of all three oscillators and re-prepares the filter without
+    // touching its memory, so the wave has no seam in it: the note changes, the sound does not stop.
+    set_frequency(clamp_pitch(frequency_ * ratio, sample_rate_), params);
 }
 
 void SynthVoice::render(float* left, float* right, int frames) {
