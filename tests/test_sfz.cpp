@@ -64,11 +64,37 @@ TEST_CASE("the declared subset is read, with inheritance from global to group to
     CHECK(loud.lo_velocity == 65); // the second <group> replaced the first
     CHECK(loud.hi_velocity == 127);
     CHECK(loud.offset == doctest::Approx(0.02));
-    CHECK(loud.group == 2); // and did not reset what it did not mention
+    CHECK(loud.gain_db == doctest::Approx(-3.0f)); // what <global> said survives the new group
+    CHECK(loud.group == 0); // what only the first group said does not: see the reset test below
 
     // The span the store clamps out-of-instrument keys to.
     CHECK(instrument.low_key == 48);
     CHECK(instrument.high_key == 60);
+}
+
+TEST_CASE("a group starts again from <global>, not from the group above it") {
+    // The CC0 upright is four groups: two of them say `hivel=80` and two say `lovel=81`, and none
+    // of them repeats the other's end of the band. A parser that let group one's `hivel` fall
+    // through read that as lovel 81 above hivel 80, refused the region, and this whole piano was
+    // unparsable - so this is the shape that found the rule rather than one that illustrates it.
+    const LoadResult result = parsed(R"(
+<global> volume=-3
+<group> hivel=80
+<region> sample=a-lo.wav key=21
+<group> lovel=81
+<region> sample=a-hi.wav key=21
+)");
+    REQUIRE(result.ok);
+    REQUIRE(result.instrument.region_count() == 2);
+
+    const Region& soft = result.instrument.regions[0];
+    const Region& loud = result.instrument.regions[1];
+    CHECK(soft.lo_velocity == 0);
+    CHECK(soft.hi_velocity == 80);
+    CHECK(loud.lo_velocity == 81);
+    CHECK(loud.hi_velocity == 127); // the bug: 80 inherited from the group above
+    CHECK(soft.gain_db == doctest::Approx(-3.0f));
+    CHECK(loud.gain_db == doctest::Approx(-3.0f)); // <global> is in both
 }
 
 TEST_CASE("comments go, including one with an equals sign in it") {

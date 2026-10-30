@@ -1,6 +1,7 @@
 #include "boreaz/samples/sample_store.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <chrono>
 #include <cmath>
@@ -307,9 +308,25 @@ LoadResult SampleStore::load(const boreaz::sfz::Instrument& mapping, const std::
         return result;
     };
 
-    // How many regions asked for a velocity layer. Counted, and warned about once, because a
-    // 66-region instrument with four layers per key should produce one line and not sixty-six.
-    std::size_t layered = 0;
+    // Which velocities each key has a recording for: two words per key, 128 keys, 2 KB on a load
+    // path that already holds 100 MB of audio. It buys one true sentence about velocity layers -
+    // whether the layers cover the keyboard or leave velocities nothing was recorded for - which a
+    // count of regions cannot tell, because a 66 region two layer instrument that covers everything
+    // and a one layer instrument with a band on it are not the same problem.
+    struct Coverage {
+        std::uint64_t low = 0;  // velocities 0-63
+        std::uint64_t high = 0; // velocities 64-127
+        void set(int from, int to) {
+            for (int velocity = from; velocity <= to; ++velocity)
+                if (velocity < 64)
+                    low |= std::uint64_t{1} << velocity;
+                else
+                    high |= std::uint64_t{1} << (velocity - 64);
+        }
+        bool whole_range() const { return low == ~std::uint64_t{0} && high == ~std::uint64_t{0}; }
+        bool empty() const { return (low | high) == 0; }
+    };
+    std::array<Coverage, 128> covered;
     for (const boreaz::sfz::Region& region : mapping_.regions) {
         if (region.release_trigger) {
             // A release sample is not a place to start a note, and there is no second pool for it
@@ -407,21 +424,24 @@ LoadResult SampleStore::load(const boreaz::sfz::Instrument& mapping, const std::
         entry.hi_key = region.hi_key;
         entry.lo_velocity = region.lo_velocity;
         entry.hi_velocity = region.hi_velocity;
-        if (region.lo_velocity > 0 || region.hi_velocity < 127)
-            ++layered;
+        for (int key = std::max(region.lo_key, 0); key <= std::min(region.hi_key, 127); ++key)
+            covered[static_cast<std::size_t>(key)].set(region.lo_velocity, region.hi_velocity);
         entries_.push_back(std::move(entry));
         ++result.regions;
     }
 
-    if (layered != 0) {
-        // The recordings are all loaded; what is missing is the choice. Saying so is the whole
-        // point - a four-layer grand that arrives as one layer played at whatever velocity happened
-        // to be last in the file sounds like a bad sample library, and the player has no way of
-        // knowing it is a missing feature.
+    std::size_t gapped = 0;
+    for (const Coverage& key : covered)
+        if (!key.empty() && !key.whole_range())
+            ++gapped;
+    if (gapped != 0) {
+        // The recordings are all loaded; what is missing is a choice, and a velocity no layer covers
+        // plays whichever recording the mapping's own precedence put last. That is a missing feature
+        // that would otherwise arrive as a bad piano.
         result.warnings.push_back(
-            std::to_string(layered) +
-            " regions ask for a velocity layer; layers are not picked yet, so every velocity plays "
-            "the same recording (whichever the mapping's own precedence put last)");
+            std::to_string(gapped) +
+            " keys have a velocity layer that does not cover the whole range; a velocity outside it "
+            "plays whichever recording the mapping put last");
     }
 
     if (entries_.empty())

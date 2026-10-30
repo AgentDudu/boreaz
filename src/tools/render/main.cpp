@@ -44,7 +44,7 @@ struct Options {
     // Render the sample library instead of the synthesiser, so the thing a listening test hears is
     // the thing the app would play. No file, no download, no driver: the mapping and its WAVs are
     // enough, which is why the sampled path can be checked with a rendered file.
-    std::string sfz;
+    std::string instrument;
     double rate = kDefaultRate;
     bool golden = false; // print a golden line instead of writing a file
 };
@@ -70,7 +70,7 @@ void usage() {
         "              amp_decay_s, amp_sustain, amp_release_s, pan_spread,\n"
         "              bend_range_semitones, transpose_semitones, octave_shift\n"
         "  --rate N    output sample rate in Hz (default 44100)\n"
-        "  --sfz FILE  play an SFZ sample library instead of the synthesiser, so a\n"
+        "  --instrument FILE  play a recorded instrument instead of the synthesiser, so a\n"
         "              rendered WAV is the audio the app would have made\n"
         "\n"
         "Exit status: 0 ok, 2 bad usage, 3 input unreadable, 4 output unwritable.\n");
@@ -94,12 +94,12 @@ bool parse_arguments(int argc, char** argv, Options& options, std::string& error
             options.rate = rate;
             continue;
         }
-        if (argument == "--sfz") {
+        if (argument == "--instrument") {
             if (i + 1 >= argc) {
-                error = "--sfz needs a value";
+                error = "--instrument needs a value";
                 return false;
             }
-            options.sfz = argv[++i];
+            options.instrument = argv[++i];
             continue;
         }
         if (argument == "-h" || argument == "--help") {
@@ -267,8 +267,8 @@ int main(int argc, char** argv) {
     // long as it is sounding.
     boreaz::samples::SampleStore store;
     Engine engine(params);
-    if (!options.sfz.empty()) {
-        const boreaz::samples::LoadResult sampled = store.load_mapping(options.sfz);
+    if (!options.instrument.empty()) {
+        const boreaz::samples::LoadResult sampled = store.load_mapping(options.instrument);
         if (!sampled.ok) {
             std::fprintf(stderr, "boreaz-render: %s\n", sampled.error.c_str());
             return kInputFailed;

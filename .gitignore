@@ -29,3 +29,6 @@ Thumbs.db
 
 # machine-local config and secrets
 .env
+
+# Fetched, decoded instruments: large, hash-pinned elsewhere, never committed (tools/mkinstrument.py).
+third_party/
