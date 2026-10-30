@@ -22,4 +22,9 @@ bool load_params_file(const std::string& path, boreaz::engine::Params& params, s
 // back unchanged, which is the name the load error will print.
 std::string defaults_path();
 
+// Every key the engine has, in the engine's own order, as one comma separated line. The message
+// that refuses an unknown key promises the player a list, and this is the list - from the table, so
+// it is never a turn behind the parameters that actually exist.
+std::string known_keys();
+
 } // namespace boreaz::config

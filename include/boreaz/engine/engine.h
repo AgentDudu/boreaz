@@ -39,7 +39,17 @@ class Engine {
     void prepare(double sample_rate);
 
     // Producer side.
-    void set_params(const Params& params) { params_.publish(params); }
+    void set_params(const Params& params) {
+        params_.publish(params);
+        // The reference pitch is the one parameter that cannot ride the per-block ramp, because it
+        // is not a number the audio path multiplies - it is a 128-entry lookup table built with
+        // `pow`, and `pow` does not belong in a callback. Rebuilding it here happens on the thread
+        // that owns the change, at most once per knob move. Held notes keep the pitch they started
+        // with, which is what a piano being tuned between movements does too; `transpose` is the
+        // control that retunes what is already sounding.
+        if (params.tuning_reference_hz != tuning_.reference_hz())
+            tuning_ = boreaz::dsp::Tuning(params.tuning_reference_hz);
+    }
     bool push_event(const Event& event) { return queue_.push(event); }
 
     // Consumer side: one block of interleaved stereo, guaranteed inside +/-1.0.
@@ -79,6 +89,12 @@ class Engine {
         allocator_.reallocate(allocator_.pool_size(), instrument);
     }
 
+    // What the engine has been told to play: the published set, not the block currently being
+    // heard. A mixer asks this question, because the block being heard is on its way to the
+    // published one, and a slider that displayed the number it was ramping from would fight the
+    // mouse. Takes the bus's lock, so it belongs on the UI thread and not in a callback.
+    Params params() { return params_.latest(); }
+
     // Test seam: a smaller pool makes the stealing rules testable without 40 held notes. Never
     // from the audio path, and never while notes are sounding.
     void set_pool_size_for_test(int pool_size);
@@ -98,10 +114,15 @@ class Engine {
     void pitch_bend(const Event& event, const Params& params);
     void render_chunk(float* output, int frames, const Params& params);
 
+    // Move every sounding note by the change in transpose/octave. One call per keystroke, not per
+    // block: the voice keeps the phase, so there is nothing to smooth afterwards.
+    void retune_voices(int semitones, const Params& params);
+
     EventQueue queue_;
     ParamBus params_;
     Params live_{}; // the block the audio thread is playing
     Params applied_{};
+    int applied_shift_ = 0; // the transpose+octave the sounding notes were pitched with
     VoiceAllocator allocator_{VoiceAllocator::kDefaultPoolSize};
     boreaz::dsp::Tuning tuning_{};
 

@@ -9,8 +9,8 @@ MIDI file to WAV from the command line.
 
 ## Status
 
-Phases 0-5 of 12, plus the sampled-instrument machinery out of phase 6. **There is sound, and there
-is a window.** A 16 voice synth engine plays the
+Phases 0-5 and 7 of 12, plus the sampled-instrument machinery out of phase 6. **There is sound, and
+there is a window.** A 16 voice synth engine plays the
 full A0–C8 compass through a real WASAPI output and takes a MIDI keyboard; `--gui` opens 88
 playable keys under a transport strip that sits still until you play and then rolls; and a `.mid` file
 renders to a `.wav` without any device at all:
@@ -90,8 +90,28 @@ bad usage, no such audio output, MIDI refused.
 
 ## Configuration
 
-Nothing is hardcoded and nothing is uploaded. Machine-specific values come from the
-environment, optionally backed by a local `.env` file:
+Nothing is hardcoded and nothing is uploaded.
+
+Every parameter the engine has is a line in a file and a slider in the window. `boreaz --gui` puts a
+**Mixer** button next to the view switcher: 18 sliders, generated from the same table the file reader
+uses, so the panel and `--config` cannot disagree and a new parameter appears in both by being written
+down once. Sliders move the sound over about ten milliseconds rather than snapping to it, which is
+what lets a cutoff be thrown open mid-phrase without a click, and a transpose retunes the notes that
+are already held instead of only the next one. The instrument selector waits for the notes to stop
+before it swaps a sample library in, because swapping rebuilds the voice pool.
+
+```bash
+cp config/params.example.ini mine.ini   # every key, its range, and the default it starts on
+./build/boreaz --config mine.ini        # the defaults the app starts on
+./build/boreaz --params solo.ini        # ... or one patch layered on top of them
+./build/boreaz --help                   # the list of keys, straight from the table
+```
+
+An unknown key, a value that is not a number, and a number outside its range are errors that stop the
+app with the line and the reason: a parameter file that quietly did nothing is indistinguishable from
+one that worked. `config/params.ini` is the shipped preset and is read when `--config` says nothing.
+
+Machine-specific values come from the environment, optionally backed by a local `.env` file:
 
 ```bash
 cp .env.example .env     # .env is git-ignored; every key in the example is empty

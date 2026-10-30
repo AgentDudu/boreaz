@@ -15,6 +15,11 @@ struct Params {
     int transpose_semitones = 0; // clamped to +/-24: beyond that the LUT leaves the keyboard
     int octave_shift = 0;        // clamped to +/-4
 
+    // Concert pitch. The range is the orchestra's, 415-466 Hz, and `dsp::Tuning` refuses anything
+    // outside it rather than building a lookup table of nonsense. Applied when a note starts:
+    // `transpose` is the control that retunes what is already sounding.
+    float tuning_reference_hz = 440.0f;
+
     // Oscillator mix. Osc 1 is the fundamental at unity, the rest are levels relative to it.
     // The default is a piano-ish comb: strong 2nd and 3rd partial, a little saw colour,
     // and a noise transient for the hammer.
@@ -44,50 +49,15 @@ struct Params {
     // Pitch bend reach in semitones at full deflection.
     float bend_range_semitones = 2.0f;
 
-    void clamp_all() {
-        master_gain_db = std::clamp(master_gain_db, -72.0f, 12.0f);
-        transpose_semitones = std::clamp(transpose_semitones, -24, 24);
-        octave_shift = std::clamp(octave_shift, -4, 4);
-        osc2_level = std::clamp(osc2_level, 0.0f, 2.0f);
-        osc3_level = std::clamp(osc3_level, 0.0f, 2.0f);
-        osc_detune_cents = std::clamp(osc_detune_cents, -100.0f, 100.0f);
-        noise_level = std::clamp(noise_level, 0.0f, 1.0f);
-        noise_decay_s = std::clamp(noise_decay_s, 0.001f, 2.0f);
-        filter_cutoff_ratio = std::clamp(filter_cutoff_ratio, 0.05f, 24.0f);
-        filter_resonance = std::clamp(filter_resonance, 0.0f, 1.0f);
-        filter_keytrack = std::clamp(filter_keytrack, 0.0f, 1.0f);
-        amp_attack_s = std::clamp(amp_attack_s, 0.0005f, 10.0f);
-        amp_decay_s = std::clamp(amp_decay_s, 0.001f, 60.0f);
-        amp_sustain = std::clamp(amp_sustain, 0.0f, 1.0f);
-        amp_release_s = std::clamp(amp_release_s, 0.005f, 60.0f);
-        pan_spread = std::clamp(pan_spread, 0.0f, 1.0f);
-        bend_range_semitones = std::clamp(bend_range_semitones, 0.0f, 24.0f);
-    }
+    // Defined in `param_table.cpp`, over the descriptor table: the ranges are in one place, so a
+    // parameter cannot be legal in a config file and out of range in the window. Called on every
+    // path a parameter arrives from - a slider, a preset, a .mid - because none of them is allowed
+    // to make a filter or a gain go non-finite.
+    void clamp_all();
 
-    // Anything non-finite is a bug upstream; a NaN parameter would poison every sample it
-    // touched, so it becomes the default instead.
-    void sanitize() {
-        auto finite = [](float& value, float fallback) {
-            if (!std::isfinite(value))
-                value = fallback;
-        };
-        finite(master_gain_db, -12.0f);
-        finite(osc2_level, 0.35f);
-        finite(osc3_level, 0.12f);
-        finite(osc_detune_cents, 4.0f);
-        finite(noise_level, 0.12f);
-        finite(noise_decay_s, 0.06f);
-        finite(filter_cutoff_ratio, 8.0f);
-        finite(filter_resonance, 0.35f);
-        finite(filter_keytrack, 1.0f);
-        finite(amp_attack_s, 0.004f);
-        finite(amp_decay_s, 2.0f);
-        finite(amp_sustain, 0.18f);
-        finite(amp_release_s, 0.6f);
-        finite(pan_spread, 0.6f);
-        finite(bend_range_semitones, 2.0f);
-        clamp_all();
-    }
+    // Anything non-finite is a bug upstream: a NaN parameter would poison every sample it touched,
+    // so it becomes that row's default instead. Also defined over the table.
+    void sanitize();
 
     // Two blocks are equal when the audio path would behave identically, which is what decides
     // whether a voice has to refresh its filter and envelope. Envelope *times* are excluded:

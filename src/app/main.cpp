@@ -60,8 +60,11 @@ void usage() {
                    in the console without it, where the program exits when the file has
                    finished. Name it last. Format 0 or 1 with ticks per quarter note; a
                    file the reader does not understand is refused with a message rather
-                   than played wrong. boreaz-render renders the same files to a WAV.)"
-           << std::endl;
+                   than played wrong. boreaz-render renders the same files to a WAV.
+)"
+              << "\n  parameters a --config or --params file sets" << std::endl
+              << "  " << boreaz::config::known_keys() << "\n"
+              << "  every one of them is also a slider in the window's Mixer." << std::endl;
 }
 
 struct Options {
@@ -184,10 +187,18 @@ int main(int argc, char** argv) {
     // outlive the engine, and adopting an instrument rebuilds the voice pool, which is not a thing
     // to do underneath a running audio thread. Everything about the library is decided here, at
     // load, because the audio thread never opens a file (PLAN.md 2).
-    boreaz::samples::SampleStore store;
+    //
+    // Two stores because the mixer can ask for another library while this one is playing. Loading
+    // into the live store would be file I/O and a clear() underneath the audio thread; the mixer
+    // fills the idle one and switches to it once the notes have stopped, which is also the first
+    // moment the store it replaces is unreferenced.
+    std::array<std::unique_ptr<boreaz::samples::SampleStore>, 2> stores;
+    stores[0] = std::make_unique<boreaz::samples::SampleStore>();
+    stores[1] = std::make_unique<boreaz::samples::SampleStore>();
+    const boreaz::engine::Instrument* live_instrument = nullptr;
     boreaz::engine::Engine engine(params);
     if (!options.no_instrument && !options.instrument.empty()) {
-        const boreaz::samples::LoadResult loaded = store.load_mapping(options.instrument);
+        const boreaz::samples::LoadResult loaded = stores[0]->load_mapping(options.instrument);
         if (!loaded.ok) {
             // Loud, and then carry on. PLAN.md phase 9: a missing or broken instrument falls back
             // to the synth with a visible warning, never silence. A player who typed the path can
@@ -196,7 +207,8 @@ int main(int argc, char** argv) {
             std::cerr << "boreaz: " << loaded.error << "\n"
                       << "boreaz: no recorded instrument, playing the synthesiser instead\n";
         } else {
-            engine.set_instrument(&store);
+            live_instrument = stores[0].get();
+            engine.set_instrument(live_instrument);
             // What it loaded, what it cost, and what it refused: a library that arrived as 40 of
             // its 88 keys is not the library the player downloaded, and silence does not say so.
             std::cout << "samples: " << loaded.regions << " regions from " << loaded.files
@@ -217,7 +229,8 @@ int main(int argc, char** argv) {
         for (const boreaz::io::AudioDevice::Port& port : device.ports()) {
             std::cout << port.index << ". " << port.name;
             if (port.is_default)
-                std::cout << std::string(width - std::min(width, port.name.size()), ' ') << "[default]";
+                std::cout << std::string(width - std::min(width, port.name.size()), ' ')
+                          << "[default]";
             std::cout << "\n";
         }
         return 0;
@@ -225,7 +238,8 @@ int main(int argc, char** argv) {
     if (options.list_midi) {
         const auto ports = boreaz::io::MidiInput::ports();
         if (ports.empty())
-            std::cout << "no MIDI input ports. A keyboard that appears later is picked up by --midi auto.\n";
+            std::cout << "no MIDI input ports. A keyboard that appears later is picked up by "
+                         "--midi auto.\n";
         for (const boreaz::io::MidiInput::Port& port : ports)
             std::cout << port.index << ". " << port.name << "\n";
         return 0;
@@ -303,10 +317,46 @@ int main(int argc, char** argv) {
     std::unique_ptr<boreaz::gui::AppWindow> window;
     if (options.gui) {
         window = std::make_unique<boreaz::gui::AppWindow>();
-        if (!window->open({}, error)) {
+        // The mixer asks and this loads, because a library is opened with file I/O and the audio
+        // thread never touches a file. The store returned is the one that was not playing; the
+        // window adopts it when the pool goes quiet and tells us here, which is when the store
+        // before it stops being referenced and can be dropped.
+        boreaz::gui::AppWindow::Options window_options;
+        window_options.instruments.load =
+            [&](const std::string& path, std::string& reason) -> const boreaz::engine::Instrument* {
+            if (path.empty()) {
+                reason.clear();
+                return nullptr; // the synthesiser, which is not an error
+            }
+            std::unique_ptr<boreaz::samples::SampleStore>& idle =
+                live_instrument == stores[0].get() ? stores[1] : stores[0];
+            const boreaz::samples::LoadResult loaded = idle->load_mapping(path);
+            if (!loaded.ok) {
+                reason = loaded.error;
+                return nullptr;
+            }
+            if (loaded.regions == 0) {
+                reason = "no samples in \"" + path + "\"";
+                return nullptr;
+            }
+            std::cout << "samples: " << loaded.regions << " regions, "
+                      << loaded.bytes / (1024u * 1024u) << " MB, " << loaded.load_ms
+                      << " ms to load - switching when the notes stop.\n";
+            return idle.get();
+        };
+        window_options.instruments.applied = [&](const boreaz::engine::Instrument* instrument) {
+            if (live_instrument != nullptr && live_instrument != instrument) {
+                for (std::unique_ptr<boreaz::samples::SampleStore>& store : stores)
+                    if (store != nullptr && store.get() == live_instrument)
+                        store = std::make_unique<boreaz::samples::SampleStore>();
+            }
+            live_instrument = instrument;
+        };
+        if (!window->open(window_options, error)) {
             // The window is the app, but not being able to draw is not a reason to stop a device
             // that is already making sound: say which one failed and carry on without it.
-            std::cerr << "boreaz: no window: " << error << "\n  continuing without one; Ctrl+C stops.\n";
+            std::cerr << "boreaz: no window: " << error
+                      << "\n  continuing without one; Ctrl+C stops.\n";
             window.reset();
         }
     }
@@ -329,8 +379,7 @@ int main(int argc, char** argv) {
                 engine, song, song_cursor, engine.sample_position() + lookahead);
             song_cursor = fed.cursor;
             song_dropped += fed.dropped;
-            if (song_cursor >= song.events.size() &&
-                engine.sample_position() >= song.end_sample) {
+            if (song_cursor >= song.events.size() && engine.sample_position() >= song.end_sample) {
                 // The last event is in and its tail has rung out. In a window a file is one song
                 // among many, so park the clock on its length and stay open; with no window the
                 // file was the whole session, so stop.
@@ -351,12 +400,12 @@ int main(int argc, char** argv) {
         const bool running = window ? window->frame(engine, stats) : !stopping.load();
         if (!running || stopping.load())
             break;
-        const double now = window ? window->seconds_elapsed()
-                                  : static_cast<double>(
-                                        std::chrono::duration_cast<std::chrono::milliseconds>(
-                                            std::chrono::steady_clock::now().time_since_epoch())
-                                            .count()) /
-                                        1000.0;
+        const double now =
+            window ? window->seconds_elapsed()
+                   : static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                             std::chrono::steady_clock::now().time_since_epoch())
+                                             .count()) /
+                         1000.0;
         if (now - last_poll < 0.25) {
             if (window == nullptr)
                 std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -371,9 +420,9 @@ int main(int argc, char** argv) {
     // device keeps, and this is the line a claim about glitches is argued from.
     std::cout << "boreaz: " << device.callbacks() << " callbacks, " << device.late_callbacks()
               << " late, " << device.restarts() << " restarts, " << engine.dropped_events()
-              << " dropped, " << engine.steal_count()
-              << " steals, position " << engine.sample_position() << " samples, "
-              << (window ? window->frames() : 0.0) << " frames." << std::endl;
+              << " dropped, " << engine.steal_count() << " steals, position "
+              << engine.sample_position() << " samples, " << (window ? window->frames() : 0.0)
+              << " frames." << std::endl;
     device.stop();
     midi.close();
     device.close();

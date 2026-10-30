@@ -27,4 +27,17 @@ inline float velocity_gain(float velocity) {
     return v * (0.25f + 0.75f * v);
 }
 
+// The range a voice may be pitched into, whatever the transpose asked for. The floor is 1 Hz rather
+// than 0 because an oscillator increment of zero is a DC step and a sampler's interpolation divides
+// by the step. The ceiling is just under Nyquist *at the rate running*, so `transpose = +24` on a C8
+// lands inside what the sample rate can hold instead of wrapping round to a subharmonic.
+//
+// Both voices ask, because a transpose that leaves the range in one voice and stays inside it in the
+// other is a keyboard that changes tuning when you load an instrument.
+inline float clamp_pitch(float hertz, float sample_rate_hz) {
+    constexpr float kFloorHz = 1.0f;
+    const float ceiling = std::min(20000.0f, 0.49f * sample_rate_hz);
+    return std::clamp(hertz, kFloorHz, ceiling);
+}
+
 } // namespace boreaz::engine

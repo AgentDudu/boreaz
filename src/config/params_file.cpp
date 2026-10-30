@@ -1,6 +1,10 @@
 #include "boreaz/config/params_file.h"
 
+#include "boreaz/engine/param_table.h"
+
+#include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -21,38 +25,14 @@ using boreaz::engine::Params;
 // `key = value`, one per line, `#` starts a comment. Deliberately the same shape as the patch files
 // the preset phase will ship: a render parameter file and a preset are the same thing with a
 // different extension. Moved out of the render tool when the app started wanting the same thing -
-// two copies of this table is the failure mode the plan warns about.
+// two copies of this table is the failure mode the plan warns about, and the names, ranges and
+// defaults now come from `engine::param_table` for the third time: the window draws the same rows.
 bool load_params_file(const std::string& path, Params& params, std::string& error) {
     std::ifstream file(path);
     if (!file) {
         error = "cannot open the parameter file '" + path + "'";
         return false;
     }
-
-    struct Field {
-        const char* name;
-        float Params::*real;
-        int Params::*integer;
-    };
-    static constexpr Field kFields[] = {
-        {"master_gain_db", &Params::master_gain_db, nullptr},
-        {"osc2_level", &Params::osc2_level, nullptr},
-        {"osc3_level", &Params::osc3_level, nullptr},
-        {"osc_detune_cents", &Params::osc_detune_cents, nullptr},
-        {"noise_level", &Params::noise_level, nullptr},
-        {"noise_decay_s", &Params::noise_decay_s, nullptr},
-        {"filter_cutoff_ratio", &Params::filter_cutoff_ratio, nullptr},
-        {"filter_resonance", &Params::filter_resonance, nullptr},
-        {"filter_keytrack", &Params::filter_keytrack, nullptr},
-        {"amp_attack_s", &Params::amp_attack_s, nullptr},
-        {"amp_decay_s", &Params::amp_decay_s, nullptr},
-        {"amp_sustain", &Params::amp_sustain, nullptr},
-        {"amp_release_s", &Params::amp_release_s, nullptr},
-        {"pan_spread", &Params::pan_spread, nullptr},
-        {"bend_range_semitones", &Params::bend_range_semitones, nullptr},
-        {"transpose_semitones", nullptr, &Params::transpose_semitones},
-        {"octave_shift", nullptr, &Params::octave_shift},
-    };
 
     std::string line;
     int number = 0;
@@ -82,39 +62,56 @@ bool load_params_file(const std::string& path, Params& params, std::string& erro
         if (key.empty())
             continue;
 
-        const Field* field = nullptr;
-        for (const Field& candidate : kFields) {
-            if (key == candidate.name) {
-                field = &candidate;
-                break;
-            }
-        }
-        if (field == nullptr) {
+        const boreaz::engine::ParamSpec* spec = boreaz::engine::param_spec(key);
+        if (spec == nullptr) {
             error = "line " + std::to_string(number + 1) + ": '" + key +
                     "' is not an engine parameter. Known keys are listed in --help";
             return false;
         }
-        if (field->real != nullptr) {
-            float parsed = 0.0f;
-            if (std::sscanf(value.c_str(), "%f", &parsed) != 1) {
-                error = "line " + std::to_string(number + 1) + ": '" + key + "' wants a number, got '" +
-                        value + "'";
+        if (spec->real != nullptr) {
+            // strtod plus "and it consumed the whole string": `sscanf("%f")` is happy to read the 2
+            // in "2..0" and call the line good, which is a patch that quietly does not say what it
+            // says.
+            char* end = nullptr;
+            const float parsed = static_cast<float>(std::strtod(value.c_str(), &end));
+            if (end == value.c_str() || *end != '\0' || !std::isfinite(parsed)) {
+                error = "line " + std::to_string(number + 1) + ": '" + key +
+                        "' wants a number, got '" + value + "'";
                 return false;
             }
-            params.*field->real = parsed;
+            // Out of range is refused here rather than quietly clamped later: the person who typed
+            // `filter_cutoff_ratio = 1000` wants to know the file did not do what it says.
+            if (parsed < spec->minimum || parsed > spec->maximum) {
+                char bounds[64];
+                std::snprintf(bounds, sizeof bounds, "%g to %g", spec->minimum, spec->maximum);
+                error = "line " + std::to_string(number + 1) + ": '" + key + "' wants " + bounds +
+                        ", got '" + value + "'";
+                return false;
+            }
+            boreaz::engine::param_write(*spec, parsed, params);
         } else {
-            int parsed = 0;
-            if (std::sscanf(value.c_str(), "%d", &parsed) != 1) {
+            char* end = nullptr;
+            const long long whole = std::strtoll(value.c_str(), &end, 10);
+            // "1.5" for a transpose is not rounded: it is refused. The file promised a whole number
+            // and the person who wrote it means something specific by that.
+            if (end == value.c_str() || *end != '\0') {
                 error = "line " + std::to_string(number + 1) + ": '" + key +
                         "' wants a whole number, got '" + value + "'";
                 return false;
             }
-            params.*field->integer = parsed;
+            const int parsed = static_cast<int>(whole);
+            if (static_cast<float>(parsed) < spec->minimum ||
+                static_cast<float>(parsed) > spec->maximum) {
+                error = "line " + std::to_string(number + 1) + ": '" + key + "' wants " +
+                        std::to_string(static_cast<int>(spec->minimum)) + " to " +
+                        std::to_string(static_cast<int>(spec->maximum)) + ", got '" + value + "'";
+                return false;
+            }
+            params.*(spec->integer) = parsed;
         }
     }
     return true;
 }
-
 
 std::string defaults_path() {
     for (const char* prefix : {"", "../", "../../", "../../../"}) {
@@ -125,6 +122,18 @@ std::string defaults_path() {
     // Nothing to load. The caller's error message names this path, which is how the player finds
     // out where the program looked instead of being told a file they can see is missing.
     return "config/params.ini";
+}
+
+std::string known_keys() {
+    std::string out;
+    std::size_t rows = 0;
+    const boreaz::engine::ParamSpec* table = boreaz::engine::param_table(&rows);
+    for (std::size_t row = 0; row < rows; ++row) {
+        if (row != 0)
+            out += ", ";
+        out += table[row].key;
+    }
+    return out;
 }
 
 } // namespace boreaz::config

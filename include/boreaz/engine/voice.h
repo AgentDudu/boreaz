@@ -43,6 +43,17 @@ class Voice {
     // Re-pitch a sounding voice (pitch bend). Phase is kept, so it glides instead of clicking.
     virtual void set_frequency(float hertz, const Params& params) = 0;
 
+    // The keyboard moved under a note that is already sounding: transpose or octave shift changed
+    // by `semitones` (which may be negative) since the note began. Move the note the voice *is* -
+    // its note number, its pitch, and the cutoff that follows the note - and keep the phase, which
+    // is what makes this a retune instead of a click. Pitched into the same range a note may start
+    // in, so +24 on a C8 cannot ask for a frequency the sample rate cannot hold.
+    //
+    // Instantaneous on purpose, like a digital piano's transpose: what has to be smooth is the
+    // parameter that moves continuously, and that is the engine's ramp. A glide here would be a
+    // portamento nobody asked for, per voice, per keystroke.
+    virtual void retune(int semitones, const Params& params) = 0;
+
     // Adds into `left`/`right`; the caller owns the buffer and the mix.
     virtual void render(float* left, float* right, int frames) = 0;
 

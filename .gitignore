@@ -32,3 +32,6 @@ Thumbs.db
 
 # Fetched, decoded instruments: large, hash-pinned elsewhere, never committed (tools/mkinstrument.py).
 third_party/
+
+# Dear ImGui writes its window layout next to whatever the working directory is
+imgui.ini

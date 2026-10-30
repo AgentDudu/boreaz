@@ -170,6 +170,7 @@ add_library(
   boreaz_engine
   STATIC src/engine/synth_voice.cpp src/engine/sampled_voice.cpp src/engine/voice_allocator.cpp
          src/engine/engine.cpp
+         src/engine/param_table.cpp
          src/engine/message.cpp)
 target_include_directories(boreaz_engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(boreaz_engine PUBLIC boreaz_dsp)
@@ -254,8 +255,8 @@ if(WIN32)
   add_library(
     boreaz_gui
     STATIC src/gui/app_window.cpp src/gui/frame_view.cpp src/gui/keyboard_view.cpp
-           src/gui/note_trail.cpp src/gui/panel.cpp src/gui/transport_clock.cpp
-           src/gui/viz/transport.cpp)
+           src/gui/note_trail.cpp src/gui/panel.cpp src/gui/params_panel.cpp
+           src/gui/transport_clock.cpp src/gui/viz/transport.cpp)
   target_include_directories(boreaz_gui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
   target_link_libraries(boreaz_gui PUBLIC imgui boreaz_io boreaz_engine boreaz_dsp)
   target_compile_features(boreaz_gui PUBLIC cxx_std_20)
@@ -323,6 +324,8 @@ if(BOREAZ_BUILD_TESTS)
     tests/test_message.cpp
     tests/test_engine.cpp
     tests/test_engine_events.cpp
+    tests/test_live_params.cpp
+    tests/test_params_panel.cpp
     tests/test_keyboard_layout.cpp
     tests/test_midi_parser.cpp
     tests/test_midifile.cpp
