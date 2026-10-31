@@ -56,6 +56,11 @@ KEPT = {"sample", "lokey", "hikey", "key", "pitch_keycenter", "pitch_keyroot", "
 WAV_PER_FLAC = 0.80
 WAV_PER_FLAC_SPAN = (0.61, 0.96)
 
+# This subset rendered 0.4044 peak at 0 dB against the shipped upright's 0.6121, so it ships about
+# 4 dB quiet. +6 dB on the regions lands it at 0.6941 measured, i.e. +4.7 dB of that reached the
+# output: `volume=` is not a pure gain stage in this engine, and nobody has worked out why yet.
+LEVEL_DB = 6.0
+
 LICENSE_FILES = ["LICENSE", "README.md"]
 ORDER = ["trigger", "lokey", "hikey", "key", "pitch_keycenter", "lovel", "hivel", "group", "tune",
          "volume", "amp_veltrack", "ampeg_release", "offset", "sample"]
@@ -226,7 +231,7 @@ def opcodes(text):
     return pairs
 
 
-def keep(region, dropped, forcing=None):
+def keep(region, dropped, forcing=None, level_db=0.0):
     """The opcodes this engine reads, with the rest counted for the provenance file."""
     out = {}
     for key, value in region.items():
@@ -243,6 +248,12 @@ def keep(region, dropped, forcing=None):
         # shorthand only the SFZ spec offers.
         out["lokey"] = out["hikey"] = out["pitch_keycenter"] = out.pop("key")
     out["sample"] = out["sample"].rsplit(".", 1)[0] + ".wav"
+    if level_db:
+        # The level lives here rather than in the engine default on purpose: a non-zero engine
+        # default would make every other instrument too loud and would hide gain behind a mixer.
+        # Written on the region, it is reviewable in the file, and it stands in for upstream's
+        # `set_cc7 100` + `amplitude_oncc7 100`, which is how that library reaches its own loudness.
+        out["volume"] = f"{float(out.get('volume', 0)) + level_db:g}"
     return out
 
 
@@ -272,7 +283,7 @@ def assemble(upstream, layers, releases):
             if (int(region.get("lovel", 1)), int(region.get("hivel", 127))) != (lo, hi):
                 continue
             notes.append(keep(region, dropped, {
-                "lovel": str(new_bands[number][0]), "hivel": str(new_bands[number][1])}))
+                "lovel": str(new_bands[number][0]), "hivel": str(new_bands[number][1])}, LEVEL_DB))
 
     hammers = []
     if releases == "hammer":
@@ -282,7 +293,7 @@ def assemble(upstream, layers, releases):
         for region in regions_of(lines):
             # Upstream gates these behind `locc21=1` and puts `trigger=release` in a <global> two
             # <master> blocks away. Say it on the region, where the reader can see it.
-            hammers.append(keep(region, dropped, {"trigger": "release"}))
+            hammers.append(keep(region, dropped, {"trigger": "release"}, LEVEL_DB))
     return notes, hammers, bands, new_bands, dropped, len(regions)
 
 
