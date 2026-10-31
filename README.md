@@ -22,7 +22,7 @@ renders to a `.wav` without any device at all:
 ./build/boreaz --list-devices                   # this machine's outputs
 ./build/boreaz --list-midi                      # this machine's MIDI inputs
 ./build/boreaz-render tests/fixtures/midifile/pad-chords.mid build/pad.wav
-./build/boreaz-render --golden tests/fixtures/midifile/sweep-88.mid
+./build/boreaz-render --golden tests/fixtures/midifile/glissando-88.mid
 ./build/boreaz tests/fixtures/midifile/pad-chords.mid          # play a file, exit when it ends
 ./build/boreaz --gui tests/fixtures/midifile/pad-chords.mid    # the same file, in the window
 # One command, once: fetch the CC0 upright piano and decode it to PCM WAV (needs ffmpeg).
@@ -31,6 +31,7 @@ python tools/mkinstrument.py
 ./build/boreaz-render --instrument third_party/instruments/upright-piano-KW/UprightPianoKW-20220221.sfz \
     tests/fixtures/midifile/pad-chords.mid build/pad.wav       # the same instrument, as a file
 ./build/boreaz-sfz-probe third_party/instruments/upright-piano-KW/UprightPianoKW-20220221.sfz
+python tools/listen.py    # six WAVs in build/listen, each one named for the thing to listen for
 ```
 
 The file reader is a library (`boreaz-midifile`), so the offline render, this app and the tests play
@@ -56,8 +57,10 @@ that played in a test run is the piano the recipe says it was. A live 88-key gli
 a 1024 frame period finished with **0 late, 0 xruns, 0 dropped, 0 steals**.
 
 What is still missing from a real grand: filters (`fil_type`/`cutoff` are read, ignored, and warned
-about, so a layer the recorder softened arrives bright), and `boreaz-mkinst`, which is the tool that
-would subset the 394 MB Salamander grand into something playable. `trigger=release` is not one of
+about — measured on this instrument's softened layer, a 2.2 kHz 2-pole lowpass moves it 5 % in
+brightness and 0.1 % in level, so the warning is honest and the hole is inaudible), and
+`boreaz-mkinst`, which is the tool that would subset the 394 MB Salamander grand into something
+playable. `trigger=release` is not one of
 them any more: a region that asks to be played when the key goes up is loaded like any other and
 voiced from **a pool of eight of its own, outside the sixteen**, because a hammer noise has to survive
 the note it follows. It is picked, and played, at the velocity the key went *down* with — a
