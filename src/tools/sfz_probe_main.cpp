@@ -49,7 +49,7 @@ void describe(const boreaz::sfz::Region& region, int index) {
     if (region.velocity_tracking != 100.0f)
         std::cout << "  veltrack " << region.velocity_tracking << "%";
     if (region.release_trigger)
-        std::cout << "  [refused: release]";
+        std::cout << "  [release: plays when the key goes up]";
     std::cout << "\n";
 }
 
@@ -86,6 +86,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     std::cout << "load: " << loaded.files << " files, " << loaded.regions << " regions playable, "
+              << loaded.releases << " release recordings, "
               << loaded.bytes / (1024u * 1024u) << " MB resident, " << loaded.refused
               << " refused, " << loaded.load_ms << " ms\n";
     for (const std::string& warning : loaded.warnings)

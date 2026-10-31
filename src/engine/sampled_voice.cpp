@@ -88,7 +88,12 @@ void SampledVoice::start(const NoteRequest& request, const Params& params, doubl
 
     const int midi_velocity =
         std::clamp(static_cast<int>(velocity_ * 127.0f + 0.5f), 1, 127);
-    sample_ = instrument_ ? instrument_->find(key_, midi_velocity) : nullptr;
+    // A release voice asks the other question of the same instrument, and gets nullptr when the
+    // library has no release recordings - which lands in the silence path below, so a library of
+    // attacks alone costs one extra call per note-off and nothing else.
+    sample_ = instrument_ ? (release_samples_ ? instrument_->find_release(key_, midi_velocity)
+                                              : instrument_->find(key_, midi_velocity))
+                          : nullptr;
     if (sample_ == nullptr || sample_->data == nullptr || sample_->channels <= 0 ||
         sample_->frames <= 0) {
         // No recording for this key. Silence, and *not* active: a voice that is doing nothing must

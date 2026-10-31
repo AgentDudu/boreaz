@@ -47,11 +47,18 @@ class Instrument {
     // wants that stated by sounding wrong, not by going silent.
     virtual const VoiceSample* find(int key, int velocity) const = 0;
 
+    // What to play when the key goes *up*, from `trigger=release`. Defaulted to silence: a synth
+    // instrument has no recordings to let go with, and neither does a sample library that ships only
+    // attacks, which is what the CC0 starter instrument is (none of its 66 regions asks for one).
+    // It answers nullptr rather than the note recording, because the whole point of a release sample
+    // is that it is not the note: it is the hammer falling back and the strings going quiet.
+    virtual const VoiceSample* find_release(int, int) const { return nullptr; }
+
     virtual bool empty() const = 0;
     // What it cost to load, for the startup line that prints it. Called from the setup path only.
     virtual std::size_t resident_bytes() const = 0;
-    // How many regions were refused because they cannot be played (a release sample, say). Zero is
-    // the normal answer; anything else belongs on the console at load.
+    // How many regions were refused because they cannot be played at all. Zero is the normal
+    // answer; anything else belongs on the console at load.
     virtual std::size_t refused_regions() const = 0;
 };
 

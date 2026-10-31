@@ -56,9 +56,21 @@ that played in a test run is the piano the recipe says it was. A live 88-key gli
 a 1024 frame period finished with **0 late, 0 xruns, 0 dropped, 0 steals**.
 
 What is still missing from a real grand: filters (`fil_type`/`cutoff` are read, ignored, and warned
-about, so a layer the recorder softened arrives bright), `trigger=release` and its second pool, and
-`boreaz-mkinst`, which is the tool that would subset the 394 MB Salamander grand into something
-playable. Nobody has heard it yet, either: every number above is objective, and none of them is an ear.
+about, so a layer the recorder softened arrives bright), and `boreaz-mkinst`, which is the tool that
+would subset the 394 MB Salamander grand into something playable. `trigger=release` is not one of
+them any more: a region that asks to be played when the key goes up is loaded like any other and
+voiced from **a pool of eight of its own, outside the sixteen**, because a hammer noise has to survive
+the note it follows. It is picked, and played, at the velocity the key went *down* with — a
+note-off arrives as velocity zero, so the engine remembers the strike — and the file's own
+`amp_veltrack` still decides how much of that curve a hammer noise keeps, because that opcode is the
+recorder's opinion about hammers: the same release region measured **0.0022 against 0.0293**
+full-scale peak in the 30-100 ms after the key-up at velocity 20 against 110, thirteen times, which is
+the note's own ratio. A library that wants its hammer noise at one level says `amp_veltrack=0`. It is one shot whatever the file says (`smpl loop` and
+`loop_mode` are dropped on a release, since a key being let go happens once), it is looked up in a
+list of its own so a note recording can never be mistaken for one, and the panic button stops it with
+everything else. The starter instrument has no release regions at all, so on it a key-up is still the
+amp release and nothing else. Nobody has heard any of it yet, either: every number above is objective,
+and none of them is an ear.
 
 `PLAN.md` is the contract for what is being built and in which order; phases 0-12 are listed
 there with exit criteria.

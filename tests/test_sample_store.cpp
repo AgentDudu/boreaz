@@ -435,17 +435,111 @@ TEST_CASE("offset, `amp_veltrack`, and one file shared by two regions") {
     CHECK(store.find(60, 100)->start_frame < store.find(60, 100)->frames);
 }
 
-TEST_CASE("a release sample is refused out loud, and the rest of the instrument plays") {
+TEST_CASE("a release region is loaded as a release and never answers a struck key") {
     const Library library = make_library("release", R"(<region> sample=mid.wav key=60
 <region> sample=low.wav key=60 trigger=release
 )");
     SampleStore store;
     const boreaz::samples::LoadResult result = store.load_mapping(library.mapping);
+    INFO(result.error);
+    INFO(joined(result.warnings));
+    REQUIRE(result.ok);
+
+    // One place to start a note, one thing to play when the key goes up, and nothing refused: a
+    // release region was never unplayable, only unimplemented.
+    CHECK(result.regions == 1);
+    CHECK(result.releases == 1);
+    CHECK(result.refused == 0);
+    // Both recordings are resident, since the release has to be as ready as the note it follows.
+    CHECK(result.files == 2);
+    CHECK(joined(result.warnings).find("release sample") == std::string::npos);
+
+    // The two lookups cannot answer for each other, which is the whole reason they are two lists.
+    CHECK(store.find(60, 100)->frames == 2000);          // mid.wav, the note
+    CHECK(store.find_release(60, 100)->frames == 1000);  // low.wav, the release
+}
+
+TEST_CASE("an instrument with no release recordings says so and does not lend a note") {
+    const Library library = make_library("attacks-only", R"(<region> sample=mid.wav key=60
+<region> sample=high.wav key=61 loop_mode=loop_continuous
+)");
+    SampleStore store;
+    REQUIRE(store.load_mapping(library.mapping).ok);
+    // This is the CC0 starter instrument: 66 regions, none of them asking for a release. A key-up
+    // here is the note's own envelope and nothing else.
+    CHECK(store.find_release(60, 100) == nullptr);
+    CHECK(store.find_release(21, 1) == nullptr);
+}
+
+TEST_CASE("a release region is picked by velocity, like a layer of its own") {
+    const Library library = make_library("release-layers", R"(<region> sample=mid.wav key=60
+<region> sample=low.wav key=60 trigger=release hivel=80
+<region> sample=high.wav key=60 trigger=release lovel=81
+)");
+    SampleStore store;
+    const boreaz::samples::LoadResult result = store.load_mapping(library.mapping);
+    INFO(result.error);
+    REQUIRE(result.ok);
+    CHECK(result.releases == 2);
+
+    // A soft touch lets go quietly and a hard one lets go with the hammer in it. A velocity no
+    // release band covers still gets the key's release rather than silence, by the same precedence
+    // the note layers use.
+    CHECK(store.find_release(60, 5)->frames == 1000);
+    CHECK(store.find_release(60, 80)->frames == 1000);
+    CHECK(store.find_release(60, 81)->frames == 3000);
+    CHECK(store.find(60, 81)->frames == 2000); // the note is still the note
+}
+
+TEST_CASE("a release recording does not loop, and does not claim a velocity layer either") {
+    // high.wav carries a `smpl` loop and the mapping asks for loop_continuous on top of it. A
+    // recording of a key being let go is one event: a hammer noise that loops forever is a hiss.
+    const Library library = make_library("release-loop", R"(<region> sample=mid.wav key=60
+<region> sample=high.wav key=60 trigger=release loop_mode=loop_continuous
+<region> sample=low.wav key=61 trigger=release
+)");
+    SampleStore store;
+    const boreaz::samples::LoadResult result = store.load_mapping(library.mapping);
+    INFO(result.error);
+    REQUIRE(result.ok);
+
+    const boreaz::engine::VoiceSample* release = store.find_release(60, 100);
+    REQUIRE(release != nullptr);
+    CHECK_FALSE(release->loops);
+    CHECK(release->loop_end == 0);
+    // A key with no release of its own still gets the nearest one, shifted, exactly as a note key
+    // does - and it is the release, not a note recording in disguise.
+    const boreaz::engine::VoiceSample* nearest = store.find_release(72, 100);
+    REQUIRE(nearest != nullptr);
+    CHECK(nearest->frames == 1000);
+}
+
+TEST_CASE("a release region cannot cover for a note layer the instrument is missing") {
+    // The note recording stops at velocity 80 and the release picks up above it. Counting the
+    // release as coverage would let the store claim every velocity is covered, and velocity 100
+    // would play the soft recording while a hammer noise sat on top of it.
+    const Library library = make_library("release-coverage", R"(<region> sample=mid.wav key=60 hivel=80
+<region> sample=low.wav key=60 trigger=release lovel=81
+)");
+    SampleStore store;
+    const boreaz::samples::LoadResult result = store.load_mapping(library.mapping);
+    INFO(result.error);
     REQUIRE(result.ok);
     CHECK(result.regions == 1);
-    CHECK(result.refused == 1);
-    CHECK(joined(result.warnings).find("release sample") != std::string::npos);
-    CHECK(store.find(60, 100)->frames == 2000); // the note one, not the release one
+    CHECK(result.releases == 1);
+    CHECK(joined(result.warnings).find("velocity layer") != std::string::npos);
+}
+
+TEST_CASE("a mapping of nothing but releases has nothing to start a note with") {
+    const Library library = make_library("release-only", R"(<region> sample=low.wav key=60 trigger=release
+<region> sample=high.wav key=61 trigger=release
+)");
+    SampleStore store;
+    const boreaz::samples::LoadResult result = store.load_mapping(library.mapping);
+    CHECK_FALSE(result.ok);
+    INFO(result.error);
+    CHECK(result.error.find("as a note") != std::string::npos); // releases exist, but nothing to play
+    CHECK(store.empty());
 }
 
 TEST_CASE("a missing or unreadable file fails the load and says which one") {

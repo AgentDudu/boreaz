@@ -211,7 +211,10 @@ int main(int argc, char** argv) {
             engine.set_instrument(live_instrument);
             // What it loaded, what it cost, and what it refused: a library that arrived as 40 of
             // its 88 keys is not the library the player downloaded, and silence does not say so.
-            std::cout << "samples: " << loaded.regions << " regions from " << loaded.files
+            std::cout << "samples: " << loaded.regions << " regions";
+            if (loaded.releases != 0)
+                std::cout << " and " << loaded.releases << " release recordings";
+            std::cout << " from " << loaded.files
                       << " files, " << loaded.bytes / (1024u * 1024u) << " MB resident, "
                       << loaded.load_ms << " ms to load";
             if (loaded.refused != 0)
@@ -339,8 +342,10 @@ int main(int argc, char** argv) {
                 reason = "no samples in \"" + path + "\"";
                 return nullptr;
             }
-            std::cout << "samples: " << loaded.regions << " regions, "
-                      << loaded.bytes / (1024u * 1024u) << " MB, " << loaded.load_ms
+            std::cout << "samples: " << loaded.regions << " regions";
+            if (loaded.releases != 0)
+                std::cout << " and " << loaded.releases << " release recordings";
+            std::cout << ", " << loaded.bytes / (1024u * 1024u) << " MB, " << loaded.load_ms
                       << " ms to load - switching when the notes stop.\n";
             return idle.get();
         };

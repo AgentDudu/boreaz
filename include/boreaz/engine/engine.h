@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 
@@ -9,6 +10,7 @@
 #include "boreaz/engine/instrument.h"
 #include "boreaz/engine/param_bus.h"
 #include "boreaz/engine/params.h"
+#include "boreaz/engine/sampled_voice.h"
 #include "boreaz/engine/voice_allocator.h"
 
 namespace boreaz::engine {
@@ -86,7 +88,15 @@ class Engine {
     // The instrument must outlive the engine: after the first block, a voice holds a pointer into
     // it, and there is no way to take that pointer back.
     void set_instrument(const boreaz::engine::Instrument* instrument) {
+        instrument_ = instrument;
         allocator_.reallocate(allocator_.pool_size(), instrument);
+        // The release pool too, and emptied first: a release recording is a buffer inside the store
+        // being replaced, and that store may be freed the moment this returns. Setup path, with the
+        // device stopped, so the hard stop is not a click anybody hears.
+        for (SampledVoice& voice : releases_) {
+            voice.stop();
+            voice.set_instrument(instrument);
+        }
     }
 
     // What the engine has been told to play: the published set, not the block currently being
@@ -114,6 +124,12 @@ class Engine {
     void pitch_bend(const Event& event, const Params& params);
     void render_chunk(float* output, int frames, const Params& params);
 
+    // The key went up. Start its release recording, if the instrument has one, in the pool outside
+    // the 16: a release must outlive the voice it was born from, so it cannot be a slot in it, and
+    // polyphony, stealing and the display all read exactly what they read before this existed.
+    void start_release(int key, std::uint8_t channel, const Params& params);
+    void fade_releases(const Params& params);
+
     // Move every sounding note by the change in transpose/octave. One call per keystroke, not per
     // block: the voice keeps the phase, so there is nothing to smooth afterwards.
     void retune_voices(int semitones, const Params& params);
@@ -125,6 +141,18 @@ class Engine {
     int applied_shift_ = 0; // the transpose+octave the sounding notes were pitched with
     VoiceAllocator allocator_{VoiceAllocator::kDefaultPoolSize};
     boreaz::dsp::Tuning tuning_{};
+
+    // `trigger=release`, in its own eight slots (PLAN.md 6's answer to "release samples fight
+    // note-off voice reuse"). They are the same voice reading the other half of the library; they
+    // are never stolen from, never counted in `active_voices`, and never the reason a held note is
+    // still sounding. Eight is the size of a fast glissando's worth of overlapping hammer noise, and
+    // fixed because a pool that grows is a pool that mallocs.
+    static constexpr int kMaxReleaseVoices = 8;
+    std::array<SampledVoice, kMaxReleaseVoices> releases_;
+    const Instrument* instrument_ = nullptr;
+    // A note-off arrives as velocity 0, which is not how the note was struck. The release recording
+    // and its level come from the strike, so the last velocity of every key is remembered here.
+    std::array<std::uint8_t, 128> strike_{};
 
     float scratch_l_[kMaxScratchFrames]{};
     float scratch_r_[kMaxScratchFrames]{};
