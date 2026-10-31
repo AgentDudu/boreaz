@@ -56,6 +56,17 @@ KEPT = {"sample", "lokey", "hikey", "key", "pitch_keycenter", "pitch_keyroot", "
 WAV_PER_FLAC = 0.80
 WAV_PER_FLAC_SPAN = (0.61, 0.96)
 
+# The subset renders 0.4036 peak at 0 dB master against the shipped upright's 0.6121, so it ships
+# about 4 dB quiet. +6 dB on its regions lands it at 0.6941, i.e. +4.7 dB of that reaches the output.
+#
+# The missing 1.3 dB is the master bus, not this number, and `volume=` is innocent: render the same
+# file at --gain -40, where the master-bus tanh is a straight line, and volume=6 against volume=0
+# measures +6.02 dB; at --gain 0 the same pair measures +4.71 dB. The engine runs tanh(x) every block
+# with drive pinned at 1.0, which costs 0.03 dB at 0.1 pre-clip, 0.45 dB at 0.4, and 1.82 dB at the
+# 0.8545 this subset's loudest transient reaches. So an output peak near full scale is a compressed
+# signal and not a level: measure a level here at --gain -40, or read drive_peak, which is pre-clip.
+LEVEL_DB = 6.0
+
 LICENSE_FILES = ["LICENSE", "README.md"]
 ORDER = ["trigger", "lokey", "hikey", "key", "pitch_keycenter", "lovel", "hivel", "group", "tune",
          "volume", "amp_veltrack", "ampeg_release", "offset", "sample"]
@@ -226,7 +237,7 @@ def opcodes(text):
     return pairs
 
 
-def keep(region, dropped, forcing=None):
+def keep(region, dropped, forcing=None, level_db=0.0):
     """The opcodes this engine reads, with the rest counted for the provenance file."""
     out = {}
     for key, value in region.items():
@@ -243,6 +254,12 @@ def keep(region, dropped, forcing=None):
         # shorthand only the SFZ spec offers.
         out["lokey"] = out["hikey"] = out["pitch_keycenter"] = out.pop("key")
     out["sample"] = out["sample"].rsplit(".", 1)[0] + ".wav"
+    if level_db:
+        # The level lives here rather than in the engine default on purpose: a non-zero engine
+        # default would make every other instrument too loud and would hide gain behind a mixer.
+        # Written on the region, it is reviewable in the file, and it stands in for upstream's
+        # `set_cc7 100` + `amplitude_oncc7 100`, which is how that library reaches its own loudness.
+        out["volume"] = f"{float(out.get('volume', 0)) + level_db:g}"
     return out
 
 
@@ -272,7 +289,7 @@ def assemble(upstream, layers, releases):
             if (int(region.get("lovel", 1)), int(region.get("hivel", 127))) != (lo, hi):
                 continue
             notes.append(keep(region, dropped, {
-                "lovel": str(new_bands[number][0]), "hivel": str(new_bands[number][1])}))
+                "lovel": str(new_bands[number][0]), "hivel": str(new_bands[number][1])}, LEVEL_DB))
 
     hammers = []
     if releases == "hammer":
@@ -282,7 +299,7 @@ def assemble(upstream, layers, releases):
         for region in regions_of(lines):
             # Upstream gates these behind `locc21=1` and puts `trigger=release` in a <global> two
             # <master> blocks away. Say it on the region, where the reader can see it.
-            hammers.append(keep(region, dropped, {"trigger": "release"}))
+            hammers.append(keep(region, dropped, {"trigger": "release"}, LEVEL_DB))
     return notes, hammers, bands, new_bands, dropped, len(regions)
 
 

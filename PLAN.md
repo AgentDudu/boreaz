@@ -131,9 +131,9 @@ public domain" — the conflict is why we still credit it if we ever ship it.
 |---|---|
 | Upstream build | **Salamander v3, but the size in this row was wrong for a year.** The original 44.1 kHz / 16-bit build is a **488.7 MB** `.tar.bz2` (its WAVs total ~394 MB, which is where the number in this row came from), and the build `mkinst` will actually read is the 48 k/24 FLAC tree of `sfzinstruments/SalamanderGrandPiano`, **ordinary git blobs, not LFS**, fetched one file at a time by `tools/mkinst.py` (748.4 MB for all 641 recordings, 184 MB for the subset it builds by default) so only the subset is ever downloaded. Sizes, digests and both URLs are in §7 |
 | Starter asset | **FreePats Upright Piano KW**, FLAC build (32.4 MB) fetched and decoded by `tools/mkinstrument.py` against a pinned sha256: CC0, no attribution required, no 394 MB fetch, plain-SFZ mapping of 13 opcodes. This is what `--instrument` plays first |
-| Shipped asset (flagship, later) | `boreaz-mkinst` **mono subset of Salamander, ~100 MB, ≥ 4 velocity layers** of the 16, loops preserved, **after** `mkinst` learns to flatten ARIA smart variants |
+| Shipped asset (flagship) | **Built 2026-11-01 by `tools/mkinst.py`, and the size this row asked for is gone: 4 of the 16 velocity layers (v1, v6, v10, v14) plus all 88 chromatic key-off recordings = 208 recordings, 147.3 MB of mono 16-bit WAV, 280 MB resident, 120 playable regions + 88 releases, 0 refused, ~480 ms to load.** ARIA smart variants are not learned, they are dropped: the subset keeps the natural tuning and re-cuts the four bands to cover velocity 0-127. Loops are carried by the mapping, which wins over `smpl` (see §7). Why 280 MB and not ~100 MB is written into §1's piano section and §7's instrument row |
 | Format | **SFZ read at runtime** (plain text, both good libraries ship it). No home-grown format, no converter |
-| In git | **Nothing binary.** The 394 MB source and the ~100 MB subset never enter the repo; only the `mkinst` recipe (text) is committed |
+| In git | **Nothing binary.** The 748 MB upstream tree, the 147 MB subset and the 280 MB it becomes in RAM never enter the repo; only the `mkinst` recipe (text) is committed — and `third_party/` is gitignored, so a PR can show the tool and never the instrument it built |
 | Distribution | Subset published as a release artifact, fetched/built on demand |
 | Attribution | `NOTICE.txt` in the zip + credit in the about box: author, title, link, **and a statement that we modified it** (CC-BY-3.0 "indicate changes") |
 | CI test asset | A **synthetic SFZ + generated sine samples** fixture, so tests cover the reader without downloading licensed audio |
@@ -169,7 +169,7 @@ per-key level spread. Fine as throwaway test data; it cannot answer "sounds like
 | GUI | **Dear ImGui + GLFW + OpenGL3** | immediate mode, zero state, knobs/meters in an afternoon |
 | Tests | **doctest** (single header) | fast unit tests + offline render assertions |
 | `.mid` parsing | `midicpp` (header-only) — **licence + C++20 support unverified, re-check before use**; fallback `minimidi` | needed by both the offline renderer and in-app playback |
-| Instrument | **FreePats Upright Piano KW** (CC0-1.0, plain SFZ) first; **Salamander Grand Piano v3**, 44.1/16, mono subset ~100 MB (CC-BY-3.0) as the flagship | a real recorded piano is the only route to "sounds like a piano", and the CC0 one is the one that can be fetched, tested and shipped today |
+| Instrument | **FreePats Upright Piano KW** (CC0-1.0, plain SFZ) first; **Salamander Grand Piano v3** as the flagship, built by `tools/mkinst.py` as a **4-layer mono subset: 147 MB of WAV, 280 MB resident** (CC-BY-3.0) | a real recorded piano is the only route to "sounds like a piano", and the CC0 one is the one that can be fetched, tested and shipped today |
 | Instrument format | **SFZ subset reader**, plus `boreaz-mkinst` to subset upstream → shipped asset | SFZ is plain text; a declared opcode subset beats owning a format *and* a converter |
 | Sample decode | **None at runtime.** `mkinst` normalises to PCM WAV once, offline | no decoder in the audio path and no decode at startup |
 | Presets | hand-rolled `key = value` text files | params are a flat block; a JSON lib is 25k lines for this |
@@ -252,8 +252,10 @@ Three data paths, deliberately separate:
 - Sample data is **fully resident before the device starts**: no file handle, no mmap
   page-in, no decode, no allocation in the audio path. Startup may be slow; the callback
   may not.
-- Preload is capped by the ~100 MB instrument budget. Print resident MB and load time at
-  startup, and refuse to start quietly when the asset blows the budget.
+- Preload is capped by an instrument budget, and the flagship now sets its real size: **280 MB
+  resident, 208 files, ~480 ms** (measured 2026-11-01, `boreaz-sfz-probe`; the CC0 starter is
+  109 MB and 205 ms). Print resident MB and load time at startup, and refuse to start quietly when
+  the asset blows the budget. `kMaxResidentBytes` is the refusal, and it is well above 280 MB.
 - Per-voice resampling is **cubic at minimum** — the library is minor-third spaced, so most
   keys are pitch-shifted up to ±1.5 semitones. Linear interpolation is audible on a grand.
 
@@ -271,7 +273,7 @@ src/offline/           MIDI-file → WAV renderer (test/tool target)
 src/midifile/          .mid parser static lib (shared by offline + seq)
 src/sfz/               SFZ subset reader: text parse + region inheritance + opcode subset
 src/samples/           SampleBuffer store (resident), SampledVoice, cubic resampler, release pool
-tools/mkinst/          offline subsetter: Salamander → ~100 MB instrument + NOTICE
+tools/mkinst.py        offline subsetter: Salamander → 4-layer instrument + NOTICE (built 2026-11-01)
 src/seq/               transport, sample-clock, tempo map → event ring
 tests/                 doctest units, golden .wav fixtures
 third_party/           empty by design — FetchContent downloads elsewhere
@@ -335,7 +337,7 @@ the second is the waterfall's motion wearing a colour ramp).
 - No machine-absolute paths in tracked files. No assistant or model names in names,
   comments, logs, or fixtures. `.gitignore` covers `build/`, `out/`, `*.wav` except fixtures, IDE dirs
   and `.env`.
-- **No binary assets in git.** Neither the 394 MB instrument source nor the ~100 MB subset.
+- **No binary assets in git.** Neither the 748 MB upstream tree nor the 147 MB subset.
   No git-lfs either: the instrument is a build artifact and a release attachment, not
   history. Third-party audio is fetched by `mkinst` from a pinned URL + sha256 recorded in
   the recipe, and CC-BY attribution is generated from that recipe, so provenance is
@@ -373,7 +375,7 @@ the second is the waterfall's motion wearing a colour ramp).
 | SFZ's opcode surface is open-ended (ARIA/OPCODEX extensions) | implement a **declared subset**; unknown opcodes warn once and are ignored; a region we cannot honour is refused loudly at load, never mis-played silently |
 | `trigger=release` regions fight note-off voice reuse | release samples live in their own small pool outside the 16, so they survive the voice that spawned them |
 | Bad or absent loop points → a click every cycle, or a note that dies at 5 s | `mkinst` verifies loop seams (zero-crossing / short crossfade) and writes loop points where the source has none; audible-click test over the 10 longest notes |
-| ~100 MB preload is slow to start | measure and print load time in phase 6; only if it hurts do we reconsider mmap + warm-up, which reintroduces page-fault risk |
+| A 280 MB preload is slow to start | measured: **480 ms for 208 files / 280 MB**, 205 ms for 66 files / 109 MB, printed at startup. That is a one-off on the setup path and it does not hurt, so mmap + warm-up stay rejected — they reintroduce the page-fault risk §3 forbids |
 | A dry grand sample sounds worse than a good synth patch | reverb bus is **on by default** for the piano, and the off/on A/B is a phase-8 exit criterion |
 | FetchContent needs network on first build | documented; vendoring stays an option (decision table row) |
 | Windows-only accident creeping in | `dsp/` + `engine/` reviewed for `<windows.h>` includes; keep platform ifdefs in `io/` only |
@@ -397,7 +399,7 @@ Answered during planning, so nobody re-litigates them in a code review:
 | Spectrum axis | **Log, spaced from `KeyboardLayout`**, so bands sit 1:1 over the keys like the waterfall lanes. Linear Hz was rejected: a piano stops at 4.2 kHz, so three quarters of a linear axis is empty, and nothing above C8 is hunted here — the aliasing report is where spurs get chased. |
 | FFT thread | **The frame loop computes, the audio thread only taps.** Two FFTs per frame is a fraction of a millisecond against a period deadline, and a stall on the UI thread costs a frame instead of a click. A dedicated analyser thread is a thread, a lifetime and a shutdown path bought for arithmetic the frame budget already affords. |
 | Sample playback | **In.** The old "no sample playback" non-goal is deleted. Boreaz ships one recorded instrument; it is not a general sampler. |
-| Instrument | **Salamander Grand Piano v3** (CC-BY-3.0, Alexander Holm), **mono subset ~100 MB, ≥ 4 velocity layers** — and the two cannot both hold: measured 2026-11-01, 4 velocity layers plus the 88 chromatic key-off recordings is 184 MB of FLAC and about 147 MB of mono 16-bit WAV, 3 layers with the same releases is about 111 MB. Keeping ~100 MB means dropping a layer or the key-off noise, and `tools/mkinst.py --dry-run` prints either choice before anything is fetched. Two upstreams, read on 2026-11-01, and neither is what this row used to say. **(a)** the original `SalamanderGrandPianoV3_44.1khz16bit.tar.bz2`, **488.7 MB**, archive.org, published sha1 `ec5a179a1218a590d2f88728f56b583e79876896`, md5 `bf8a7782f4e995a7beecd1e9110bb16f`: a flat directory of `<Note>v<layer>.wav` plus `harmL*.wav`/`harmV3*.wav`/`harmV5*.wav`, **no SFZ and no loop points in it**. **(b)** `github.com/sfzinstruments/SalamanderGrandPiano` @ `3382bf9496bba2486f5ab0de55a264d1dfc38404`: the same 641 recordings as 48 k/24 **stereo** FLAC, 748.4 MB in total, as **ordinary git blobs - not LFS** (a raw URL per file, averaging 1.17 MB; the 394 MB in the row above is what a 16-bit stereo decode of all 641 costs) **plus the mapping as authored data** - `Data/notes.txt` gives 16 `<group>`s with their own `lovel`/`hivel` bands, `Data/region.txt` the 30 minor-third regions, `Data/hammer.txt` the chromatic hammer-noise releases, `Data/str_res.txt` the string resonances, `Data/pedal.txt` the pedal noise. **(b) is the one to build on: it has the velocity bands and the release groups someone else already measured.** A third file, `SalamanderGrandPianoV3_OggVorbis.tar.bz2`, **78.0 MB** (sha1 `5b0247d375ff55aea8a58f775b448e4c4c0e642a`), is all 641 recordings at 44.1 lossy, and it is the cheapest way to get every layer if bandwidth starts to matter. |
+| Instrument | **Salamander Grand Piano v3** (CC-BY-3.0, Alexander Holm), **mono subset ~100 MB, ≥ 4 velocity layers** — and the two cannot both hold: measured 2026-11-01, 4 velocity layers plus the 88 chromatic key-off recordings is 184 MB of FLAC and about 147 MB of mono 16-bit WAV, 3 layers with the same releases is about 111 MB. Keeping ~100 MB means dropping a layer or the key-off noise, and `tools/mkinst.py --dry-run` prints either choice before anything is fetched. Two upstreams, read on 2026-11-01, and neither is what this row used to say. **(a)** the original `SalamanderGrandPianoV3_44.1khz16bit.tar.bz2`, **488.7 MB**, archive.org, published sha1 `ec5a179a1218a590d2f88728f56b583e79876896`, md5 `bf8a7782f4e995a7beecd1e9110bb16f`: a flat directory of `<Note>v<layer>.wav` plus `harmL*.wav`/`harmV3*.wav`/`harmV5*.wav`, **no SFZ and no loop points in it**. **(b)** `github.com/sfzinstruments/SalamanderGrandPiano` @ `3382bf9496bba2486f5ab0de55a264d1dfc38404`: the same 641 recordings as 48 k/24 **stereo** FLAC, 748.4 MB in total, as **ordinary git blobs - not LFS** (a raw URL per file, averaging 1.17 MB; the 394 MB in the row above is what a 16-bit stereo decode of all 641 costs) **plus the mapping as authored data** - `Data/notes.txt` gives 16 `<group>`s with their own `lovel`/`hivel` bands, `Data/region.txt` the 30 minor-third regions, `Data/hammer.txt` the chromatic hammer-noise releases, `Data/str_res.txt` the string resonances, `Data/pedal.txt` the pedal noise. **(b) is the one to build on: it has the velocity bands and the release groups someone else already measured.** A third file, `SalamanderGrandPianoV3_OggVorbis.tar.bz2`, **78.0 MB** (sha1 `5b0247d375ff55aea8a58f775b448e4c4c0e642a`), is all 641 recordings at 44.1 lossy, and it is the cheapest way to get every layer if bandwidth starts to matter. **Built 2026-11-01, and the build corrected the arithmetic in this row: the 88 key-off recordings cost 3.5 MB of the 147.3 MB (2.4 %), so "~100 MB means dropping a layer or the key-off noise" was wrong — dropping every release saves 2.4 %, and the ~100 MB target means two velocity layers, not three.** Measured out of `boreaz-sfz-probe` on the built subset: **208 files, 120 regions playable, 88 release recordings, 280 MB resident, 0 refused, 509.9 ms**; on disk 208 WAVs, 147.3 MB; 184.1 MB of FLAC fetched. The subset ships at `volume=+6` on its 120 note regions (upstream's `set_cc7 100`/`amplitude_oncc7` are opcodes this engine does not read), which lands the listening ladder at **0.6941** against the shipped upright's **0.6121** at the same 0 dB master gain. |
 | **Loops** | **Not available, and this row used to promise "loops kept".** Neither upstream carries loop points: the original ships bare WAVs, the SFZ carries no `loop_*` opcode, and the only loop data in either family is the CC0 upright's own mapping. Salamander's recordings are long, so a held note plays to the end of its file instead of a seam, which is a different behaviour and must be measured as one (the 8 s hold in `tools/listen.py`). Looping the flagship means *computing* loop points in `mkinst`, which is a task with its own risk and is not implied by anything here. |
 | Instrument format | **SFZ read at runtime, plain SFZ only.** But `mkinst` is not "subset and stamp provenance", which is what this row used to claim: **(b) has no `<region>` in it at all** - the master `Salamander Grand Piano V3.sfz` is 120 lines of `#define`s, `<control>`, `<global>` and four `<master>` switchboards (`sw_last` keyswitches for natural/retuned, `amplitude_oncc7`, `amp_veltrack_oncc$VELTRACK=-100` with `set_hdcc$VELTRACK=0.73`, `label_cc*`) and the regions arrive through **sforzando-only `#include`** directives: `<group> #include "Data/vel_01.txt" lovel=1 hivel=26 #include "Data/region.txt"`. So `mkinst` **assembles** that into one flat plain-SFZ: resolve `#define`/`$VAR` (`$EXT`, `$VEL`, `$TUNEnn`, `$OFFnn`), inline the includes, bake the CC-controlled opcodes at their upstream defaults (`amp_veltrack = round(-100 × 0.73) = -73`), drop what a sampled voice cannot do (`offset_oncc`, `*_curvecc`, `<curve>`, the keyswitch pair - natural tuning only, `rt_decay`, `note_polyphony`) **and print every one it dropped**. The loader still parses nothing but plain SFZ, which is the part of the original decision that survives. |
 | Tuning for samples | **Linear 12-TET, always.** A recorded piano is already stretched, so stretched tuning and inharmonicity are **rejected for sampled voices** (they stay legal for synth voices if ever wanted). |
@@ -408,19 +410,26 @@ Answered during planning, so nobody re-litigates them in a code review:
 | Asset in git | **Never.** Text recipe in, binary asset out, release artifact only, no git-lfs. |
 | `Leethring/piano-sound-samples` | **Evaluated and rejected as the instrument** (MuseScore-rendered 128 kbit MP3, 1 velocity layer, no release samples, ~5 s cut tails, 5.5 dB key-to-key level spread). May be used as throwaway test data only. |
 | Per-key gain normalisation | **Not required** for Salamander (properly voiced); `mkinst` reports per-region peak so a lumpy library is visible. |
+| A region's own loop points beat the file's `smpl` chunk | **Kept, 2026-11-01.** The mapping is the author's instruction for that region and `smpl` is the file's default, which is also what other SFZ engines do; it is documented at `include/boreaz/samples/sample_store.h:33`, asserted in `tests/test_sample_store.cpp`, and a handoff note calling it backwards is not evidence. A region that gives points the wrong way round is warned about and played once rather than falling back to `smpl`, so the precedence never hides a broken mapping. |
+| The master bus runs `tanh(x)` on every block, at a drive nothing can set | **Kept as it is, 2026-11-01.** It is not a bug and it is not a knob waiting to be wired: at the `-12 dB` the engine starts with, the flagship's loudest transient is 0.2145 pre-clip and the curve costs **0.13 dB**, which is below the ear; at `0 dB` it costs 1.82 dB, which is why levels are measured at `--gain -40` and not at the file's peak. Raising the default drive, or exposing it, is a DSP change that moves both goldens to buy headroom nothing currently asks for — the FX-phase limiter is the thing that will actually own this, and it should own it once. |
 | Licence | **PolyForm Noncommercial 1.0.0** (`PolyForm-Noncommercial-1.0.0`) on Boreaz's own source: free to use, study, change and share non-commercially; selling it or commercial use needs a separate agreement. `LICENSE` is byte-identical to the SPDX canonical text. Bundled code and the sampled instrument keep their own terms in `NOTICE` — the CC-BY-3.0 piano is deliberately **not** re-covered by the non-commercial clause. MIT stays available later: while the authorship is sole, relicensing is one commit. |
 
 Still open, none of them blocking phase 0:
 
-1. **Which velocity layers** of Salamander's 16 go into the ~100 MB subset, and where the
-   crossfade boundaries sit. A listening decision, made in phase 6, not now.
-2. **Release region groups** — include the chromatic hammer-noise and minor-third string
-   resonance releases in the first subset, or ship attacks first and add them once the
-   release pool exists? They cost size and they are most of the realism. Note that this
-   cannot be settled by ear on the shipped instrument: it has **no release regions**, so
-   `tools/listen.py` on it proves the pool is wired up, not that a hammer noise sounds right.
-   Salamander is the first library where the question is audible at all.
-3. **Who runs `mkinst`** — we publish the ~100 MB subset as a release artifact, or the user
+1. **Which velocity layers** of Salamander's 16 — **answered 2026-11-01 by the ear: v1, v6, v10,
+   v14**, the four `tools/mkinst.py` keeps by default. Upstream's bands (1-26, 47-50, 73-80,
+   105-112) leave velocity 0 and three gaps uncovered, and this engine says so out loud, so the
+   subset re-cuts them to 0-34, 35-64, 65-96, 97-127. Those three splits are what
+   `tools/listen.py`'s velocity ladder deliberately walks over. What the four layers cost is in
+   §1's asset table; the decision was 280 MB resident or a quieter piano, and the piano won.
+2. **Release region groups** — **answered: the 88 chromatic hammer noises are in, the minor-third
+   string resonances and the pedal noise are not.** Not by ear alone: the releases are **3.5 MB of
+   the 147.3 MB (2.4 %)**, so the size argument against them never existed, and they are the part
+   of a piano the upright cannot demonstrate at all — the shipped CC0 instrument has **no release
+   regions**, so `tools/listen.py` on it proves the pool is wired up, not that a hammer noise
+   sounds right. String resonance is the next candidate and it is a different question: it wants to
+   be *held* rather than one-shotted, which §6 of phase 6c parked behind one flag on `VoiceSample`.
+3. **Who runs `mkinst`** — we publish the 147 MB subset as a release artifact, or the user
    runs the subsetter after downloading the upstream library. Publishing is friendlier and
    puts the redistribution on us, which CC-BY allows.
 4. **A/B patch compare** — parked in the optional list.
@@ -455,6 +464,23 @@ Still open, none of them blocking phase 0:
      from **0.382302** to **0.306908** on `lead-simple.mid`, which is 100/127 with the clipper
      compressing a little less than proportionally. Whether -12 is the right thing to ship, given that
      the ear has now heard it at 0 dB, is still open.
+   - **`volume=` is a pure gain stage; the output peak is not a level.** Measured 2026-11-01 because
+     the flagship's `volume=+6` only moved the output 4.7 dB and someone had to know whether the store
+     or the dB reference was wrong: it is neither. Render the same file at `--gain -40`, where the
+     master-bus `tanh` is a straight line, and `volume=+6` against `volume=0` measures **+6.02 dB**;
+     at `--gain 0` the same pair measures **+4.71 dB**. The difference is the clipper, which runs
+     `tanh(x)` on every block at drive 1.0 - nothing in this repository calls `SoftClip::set_drive`
+     outside `test_gain.cpp`, so drive is a knob with no dial. The curve costs 0.03 dB at 0.1
+     pre-clip, 0.45 dB at 0.4, **1.82 dB at the 0.8545 the flagship's loudest transient reaches**
+     (which is what arrives as 0.6941), and the error against a linear render is -14.5 dBFS peak /
+     -26.3 dB rms - a distorted grand, not a quieter one. Two numbers follow and both are worth
+     remembering before anyone tunes by ear again: `tanh(1.0) = 0.7616`, so the output ceiling at
+     drive 1.0 is **-2.37 dBFS** and the `clamp(-1, 1)` after it is unreachable; and `drive_peak`,
+     which is what the GUI meters, is the **pre-clip** number, so a meter saying 0.85 next to a file
+     peaking at 0.69 is two honest measurements of two different places. Where it matters is decided
+     by the master gain, not by the instrument: at the shipped `-12 dB` that same transient is 0.2145
+     pre-clip and the curve costs **0.13 dB**, so `volume=+6` ships at a level where the clipper is
+     not in the way, and the 1.82 dB only arrives if someone turns the master up to 0 dB by hand.
 
 ## 8. Commands (phase 0 onward)
 
@@ -484,22 +510,33 @@ ctest --test-dir build --output-on-failure
 #     compressing a little less once quieter. Both golden files were regenerated in that one commit.
 python tools/midifile_fixtures.py --verify "boreaz midifile fixtures"   # the .mid fixtures match their recipe
 
-# the CC0 starter instrument --instrument plays: 67 WAVs, 57 MB, ~12 s, nothing written in the repo
+# the CC0 starter instrument --instrument plays: 66 recordings + one 2 s demo WAV, 54.7 MiB, ~12 s, nothing written in the repo
 python tools/mkinstrument.py --build compact --out build/assets/instruments/boreaz-cc0 --force
 ./build/boreaz-sfz-probe build/assets/instruments/boreaz-cc0/UprightPianoKW-20220221.sfz
 #   ^ 66 regions playable, 0 release recordings, 109 MB, 0 refused - and it names every opcode it ignores
+#   ^ Both numbers used to be quoted for this instrument and only one of them is the same thing: the
+#     66 WAVs under `samples/` are 54.7 MiB of 16-bit stereo on disk (57.4 MB in decimal, which is
+#     the "57 MB" this line used to carry) and 109 MB of float32 in RAM, and the "67 WAVs" counted
+#     the release's own 2 s demo file, which `mkinstrument.py` decodes and nothing plays.
 
 # things to listen to, on that instrument, with no audio device involved (renders through boreaz-render)
 python tools/listen.py                        # build/listen/*.wav + how loud each one came out
 python tools/listen.py --gain -12             # ... at the level the app comes up with, not 0 dB
 
-# build the shipped instrument from the upstream library (network, ~394 MB in, ~100 MB out)
-python tools/mkinst.py --dry-run   # what it would fetch and what it would cost   # pins URL + sha256, writes NOTICE.txt
-#   ^ NOT BUILT, AND NOT THIS COMMAND. `tools/mkinst/` has never existed in this repository
-#     (grep it: 19 mentions in this file, zero files). The tool to write is `tools/mkinst.py`,
-#     reusing tools/mkinstrument.py's fetch/decode/verify shape, and the work is the assembler
-#     described in §7 ("Instrument format"), not a subset. Do not copy the line above into a
-#     script name and assume the recipe is the hard part.
+# the flagship: build the Salamander subset from upstream's own mapping (network, 184.1 MB of FLAC in)
+python tools/mkinst.py --dry-run   # cost before bandwidth: layers, bands, regions, MB in and out
+python tools/mkinst.py             # ffmpeg needed; cache in build/mkinst-cache, output third_party/instruments/salamander
+./build/boreaz-sfz-probe third_party/instruments/salamander/salamander.sfz
+python tools/listen.py --instrument third_party/instruments/salamander/salamander.sfz
+#   ^ 208 files, 120 regions playable, 88 release recordings, 280 MB resident, 0 refused, ~480 ms.
+#     It assembles, it does not copy: upstream's `.sfz` wraps its mapping in `<master>` key switches,
+#     `locc20/21/22` gates and `*_oncc` opcodes this engine does not read, so the tool writes the
+#     regions this engine can honour and says what it dropped in `provenance.txt`.
+#     Measured on it, at 0 dB master: `volume=0` renders the velocity ladder at 0.4036, `volume=6`
+#     at 0.6941, against the shipped upright's 0.6121. At `--gain -40` the same pair is 6.02 dB
+#     apart, which is the proof that the missing 1.3 dB is the master-bus `tanh` and not `volume=`
+#     (see §7, "`volume=` is a pure gain stage"). Tune anything by that measurement or by
+#     `drive_peak`, never by an output peak that is already inside the curve.
 # the gate, in one command: build, the suite, both render paths, and the release behaviour in audio
 python tools/release_check.py           # prints the window table; exit 0 means every gate ran
 ```

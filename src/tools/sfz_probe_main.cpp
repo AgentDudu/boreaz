@@ -11,6 +11,7 @@
 // estimate from file sizes has to guess at bit depth and channel count, and the reader's arithmetic
 // is the thing under test anyway.
 
+#include <algorithm>
 #include <cstdint>
 #include <iostream>
 #include <string>
@@ -89,7 +90,13 @@ int main(int argc, char** argv) {
               << loaded.releases << " release recordings, "
               << loaded.bytes / (1024u * 1024u) << " MB resident, " << loaded.refused
               << " refused, " << loaded.load_ms << " ms\n";
+    // The store hands back the mapping's warnings followed by its own, which is what a caller that
+    // only ever asks the store needs. This tool asked both, so the same ignored opcode arrived as a
+    // `reader:` line and a `loader:` line and looked like two problems. Only what the reader did not
+    // already say is worth another line.
     for (const std::string& warning : loaded.warnings)
-        std::cout << "  loader: " << warning << "\n";
+        if (std::find(parsed.warnings.begin(), parsed.warnings.end(), warning) ==
+            parsed.warnings.end())
+            std::cout << "  loader: " << warning << "\n";
     return 0;
 }
