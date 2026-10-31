@@ -410,6 +410,8 @@ Answered during planning, so nobody re-litigates them in a code review:
 | Asset in git | **Never.** Text recipe in, binary asset out, release artifact only, no git-lfs. |
 | `Leethring/piano-sound-samples` | **Evaluated and rejected as the instrument** (MuseScore-rendered 128 kbit MP3, 1 velocity layer, no release samples, ~5 s cut tails, 5.5 dB key-to-key level spread). May be used as throwaway test data only. |
 | Per-key gain normalisation | **Not required** for Salamander (properly voiced); `mkinst` reports per-region peak so a lumpy library is visible. |
+| A region's own loop points beat the file's `smpl` chunk | **Kept, 2026-11-01.** The mapping is the author's instruction for that region and `smpl` is the file's default, which is also what other SFZ engines do; it is documented at `include/boreaz/samples/sample_store.h:33`, asserted in `tests/test_sample_store.cpp`, and a handoff note calling it backwards is not evidence. A region that gives points the wrong way round is warned about and played once rather than falling back to `smpl`, so the precedence never hides a broken mapping. |
+| The master bus runs `tanh(x)` on every block, at a drive nothing can set | **Kept as it is, 2026-11-01.** It is not a bug and it is not a knob waiting to be wired: at the `-12 dB` the engine starts with, the flagship's loudest transient is 0.2145 pre-clip and the curve costs **0.13 dB**, which is below the ear; at `0 dB` it costs 1.82 dB, which is why levels are measured at `--gain -40` and not at the file's peak. Raising the default drive, or exposing it, is a DSP change that moves both goldens to buy headroom nothing currently asks for — the FX-phase limiter is the thing that will actually own this, and it should own it once. |
 | Licence | **PolyForm Noncommercial 1.0.0** (`PolyForm-Noncommercial-1.0.0`) on Boreaz's own source: free to use, study, change and share non-commercially; selling it or commercial use needs a separate agreement. `LICENSE` is byte-identical to the SPDX canonical text. Bundled code and the sampled instrument keep their own terms in `NOTICE` — the CC-BY-3.0 piano is deliberately **not** re-covered by the non-commercial clause. MIT stays available later: while the authorship is sole, relicensing is one commit. |
 
 Still open, none of them blocking phase 0:
@@ -475,7 +477,10 @@ Still open, none of them blocking phase 0:
      remembering before anyone tunes by ear again: `tanh(1.0) = 0.7616`, so the output ceiling at
      drive 1.0 is **-2.37 dBFS** and the `clamp(-1, 1)` after it is unreachable; and `drive_peak`,
      which is what the GUI meters, is the **pre-clip** number, so a meter saying 0.85 next to a file
-     peaking at 0.69 is two honest measurements of two different places.
+     peaking at 0.69 is two honest measurements of two different places. Where it matters is decided
+     by the master gain, not by the instrument: at the shipped `-12 dB` that same transient is 0.2145
+     pre-clip and the curve costs **0.13 dB**, so `volume=+6` ships at a level where the clipper is
+     not in the way, and the 1.82 dB only arrives if someone turns the master up to 0 dB by hand.
 
 ## 8. Commands (phase 0 onward)
 
