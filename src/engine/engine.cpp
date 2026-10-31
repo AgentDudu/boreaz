@@ -52,6 +52,7 @@ Engine::Engine(const Params& initial) {
     master_.set_linear_immediate(db_to_linear(params.master_gain_db));
     // From here to the first process() call is setup, not the audio path.
     clip_.prepare(sample_rate_);
+    fx_.prepare(sample_rate_);
     strike_.fill(kUnstruckVelocity);
     channel_gain_.fill(1.0f);
     for (SampledVoice& voice : releases_)
@@ -61,6 +62,9 @@ Engine::Engine(const Params& initial) {
 void Engine::prepare(double sample_rate) {
     sample_rate_ = sample_rate > 0.0 ? static_cast<float>(sample_rate) : 44100.0f;
     clip_.prepare(sample_rate_);
+    // The delay line is measured in samples, so a rate change rebuilds it from silence rather than
+    // replaying 44.1 kHz history at 48 kHz.
+    fx_.prepare(sample_rate_);
     // Nothing else to size: the pool, the ring and the scratch buffers are already fixed, which
     // is the point (plan 3: all buffers preallocated at device open).
 }
@@ -191,6 +195,11 @@ void Engine::render_chunk(float* output, int frames, const Params& params) {
                          scratch_r_ + static_cast<std::size_t>(offset), run);
         offset += run;
     }
+
+    // The FX bus sits before the fader, so a delay tail fades with the piano instead of outliving
+    // it, and it is skipped entirely when every send reads zero - which is the default, which is
+    // why the committed goldens did not move when it landed.
+    fx_.process_block(scratch_l_, scratch_r_, frames, params);
 
     // Master gain ramps inside the chunk, so a gain move is a slide and not a click.
     master_.process_block(scratch_l_, frames);

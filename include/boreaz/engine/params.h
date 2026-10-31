@@ -46,6 +46,18 @@ struct Params {
     // Stereo spread across the 88 keys: -1 at A0, +1 at C8, scaled by this. 0 is mono.
     float pan_spread = 0.6f;
 
+    // The FX bus: sends, not crossfades. The dry mix is never attenuated to make room for the
+    // effect, so a send of zero is the dry signal untouched and a send of one is the dry signal
+    // plus a copy of itself - which is why `fx_delay_mix = 0` is a bypass the goldens can rely on.
+    // The default is silence, because a piano that arrives already echoing is a patch, not an
+    // instrument.
+    float fx_delay_mix = 0.0f;
+    float fx_delay_time_ms = 220.0f;
+    // 0.95 at the top, not 1.0: a feedback of one is an oscillator, and no parameter file gets to
+    // build one. The clamp is the same one the delay line applies to anything that bypasses the
+    // table.
+    float fx_delay_feedback = 0.35f;
+
     // Pitch bend reach in semitones at full deflection.
     float bend_range_semitones = 2.0f;
 
@@ -73,6 +85,9 @@ struct Params {
                filter_resonance == other.filter_resonance &&
                filter_keytrack == other.filter_keytrack && pan_spread == other.pan_spread &&
                bend_range_semitones == other.bend_range_semitones;
+        // The FX sends are deliberately not here. They are read by the bus every block, so a delay
+        // knob changes the sound on the block it lands on and needs no voice to be re-prepared -
+        // and an effect parameter that counts here would refresh every voice on every knob move.
     }
     bool operator!=(const Params& other) const { return !(*this == other); }
 };

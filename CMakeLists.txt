@@ -171,6 +171,7 @@ add_library(
   STATIC src/engine/synth_voice.cpp src/engine/sampled_voice.cpp src/engine/voice_allocator.cpp
          src/engine/engine.cpp
          src/engine/param_table.cpp
+         src/engine/fx_bus.cpp
          src/engine/message.cpp)
 target_include_directories(boreaz_engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(boreaz_engine PUBLIC boreaz_dsp)
@@ -324,6 +325,7 @@ if(BOREAZ_BUILD_TESTS)
     tests/test_message.cpp
     tests/test_engine.cpp
     tests/test_engine_events.cpp
+    tests/test_fx.cpp
     tests/test_live_params.cpp
     tests/test_params_panel.cpp
     tests/test_keyboard_layout.cpp

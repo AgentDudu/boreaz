@@ -7,6 +7,7 @@
 #include "boreaz/dsp/gain.h"
 #include "boreaz/dsp/tuning.h"
 #include "boreaz/engine/event.h"
+#include "boreaz/engine/fx_bus.h"
 #include "boreaz/engine/instrument.h"
 #include "boreaz/engine/param_bus.h"
 #include "boreaz/engine/params.h"
@@ -169,6 +170,9 @@ class Engine {
 
     boreaz::dsp::Gain master_;
     boreaz::dsp::SoftClip clip_;
+    // Between the voices and the master gain: an effect return that sat after the fader would be a
+    // second master volume that keeps playing when the piano is faded out.
+    FxBus fx_;
     float applied_master_gain_db_ = 0.0f;
 
     // Per-channel controller state, in semitones so a bend event does not redo the trig.
