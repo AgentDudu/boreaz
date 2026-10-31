@@ -86,8 +86,14 @@ bool parse_arguments(int argc, char** argv, Options& options, std::string& error
                 return false;
             }
             const std::string value = argv[++i];
-            double rate = 0.0;
-            if (std::sscanf(value.c_str(), "%lf", &rate) != 1 || rate < 3000.0 || rate > 384000.0) {
+            // strtod rather than sscanf: MSVC's headers mark sscanf deprecated and clang-cl turns
+            // that deprecation into an error under -Werror. The end pointer is stricter than the
+            // count sscanf returned, which is a favour - "44100Hz" used to parse - and isfinite is
+            // for "nan" and "inf", which strtod hands back happily and which compare false against
+            // both ends of a range, so `--rate nan` used to be accepted.
+            char* end = nullptr;
+            const double rate = std::strtod(value.c_str(), &end);
+            if (*end != '\0' || !std::isfinite(rate) || rate < 3000.0 || rate > 384000.0) {
                 error = "--rate wants 3000 to 384000 Hz, got '" + value + "'";
                 return false;
             }

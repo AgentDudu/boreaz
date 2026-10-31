@@ -560,7 +560,7 @@ TEST_CASE("midifile: the same file renders identically twice, which is what a go
         CHECK(first.song.events[i].velocity == second.song.events[i].velocity);
     }
 
-    const auto render = [&first](const Song& song) {
+    const auto render = [](const Song& song) {
         boreaz::engine::Engine engine;
         engine.prepare(song.sample_rate);
         std::vector<float> out;
@@ -737,8 +737,17 @@ TEST_CASE("boreaz-render: a MIDI file in, a WAV file out, and twice is the same 
 }
 
 TEST_CASE("boreaz-render: the committed goldens still match a render") {
+    // One committed set per toolchain. clang-cl contracts multiply-add and the MSVC build does
+    // not, so the same song hashes differently there while frames, peak and steals agree; see the
+    // header of tests/golden/midifile-clang.txt. A third toolchain has no file yet, and the REQUIRE
+    // below is the message saying so.
+#ifdef __clang__
+    constexpr const char* kGoldenFile = "midifile-clang.txt";
+#else
+    constexpr const char* kGoldenFile = "midifile.txt";
+#endif
     const std::filesystem::path golden_path{
-        std::string{BOREAZ_SOURCE_DIR} + "/tests/golden/midifile.txt"};
+        std::string{BOREAZ_SOURCE_DIR} + "/tests/golden/" + kGoldenFile};
     REQUIRE(std::filesystem::exists(golden_path));
 
     const auto dir = std::filesystem::temp_directory_path() / "boreaz_golden_tests";

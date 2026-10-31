@@ -1,5 +1,9 @@
 #include <cmath>
 #include <limits>
+// The STL only declares `operator<<(ostream&, string_view)` where <ostream> has been seen, and
+// clang-cl instantiates it late - so: doctest stringifies the string_view a CHECK() failed on,
+// and without this include that blows up inside __msvc_string_view.hpp instead of here.
+#include <ostream>
 
 #include <doctest/doctest.h>
 
