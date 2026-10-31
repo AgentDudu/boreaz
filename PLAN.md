@@ -415,7 +415,10 @@ Still open, none of them blocking phase 0:
    crossfade boundaries sit. A listening decision, made in phase 6, not now.
 2. **Release region groups** — include the chromatic hammer-noise and minor-third string
    resonance releases in the first subset, or ship attacks first and add them once the
-   release pool exists? They cost size and they are most of the realism.
+   release pool exists? They cost size and they are most of the realism. Note that this
+   cannot be settled by ear on the shipped instrument: it has **no release regions**, so
+   `tools/listen.py` on it proves the pool is wired up, not that a hammer noise sounds right.
+   Salamander is the first library where the question is audible at all.
 3. **Who runs `mkinst`** — we publish the ~100 MB subset as a release artifact, or the user
    runs the subsetter after downloading the upstream library. Publishing is friendlier and
    puts the redistribution on us, which CC-BY allows.
@@ -423,6 +426,21 @@ Still open, none of them blocking phase 0:
 5. **Where the two analyser windows cross over**, and whether the bottom two octaves are worth
    showing at all when they resolve to one rising shape. Both are measurements to take while building
    it, not guesses to make now.
+6. **Whether it feels right.** `python tools/listen.py` renders six things to `build/listen` on the
+   shipped instrument and prints how loud each came out, because "it sounded quiet" should be
+   answerable with a number. Three things it measured, none of them a bug, all of them decisions
+   nobody has made with an ear yet:
+   - the two layers really do switch at velocity 81, on the real files: middle C's soft recording is
+     `C4vL.wav`, its loud one is `B3vH.wav` centred a semitone below and played a semitone up, and the
+     rendered waveforms match those files' own zero-crossing rates either side of 81 (0.0211 against
+     0.0150).
+   - a held note keeps going: 0.0182 rms in the first second, then flat at 0.0025 / 0.0021 / 0.0023
+     over the 3-4, 5-6 and 7-8 second windows of an 8 s hold, dropping to 0.0008 after the key-up.
+     That is the loop doing its job, and it is 18 % of the attack's level: how long a real piano holds
+     is a recording question, but whether that reads as "alive" or "thin" is an ear.
+   - velocity spans **30 dB** on one key (0.0049 peak at v=15 against 0.1556 at v=127), so soft
+     playing is very quiet, and there is a step in the middle where the recording changes hands. Both
+     are normal sampler behaviour and both may still be wrong for this piano.
 
 ## 8. Commands (phase 0 onward)
 
@@ -450,6 +468,9 @@ python tools/midifile_fixtures.py --verify "boreaz midifile fixtures"   # the .m
 python tools/mkinstrument.py --build compact --out build/assets/instruments/boreaz-cc0 --force
 ./build/boreaz-sfz-probe build/assets/instruments/boreaz-cc0/UprightPianoKW-20220221.sfz
 #   ^ 66 regions playable, 0 release recordings, 109 MB, 0 refused - and it names every opcode it ignores
+
+# things to listen to, on that instrument, with no audio device involved (renders through boreaz-render)
+python tools/listen.py                        # build/listen/*.wav + how loud each one came out
 
 # build the shipped instrument from the upstream library (network, ~394 MB in, ~100 MB out)
 bash tools/mkinst/mkinst.sh tools/mkinst/salamander.recipe   # pins URL + sha256, writes NOTICE.txt
