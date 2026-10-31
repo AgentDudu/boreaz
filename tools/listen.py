@@ -21,6 +21,8 @@ listening pack someone will misunderstand.
 
 import argparse
 import array
+import math
+import re
 import subprocess
 import sys
 import wave
@@ -33,8 +35,6 @@ sys.path.insert(0, str(HERE))
 import midifile_fixtures as mf  # noqa: E402  - the MIDI writer this repo already has
 
 STARTER = REPO / "third_party/instruments/upright-piano-KW/UprightPianoKW-20220221.sfz"
-# The velocity the shipped instrument splits its two layers on, read from its <group> labels.
-LAYER_SPLIT = 81
 
 
 def velocity_ladder(key, velocities, beat):
@@ -104,8 +104,10 @@ def main(argv):
     beat = mf.TPQ  # one note per quarter note at 120 BPM: half a second a note
 
     scores = [(path.name, path) for path in sorted((REPO / "tests/fixtures/midifile").glob("*.mid"))]
-    # The ladder walks over the layer split on purpose: ...78, 80 | 81, 88... is the two recordings
-    # of the same key played next to each other, which is the A/B a slider cannot do.
+    # The ladder walks over the layer splits on purpose: 8, 20, 34 | 48, 62 | 78, 80, 81, 88 | 100,
+    # 112, 127 crosses every boundary a four-band mapping has (the shipped instrument's two layers
+    # split on 80/81, and the Salamander subset splits on 34/64/96), which is the A/B a slider
+    # cannot do - a different recording of the same key, next to each other.
     ladder = args.out / "velocity-ladder.mid"
     ladder.write_bytes(velocity_ladder(mf.C4, [8, 20, 34, 48, 62, 78, 80, 81, 88, 100, 112, 127], beat))
     held = args.out / "hold-one-note.mid"
@@ -117,12 +119,14 @@ def main(argv):
     print(f"out         {args.out}\n")
     print(f"{'file':<28}{'seconds':>9}{'peak':>8}{'rms':>8}   what to listen for")
     clipping = []
+    peaks = []
     for name, source in scores:
         wav = args.out / (source.stem + ".wav")
         subprocess.run([str(render), "--instrument", str(args.instrument), "--gain", args.gain,
                         str(source), str(wav), "--rate", "48000"],
                        check=True, capture_output=True)
         peak, rms = loudness(wav)
+        peaks.append(peak)
         if peak >= 0.99:
             clipping.append(name)
         print(f"{name:<28}{seconds(wav):>9.2f}{peak:>8.4f}{rms:>8.4f}   {WHY.get(name, '')}")
@@ -132,11 +136,26 @@ def main(argv):
         print(f"\n  {', '.join(clipping)}: at or over full scale, so the soft clipper is on - lower "
               "--gain before judging dynamics")
 
+    loudest = max(peak for peak in peaks) if peaks else 0.0
+    if 0 < loudest < 0.9:
+        room = 20 * math.log10(0.99 / loudest)
+        print(f"\nheadroom  {room:.1f} dB before the loudest file of this set reaches full scale - "
+              f"`--gain {room:.0f}` spends it")
+
     print("\nnot in this pack:")
-    print("  release recordings - the instrument above has none, so the release voice pool cannot")
-    print("  be heard here at all; it needs a library recorded with keys being let go.")
-    print("  filters - three regions of the instrument ask for lpf_2p@2200 and a sampled voice has")
-    print("  no filter, which is measured elsewhere as a 5 % shift in brightness: inaudible.")
+    text = args.instrument.read_text(encoding="utf-8", errors="replace")
+    releases = len(re.findall(r"trigger\s*=\s*release", text))
+    if releases:
+        print(f"  releases   {releases} key-off recordings in this instrument. They fire on "
+              f"velocity-ladder\n             (twelve strikes, so twelve key-offs) and lead-simple "
+              f"(a gap in every note),\n             and not on hold-one-note, which never lets go.")
+    else:
+        print("  release recordings - the instrument above has none, so the release voice pool cannot")
+        print("  be heard here at all; it needs a library recorded with keys being let go.")
+    filtered = len(re.findall(r"fil_type|\bcutoff\b", text))
+    if filtered:
+        print(f"  filters - {filtered} regions of the instrument ask for a filter and a sampled voice has")
+        print("  no filter, which is measured elsewhere as a 5 % shift in brightness: inaudible.")
     return 0
 
 
