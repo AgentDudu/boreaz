@@ -345,7 +345,21 @@ int main(int argc, char** argv) {
             return idle.get();
         };
         window_options.instruments.applied = [&](const boreaz::engine::Instrument* instrument) {
-            if (live_instrument != nullptr && live_instrument != instrument) {
+            if (live_instrument == instrument)
+                return;
+            // The panel only fires this once the voice pool is empty, but an empty pool is still a
+            // pool the callback may be rendering: adopting an instrument rebuilds it, and a rebuild
+            // that lands inside a render is a voice vanishing mid-sample. Stopping the device is the
+            // one moment that is known to be between callbacks, and the panel already promised this
+            // is not silent - the gap is a few milliseconds of buffer, once, at a switch.
+            device.stop();
+            engine.set_instrument(instrument);
+            if (playing) {
+                std::string restart;
+                if (!device.start(restart))
+                    std::cerr << "boreaz: " << restart << " - sound stopped after the switch\n";
+            }
+            if (live_instrument != nullptr) {
                 for (std::unique_ptr<boreaz::samples::SampleStore>& store : stores)
                     if (store != nullptr && store.get() == live_instrument)
                         store = std::make_unique<boreaz::samples::SampleStore>();
