@@ -56,9 +56,15 @@ KEPT = {"sample", "lokey", "hikey", "key", "pitch_keycenter", "pitch_keyroot", "
 WAV_PER_FLAC = 0.80
 WAV_PER_FLAC_SPAN = (0.61, 0.96)
 
-# This subset rendered 0.4044 peak at 0 dB against the shipped upright's 0.6121, so it ships about
-# 4 dB quiet. +6 dB on the regions lands it at 0.6941 measured, i.e. +4.7 dB of that reached the
-# output: `volume=` is not a pure gain stage in this engine, and nobody has worked out why yet.
+# The subset renders 0.4036 peak at 0 dB master against the shipped upright's 0.6121, so it ships
+# about 4 dB quiet. +6 dB on its regions lands it at 0.6941, i.e. +4.7 dB of that reaches the output.
+#
+# The missing 1.3 dB is the master bus, not this number, and `volume=` is innocent: render the same
+# file at --gain -40, where the master-bus tanh is a straight line, and volume=6 against volume=0
+# measures +6.02 dB; at --gain 0 the same pair measures +4.71 dB. The engine runs tanh(x) every block
+# with drive pinned at 1.0, which costs 0.03 dB at 0.1 pre-clip, 0.45 dB at 0.4, and 1.82 dB at the
+# 0.8545 this subset's loudest transient reaches. So an output peak near full scale is a compressed
+# signal and not a level: measure a level here at --gain -40, or read drive_peak, which is pre-clip.
 LEVEL_DB = 6.0
 
 LICENSE_FILES = ["LICENSE", "README.md"]
