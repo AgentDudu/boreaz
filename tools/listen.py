@@ -10,10 +10,14 @@ written here: a velocity ladder that walks across the instrument's own layer spl
 held long enough to hear what a loop point sounds like.
 
 Each line printed next to the file is the loudness of what was actually written, so "it sounded
-quiet" can be answered with a number instead of a shrug. Peak is full-scale, so 0.15 is about -16 dB.
+quiet" can be answered with a number instead of a shrug. Peak is full-scale, so 0.15 is about -16 dB
+— but it is full-scale *after* the master bus, which runs `tanh(x)` at drive 1.0, so a peak here is a
+compressed number and not a level: `tanh(1.0)` is 0.7616, full scale is not something `--gain` can
+reach, and the last line of this report says what the same moment looked like before the clipper.
 The pack is rendered at `--gain 0` (0 dB) by default, which is 12 dB hotter than the engine's own
--12 dB default: on the shipped instrument 0 dB measures 0.6974 peak, the loudest it gets before the
-soft clipper starts touching it. `--gain -12` gives back the level the app comes up with.
+-12 dB default. `--gain -12` gives back the level the app comes up with, and `--gain -40` is where a
+level stops being compressed at all (+6 dB measured on a `volume=` change measures +6.02 dB there,
++4.71 dB at 0 dB).
 
 What cannot be heard here is said at the end, because a listening pack that does not say so is a
 listening pack someone will misunderstand.
@@ -127,20 +131,26 @@ def main(argv):
                        check=True, capture_output=True)
         peak, rms = loudness(wav)
         peaks.append(peak)
-        if peak >= 0.99:
+        # 0.7 of output is 0.87 before the clipper, which is where the tanh has taken more than a dB
+        # off the transient: dynamics measured above that line are the curve's, not the piano's.
+        # It used to be 0.99, which is a level no output reaches — tanh only gets there from 2.65.
+        if peak >= 0.7:
             clipping.append(name)
         print(f"{name:<28}{seconds(wav):>9.2f}{peak:>8.4f}{rms:>8.4f}   {WHY.get(name, '')}")
     if clipping:
-        # The soft clipper is deliberately there to keep the output legal, but a listening pack that
-        # is being driven into it is a pack whose dynamics are being measured wrong.
-        print(f"\n  {', '.join(clipping)}: at or over full scale, so the soft clipper is on - lower "
-              "--gain before judging dynamics")
+        print(f"\n  {', '.join(clipping)}: over 0.7 out, so the master-bus tanh is taking real level "
+              "off the loudest moment - lower --gain before judging dynamics")
 
     loudest = max(peak for peak in peaks) if peaks else 0.0
     if 0 < loudest < 0.9:
-        room = 20 * math.log10(0.99 / loudest)
-        print(f"\nheadroom  {room:.1f} dB before the loudest file of this set reaches full scale - "
-              f"`--gain {room:.0f}` spends it")
+        # Say what the loudest moment was *before* the clipper, because that is the number that says
+        # how much room is left. The line used to promise that `--gain N` spent the room and landed
+        # at full scale, which the tanh makes untrue at every N.
+        preclip = math.atanh(loudest)
+        off = -20.0 * math.log10(math.tanh(preclip) / preclip)
+        print(f"\nheadroom  the set's loudest moment is {preclip:.4f} before the clipper, "
+              f"{20 * math.log10(1.0 / preclip):.1f} dB below full scale, and the tanh is already "
+              f"taking {off:.1f} dB off it")
 
     print("\nnot in this pack:")
     text = args.instrument.read_text(encoding="utf-8", errors="replace")
