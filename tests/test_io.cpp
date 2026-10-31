@@ -29,8 +29,6 @@ using namespace fixture;
 
 namespace {
 
-constexpr std::int64_t kMs = 1'000'000;
-
 // A 512 frame period at 44.1 kHz, in nanoseconds: 11.6 ms.
 constexpr std::int64_t kPeriodNs = 11'600'000;
 
