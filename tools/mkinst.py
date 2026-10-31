@@ -208,9 +208,11 @@ def reband(bands, layers):
         high = min(bands[l - 1][0] for l in layers[i:]) - 1
         legal = [edge for edge in sorted({b[1] for b in bands}) if low <= edge <= high]
         edges.append(min(legal, key=lambda edge: abs(edge - want)))
+    # The lowest band starts at 0, not 1: SFZ velocity ranges are inclusive and 0 is a legal
+    # velocity, so a mapping that starts at 1 leaves the sample store with keys no layer covers.
     bounds = [0] + edges + [127]
     return {
-        number: (bounds[i] + 1, bounds[i + 1])
+        number: (bounds[i] + (1 if i else 0), bounds[i + 1])
         for i, number in enumerate(layers)
     }
 
@@ -303,15 +305,15 @@ def cost(notes, hammers, upstream, bands, new_bands, layers):
 def sfz_text(notes, hammers, layers, bands, new_bands):
     header = f"""; Salamander Grand Piano, subset for Boreaz.
 ;
-; Assembled from {REPO} @ {COMMIT[:12]} by tools/mkinst.py - not a copy of the upstream file.
-; Kept: the natural tuning, {len(layers)} of its 16 velocity groups ({", ".join("v" + str(n) for n in layers)}),
-; all 88 chromatic hammer-noise releases. Dropped: the retuned variant, string resonance, pedal noise,
-; every *_oncc opcode, and the library's CC7 gain semantics. See NOTICE.txt and provenance.txt.
+// Assembled from {REPO} @ {COMMIT[:12]} by tools/mkinst.py - not a copy of the upstream file.
+// Kept: the natural tuning, {len(layers)} of its 16 velocity groups ({", ".join("v" + str(n) for n in layers)}),
+// all 88 chromatic hammer-noise releases. Dropped: the retuned variant, string resonance, pedal noise,
+// every *_oncc opcode, and the library's CC7 gain semantics. See NOTICE.txt and provenance.txt.
 ;
-; Velocity bands were re-cut so the kept layers cover 1-127 with no gaps:
+// Velocity bands were re-cut so the kept layers cover 1-127 with no gaps:
 """ + "".join(
         f";   v{n}: was {bands[n-1][0]}-{bands[n-1][1]}, now {new_bands[n][0]}-{new_bands[n][1]}\n"
-        for n in layers) + ";\n<global>\n; no defaults: every region below carries what it needs\n"
+        for n in layers) + ";\n<global>\n// no defaults: every region below carries what it needs\n"
     body = "".join(
         "<region> " + " ".join(f"{key}={region[key]}"
                                for key in ORDER + sorted(set(region) - set(ORDER))
@@ -418,7 +420,7 @@ def main(argv=None):
         return 0
     write_out(args, notes, hammers, upstream, names, bands, new_bands, layers, dropped, regions)
     print(f"target     {args.out}")
-    print(f"check      build/sfz-prod/boreaz-sfz-probex {args.out / 'salamander.sfz'}")
+    print(f"check      build/boreaz-sfz-probe.exe {args.out / 'salamander.sfz'}")
     print(f"listen     python tools/listen.py --instrument {args.out / 'salamander.sfz'}")
     return 0
 
