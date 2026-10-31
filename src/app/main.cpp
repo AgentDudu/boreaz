@@ -48,6 +48,9 @@ void usage() {
                    or an unknown key is an error and the app refuses to start, because
                    silent defaults are indistinguishable from working ones.
   --params FILE    a second file applied on top of --config, for a saved patch.
+  --gain DB        master output level in dB, -72 to +12, overriding whatever a file said. The
+                   engine starts at -12 dB on purpose - sixteen voices summed need room - so this
+                   is the flag for "it is too quiet" and "it is clipping".
   --instrument FILE  play a recorded instrument instead of the synthesiser: an SFZ mapping,
                    with its WAVs next to it. Keys the library did not record play the nearest
                    recording it has, shifted, which is what a piano with 37 samples for 88 keys
@@ -71,6 +74,10 @@ struct Options {
     std::string config; // empty means the instrument's own defaults, wherever they are
 
     std::string params;
+    // "--gain" is a flag because "it is too quiet" is a thing a player finds out in the first ten
+    // seconds, and a parameter file is not what you reach for then. Kept as text: the parameter
+    // table owns the range and the message, so this cannot drift from the slider.
+    std::string gain;
     std::string device;
     std::string midi = "auto";
     int period = 512;
@@ -121,6 +128,9 @@ bool parse(int argc, char** argv, Options& options, std::string& error) {
                 return false;
         } else if (argument == "--params") {
             if (!next(options.params))
+                return false;
+        } else if (argument == "--gain") {
+            if (!next(options.gain))
                 return false;
         } else if (argument == "--instrument") {
             if (!next(options.instrument))
@@ -173,6 +183,14 @@ int main(int argc, char** argv) {
     if (!boreaz::config::load_params_file(defaults, params, error) ||
         (!options.params.empty() &&
          !boreaz::config::load_params_file(options.params, params, error))) {
+        std::cerr << "boreaz: " << error << "\n";
+        return 1;
+    }
+    // Last, so the flag wins over both files: what was typed at the prompt is the newest thing said
+    // about the level.
+    if (!options.gain.empty() &&
+        !boreaz::config::set_param_from_text("--gain", "master_gain_db", options.gain, params,
+                                             error)) {
         std::cerr << "boreaz: " << error << "\n";
         return 1;
     }

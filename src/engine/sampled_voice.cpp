@@ -198,6 +198,9 @@ void SampledVoice::render(float* left, float* right, int frames) {
     const float* data = sample_->data;
     const double loop_end = static_cast<double>(sample_->loop_end);
     const double loop_length = static_cast<double>(sample_->loop_end - sample_->loop_start);
+    // The channel fader folded into the pan taps, so CC7 costs no extra multiply per sample.
+    const float pan_left = pan_left_ * channel_gain_;
+    const float pan_right = pan_right_ * channel_gain_;
 
     for (int i = 0; i < frames; ++i) {
         if (!advance_gain())
@@ -233,8 +236,8 @@ void SampledVoice::render(float* left, float* right, int frames) {
         const float sample_right = near_right + (far_right - near_right) * fraction;
 
         const float gain = gain_;
-        left[i] += gain * pan_left_ * sample_left;
-        right[i] += gain * pan_right_ * sample_right;
+        left[i] += gain * pan_left * sample_left;
+        right[i] += gain * pan_right * sample_right;
         position_ += increment_;
     }
 }

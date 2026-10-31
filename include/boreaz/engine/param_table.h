@@ -16,7 +16,7 @@ namespace boreaz::engine {
 // from a config file and greyed out in the window, so the list is written once here and everybody
 // else walks it: adding a parameter is one row, one field, and no other edit.
 struct ParamSpec {
-    const char* key;   // the name in params.ini, in a patch, and in `boreaz-render --set`
+    const char* key; // the name in params.ini, in a patch, and behind a flag: --gain is this row
     const char* label; // the name in the panel, in words a player uses
     const char* unit;  // appended to the number: "", " dB", " Hz", " s", " st"
     float minimum;

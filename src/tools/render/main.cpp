@@ -25,6 +25,7 @@ namespace {
 
 using boreaz::engine::Engine;
 using boreaz::config::load_params_file;
+using boreaz::config::set_param_from_text;
 using boreaz::engine::Params;
 
 constexpr double kDefaultRate = 44100.0;
@@ -41,6 +42,9 @@ struct Options {
     std::string input;
     std::string output;
     std::string params_path; // optional
+    // "--gain DB" because measuring a level needs a way to ask for another one without writing a
+    // file first. Text, not a float: the parameter table owns the range and the message.
+    std::string gain;
     // Render the sample library instead of the synthesiser, so the thing a listening test hears is
     // the thing the app would play. No file, no download, no driver: the mapping and its WAVs are
     // enough, which is why the sampled path can be checked with a rendered file.
@@ -70,6 +74,8 @@ void usage() {
         "              amp_decay_s, amp_sustain, amp_release_s, pan_spread,\n"
         "              bend_range_semitones, transpose_semitones, octave_shift\n"
         "  --rate N    output sample rate in Hz (default 44100)\n"
+        "  --gain DB   master output level in dB, -72 to +12, instead of the PARAMS file's "
+        "master_gain_db\n"
         "  --instrument FILE  play a recorded instrument instead of the synthesiser, so a\n"
         "              rendered WAV is the audio the app would have made\n"
         "\n"
@@ -106,6 +112,14 @@ bool parse_arguments(int argc, char** argv, Options& options, std::string& error
                 return false;
             }
             options.instrument = argv[++i];
+            continue;
+        }
+        if (argument == "--gain") {
+            if (i + 1 >= argc) {
+                error = "--gain needs a value";
+                return false;
+            }
+            options.gain = argv[++i];
             continue;
         }
         if (argument == "-h" || argument == "--help") {
@@ -230,6 +244,12 @@ int main(int argc, char** argv) {
 
     Params params;
     if (!options.params_path.empty() && !load_params_file(options.params_path, params, error)) {
+        std::fprintf(stderr, "boreaz-render: %s\n", error.c_str());
+        return kUsage;
+    }
+    // After the file, so the flag is the newest thing said about the level.
+    if (!options.gain.empty() &&
+        !set_param_from_text("--gain", "master_gain_db", options.gain, params, error)) {
         std::fprintf(stderr, "boreaz-render: %s\n", error.c_str());
         return kUsage;
     }

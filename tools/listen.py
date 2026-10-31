@@ -11,6 +11,9 @@ held long enough to hear what a loop point sounds like.
 
 Each line printed next to the file is the loudness of what was actually written, so "it sounded
 quiet" can be answered with a number instead of a shrug. Peak is full-scale, so 0.15 is about -16 dB.
+The pack is rendered at `--gain 0` (0 dB) by default, which is 12 dB hotter than the engine's own
+-12 dB default: on the shipped instrument 0 dB measures 0.6974 peak, the loudest it gets before the
+soft clipper starts touching it. `--gain -12` gives back the level the app comes up with.
 
 What cannot be heard here is said at the end, because a listening pack that does not say so is a
 listening pack someone will misunderstand.
@@ -83,6 +86,10 @@ def main(argv):
     parser.add_argument("--instrument", type=Path, default=STARTER)
     parser.add_argument("--binary-dir", type=Path, default=REPO / "build")
     parser.add_argument("--out", type=Path, default=REPO / "build" / "listen")
+    # Text, not a float: boreaz-render's --gain owns the range and the refusal, and a tool that
+    # re-checked the number here would be a second place for the same rule to drift.
+    parser.add_argument("--gain", default="0", help="master level in dB for the pack (0 dB is "
+                        "about as loud as this instrument renders without clipping)")
     args = parser.parse_args(argv)
 
     render = args.binary_dir / "boreaz-render.exe"
@@ -105,14 +112,25 @@ def main(argv):
     held.write_bytes(hold_one_note(mf.C4, 96, 16, beat))
     scores += [(ladder.name, ladder), (held.name, held)]
 
-    print(f"instrument  {args.instrument}\nout         {args.out}\n")
+    print(f"instrument  {args.instrument}")
+    print(f"gain        {args.gain} dB")
+    print(f"out         {args.out}\n")
     print(f"{'file':<28}{'seconds':>9}{'peak':>8}{'rms':>8}   what to listen for")
+    clipping = []
     for name, source in scores:
         wav = args.out / (source.stem + ".wav")
-        subprocess.run([str(render), "--instrument", str(args.instrument), str(source), str(wav),
-                        "--rate", "48000"], check=True, capture_output=True)
+        subprocess.run([str(render), "--instrument", str(args.instrument), "--gain", args.gain,
+                        str(source), str(wav), "--rate", "48000"],
+                       check=True, capture_output=True)
         peak, rms = loudness(wav)
+        if peak >= 0.99:
+            clipping.append(name)
         print(f"{name:<28}{seconds(wav):>9.2f}{peak:>8.4f}{rms:>8.4f}   {WHY.get(name, '')}")
+    if clipping:
+        # The soft clipper is deliberately there to keep the output legal, but a listening pack that
+        # is being driven into it is a pack whose dynamics are being measured wrong.
+        print(f"\n  {', '.join(clipping)}: at or over full scale, so the soft clipper is on - lower "
+              "--gain before judging dynamics")
 
     print("\nnot in this pack:")
     print("  release recordings - the instrument above has none, so the release voice pool cannot")

@@ -22,6 +22,56 @@ bool exists(const std::string& path) {
 
 using boreaz::engine::Params;
 
+// One key and its text, applied. `where` names the place it came from - "line 12", "--gain" - so
+// the message reads like the thing the person typed rather than like the function that parsed it.
+//
+// Strict in two directions: the whole string has to be a number, and the number has to be inside the
+// parameter's own range. A file or a flag that quietly did something near what it says is worse than
+// one that stops, and `Params::clamp_all` downstream cannot tell "you meant 1000" from "I meant 100".
+bool apply_value(const boreaz::engine::ParamSpec& spec, const std::string& key,
+                 const std::string& value, Params& params, const std::string& where,
+                 std::string& error) {
+    const std::string prefix = where + ": '" + key + "'";
+    if (spec.real != nullptr) {
+        // strtod plus "and it consumed the whole string": `sscanf("%f")` is happy to read the 2
+        // in "2..0" and call the line good, which is a patch that quietly does not say what it
+        // says.
+        char* end = nullptr;
+        const float parsed = static_cast<float>(std::strtod(value.c_str(), &end));
+        if (end == value.c_str() || *end != '\0' || !std::isfinite(parsed)) {
+            error = prefix + " wants a number, got '" + value + "'";
+            return false;
+        }
+        // Out of range is refused here rather than quietly clamped later: the person who typed
+        // `filter_cutoff_ratio = 1000` wants to know the file did not do what it says.
+        if (parsed < spec.minimum || parsed > spec.maximum) {
+            char bounds[64];
+            std::snprintf(bounds, sizeof bounds, "%g to %g", spec.minimum, spec.maximum);
+            error = prefix + " wants " + bounds + ", got '" + value + "'";
+            return false;
+        }
+        boreaz::engine::param_write(spec, parsed, params);
+        return true;
+    }
+
+    char* end = nullptr;
+    const long long whole = std::strtoll(value.c_str(), &end, 10);
+    // "1.5" for a transpose is not rounded: it is refused. The file promised a whole number
+    // and the person who wrote it means something specific by that.
+    if (end == value.c_str() || *end != '\0') {
+        error = prefix + " wants a whole number, got '" + value + "'";
+        return false;
+    }
+    const int parsed = static_cast<int>(whole);
+    if (static_cast<float>(parsed) < spec.minimum || static_cast<float>(parsed) > spec.maximum) {
+        error = prefix + " wants " + std::to_string(static_cast<int>(spec.minimum)) + " to " +
+                std::to_string(static_cast<int>(spec.maximum)) + ", got '" + value + "'";
+        return false;
+    }
+    params.*(spec.integer) = parsed;
+    return true;
+}
+
 // `key = value`, one per line, `#` starts a comment. Deliberately the same shape as the patch files
 // the preset phase will ship: a render parameter file and a preset are the same thing with a
 // different extension. Moved out of the render tool when the app started wanting the same thing -
@@ -68,47 +118,8 @@ bool load_params_file(const std::string& path, Params& params, std::string& erro
                     "' is not an engine parameter. Known keys are listed in --help";
             return false;
         }
-        if (spec->real != nullptr) {
-            // strtod plus "and it consumed the whole string": `sscanf("%f")` is happy to read the 2
-            // in "2..0" and call the line good, which is a patch that quietly does not say what it
-            // says.
-            char* end = nullptr;
-            const float parsed = static_cast<float>(std::strtod(value.c_str(), &end));
-            if (end == value.c_str() || *end != '\0' || !std::isfinite(parsed)) {
-                error = "line " + std::to_string(number + 1) + ": '" + key +
-                        "' wants a number, got '" + value + "'";
-                return false;
-            }
-            // Out of range is refused here rather than quietly clamped later: the person who typed
-            // `filter_cutoff_ratio = 1000` wants to know the file did not do what it says.
-            if (parsed < spec->minimum || parsed > spec->maximum) {
-                char bounds[64];
-                std::snprintf(bounds, sizeof bounds, "%g to %g", spec->minimum, spec->maximum);
-                error = "line " + std::to_string(number + 1) + ": '" + key + "' wants " + bounds +
-                        ", got '" + value + "'";
-                return false;
-            }
-            boreaz::engine::param_write(*spec, parsed, params);
-        } else {
-            char* end = nullptr;
-            const long long whole = std::strtoll(value.c_str(), &end, 10);
-            // "1.5" for a transpose is not rounded: it is refused. The file promised a whole number
-            // and the person who wrote it means something specific by that.
-            if (end == value.c_str() || *end != '\0') {
-                error = "line " + std::to_string(number + 1) + ": '" + key +
-                        "' wants a whole number, got '" + value + "'";
-                return false;
-            }
-            const int parsed = static_cast<int>(whole);
-            if (static_cast<float>(parsed) < spec->minimum ||
-                static_cast<float>(parsed) > spec->maximum) {
-                error = "line " + std::to_string(number + 1) + ": '" + key + "' wants " +
-                        std::to_string(static_cast<int>(spec->minimum)) + " to " +
-                        std::to_string(static_cast<int>(spec->maximum)) + ", got '" + value + "'";
-                return false;
-            }
-            params.*(spec->integer) = parsed;
-        }
+        if (!apply_value(*spec, key, value, params, "line " + std::to_string(number + 1), error))
+            return false;
     }
     return true;
 }
@@ -134,6 +145,16 @@ std::string known_keys() {
         out += table[row].key;
     }
     return out;
+}
+
+bool set_param_from_text(const std::string& flag, const std::string& key,
+                         const std::string& value, Params& params, std::string& error) {
+    const boreaz::engine::ParamSpec* spec = boreaz::engine::param_spec(key);
+    if (spec == nullptr) {
+        error = "'" + key + "' is not an engine parameter. Known keys are listed in --help";
+        return false;
+    }
+    return apply_value(*spec, key, value, params, flag, error);
 }
 
 } // namespace boreaz::config

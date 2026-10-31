@@ -135,6 +135,9 @@ void SynthVoice::render(float* left, float* right, int frames) {
     const float noise_level = applied_.noise_level;
     const float l2 = applied_.osc2_level;
     const float l3 = applied_.osc3_level;
+    // The channel fader folded into the pan taps, so CC7 costs no extra multiply per sample.
+    const float pan_left = pan_left_ * channel_gain_;
+    const float pan_right = pan_right_ * channel_gain_;
     float* l = left;
     float* r = right;
 
@@ -150,8 +153,8 @@ void SynthVoice::render(float* left, float* right, int frames) {
         // limiter to be legal; a resonant SVF pushed hard can leave the passband above 1.0.
         const float sample =
             std::clamp(filter_.process(mixed) * amp_.process() * peak_gain_, -1.0f, 1.0f);
-        *l++ += sample * pan_left_;
-        *r++ += sample * pan_right_;
+        *l++ += sample * pan_left;
+        *r++ += sample * pan_right;
 
         if (!amp_.active()) {
             // The envelope has run to zero: give the voice back. Without this the pool fills with

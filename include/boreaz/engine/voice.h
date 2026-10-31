@@ -87,8 +87,19 @@ class Voice {
     // was built with; neither may have to ask the pool, and neither may reach into a subclass.
     virtual const VoiceSample* sample() const { return nullptr; }
 
+    // This voice's mixer input: CC7 (MIDI channel volume) for the channel it is sounding on, which
+    // the engine pushes once per block. 1.0 is unity. It lives on the interface rather than in each
+    // implementation because a fader silences every kind of voice the same way, and because the
+    // alternative is a copy of the same multiplication in every voice that ever wants to be quiet.
+    // Set on the audio path, read once per sample: no ramp here, because a CC7 arrives as a
+    // staircase of small steps and the engine's master gain is what ramps a slow move.
+    void set_channel_gain(float gain) { channel_gain_ = gain; }
+    float channel_gain() const { return channel_gain_; }
+
   protected:
     Voice() = default;
+
+    float channel_gain_ = 1.0f;
 };
 
 } // namespace boreaz::engine

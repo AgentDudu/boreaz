@@ -31,7 +31,9 @@ python tools/mkinstrument.py
 ./build/boreaz-render --instrument third_party/instruments/upright-piano-KW/UprightPianoKW-20220221.sfz \
     tests/fixtures/midifile/pad-chords.mid build/pad.wav       # the same instrument, as a file
 ./build/boreaz-sfz-probe third_party/instruments/upright-piano-KW/UprightPianoKW-20220221.sfz
+./build/boreaz-render --gain 0 tests/fixtures/midifile/pad-chords.mid build/pad.wav  # 12 dB hotter
 python tools/listen.py    # six WAVs in build/listen, each one named for the thing to listen for
+python tools/listen.py --gain -12   # ... at the level the app itself comes up with, which is quiet
 ```
 
 The file reader is a library (`boreaz-midifile`), so the offline render, this app and the tests play
@@ -125,6 +127,20 @@ cp config/params.example.ini mine.ini   # every key, its range, and the default 
 An unknown key, a value that is not a number, and a number outside its range are errors that stop the
 app with the line and the reason: a parameter file that quietly did nothing is indistinguishable from
 one that worked. `config/params.ini` is the shipped preset and is read when `--config` says nothing.
+
+`--gain DB` is the one key worth reaching for on the command line, because "it is too quiet" is
+discovered in the first ten seconds and not while editing a file. It is the same `master_gain_db` the
+Mixer slider moves, so its range and its refusal come from the same table — `--gain 100` answers
+`wants -72 to 12` and exits 2 — and it wins over `--config`, which is the right precedence for a knob
+being turned while something is playing. The engine's own -12 dB default is a decision rather than an
+accident: sixteen summed voices need headroom. On the shipped instrument 0 dB measures **0.697** peak
+and +12 dB measures **0.998**, so past about 0 dB the clipper is what you are hearing, not more piano.
+
+MIDI **CC7** is the other hand on that level, and it is per channel and linear: 64 is half the
+amplitude, 0 is silence, and a note already held hears the move on the sample it arrives, which is
+what a volume wheel means. It used to be decoded, named and dropped, so a keyboard or a file asking
+for 100/127 played at full level instead; the one committed fixture that asks for a level is 2 dB
+quieter than it was, and `tests/golden/` says so in its own numbers.
 
 Machine-specific values come from the environment, optionally backed by a local `.env` file:
 

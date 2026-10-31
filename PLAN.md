@@ -442,6 +442,19 @@ Still open, none of them blocking phase 0:
    - velocity spans **30 dB** on one key (0.0049 peak at v=15 against 0.1556 at v=127), so soft
      playing is very quiet, and there is a step in the middle where the recording changes hands. Both
      are normal sampler behaviour and both may still be wrong for this piano.
+   - **it is quiet, deliberately, by 12 dB.** Every one of the six came out between **0.1132** and
+     **0.2070** peak, which is -19 to -14 dB full scale and thin on a laptop: `master_gain_db` starts
+     at -12 because sixteen summed voices need headroom. Two hands now reach that level and both are
+     measured rather than assumed. `--gain DB` on all three front ends is the same table the slider
+     uses (so `--gain 100` refuses with `wants -72 to 12`, and `--gain loud` refuses for being a word),
+     and the pack renders at `--gain 0` by default: the same six files land at **0.4109** to
+     **0.8186**, the instrument's own ceiling is **0.6974** at 0 dB, and at +12 dB it is **0.9979**,
+     which is the soft clipper and not another 12 dB of piano. CC7 per MIDI channel is the other hand
+     — linear, 0 to 127, heard by the note already held — and it was previously decoded, named, and
+     thrown away, so a file asking for 100/127 played at full level: that is why one golden moved,
+     from **0.382302** to **0.306908** on `lead-simple.mid`, which is 100/127 with the clipper
+     compressing a little less than proportionally. Whether -12 is the right thing to ship, given that
+     the ear has now heard it at 0 dB, is still open.
 
 ## 8. Commands (phase 0 onward)
 
@@ -462,7 +475,13 @@ ctest --test-dir build --output-on-failure
 ./build/boreaz --instrument build/piano/instrument.sfz
 ./build/boreaz --play demo.mid   # app, playing a MIDI file
 ./build/boreaz-render demo.mid out.wav demo.params   # .mid + params file -> 16 bit stereo .wav
+./build/boreaz-render --gain 0 demo.mid out.wav      # ... or one knob, 12 dB hotter, no file
 ./build/boreaz-render --golden demo.mid              # one line of measurements, which is what a golden is
+#   ^ --gain works on all three front ends and takes its range and its refusal from the same table as
+#     the slider: --gain 100 answers "wants -72 to 12" and exits 2. A DSP change moves the golden, and
+#     the last one was CC7: only lead-simple.mid asks for a level (CC7=100), which used to be decoded
+#     and dropped, so its peak fell 0.382302 -> 0.306908. That is 100/127 = 0.787 with the sum
+#     compressing a little less once quieter. Both golden files were regenerated in that one commit.
 python tools/midifile_fixtures.py --verify "boreaz midifile fixtures"   # the .mid fixtures match their recipe
 
 # the CC0 starter instrument --instrument plays: 67 WAVs, 57 MB, ~12 s, nothing written in the repo
@@ -472,6 +491,7 @@ python tools/mkinstrument.py --build compact --out build/assets/instruments/bore
 
 # things to listen to, on that instrument, with no audio device involved (renders through boreaz-render)
 python tools/listen.py                        # build/listen/*.wav + how loud each one came out
+python tools/listen.py --gain -12             # ... at the level the app comes up with, not 0 dB
 
 # build the shipped instrument from the upstream library (network, ~394 MB in, ~100 MB out)
 bash tools/mkinst/mkinst.sh tools/mkinst/salamander.recipe   # pins URL + sha256, writes NOTICE.txt

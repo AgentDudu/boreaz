@@ -30,6 +30,10 @@ class Engine {
     static constexpr std::uint8_t kMidiChannels = 16;
     // MIDI's own "note on with velocity 0 means note off", honoured because real devices send it.
     static constexpr std::uint8_t kCcSustainPedal = Event::kSustainPedal;
+    // GM's channel volume. A keyboard's volume slider is this controller, so it is a mixer input
+    // and not an engine parameter: it belongs to a channel, it arrives on the audio path, and it is
+    // meant to move while a note is sounding.
+    static constexpr std::uint8_t kCcChannelVolume = 7;
     static constexpr std::uint8_t kCcAllSoundOff = 120;
     static constexpr std::uint8_t kCcAllNotesOff = 123;
 
@@ -134,6 +138,12 @@ class Engine {
     // block: the voice keeps the phase, so there is nothing to smooth afterwards.
     void retune_voices(int semitones, const Params& params);
 
+    // Hand every sounding voice the fader of the channel it is on. Called whenever a block contains
+    // an event, which is what makes a CC7 move land on a note that is already held instead of only
+    // on the next note, and makes a fader and a note that arrive in the same block agree. Cheap: a
+    // compare and a store per voice, and idle blocks do not call it at all.
+    void push_channel_gains();
+
     EventQueue queue_;
     ParamBus params_;
     Params live_{}; // the block the audio thread is playing
@@ -163,6 +173,9 @@ class Engine {
 
     // Per-channel controller state, in semitones so a bend event does not redo the trig.
     float bend_[kMidiChannels]{};
+    // CC7 per channel, linear. Unity until a cable says otherwise: GM's own default is 100, and
+    // starting there would be a 2.1 dB surprise for anything that never sends the controller.
+    std::array<float, kMidiChannels> channel_gain_{};
     bool pedal_down_ = false;
 
     std::atomic<float> drive_peak_{0.0f};

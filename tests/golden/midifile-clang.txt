@@ -12,5 +12,5 @@
 # A DSP change means regenerating both files, in the same commit, with the reason in the message.
 name=bass-running-status.mid rate=44100 frames=214988 fnv1a64=12a95276422d1d45 peak=0.299295 steals=0
 name=glissando-88.mid rate=44100 frames=782775 fnv1a64=9187a411d1596fc6 peak=0.647880 steals=0
-name=lead-simple.mid rate=44100 frames=130463 fnv1a64=4860c662009ae1c1 peak=0.382302 steals=0
+name=lead-simple.mid rate=44100 frames=130463 fnv1a64=a991125acac80088 peak=0.306908 steals=0
 name=pad-chords.mid rate=44100 frames=286650 fnv1a64=c9a826e8c9411cfc peak=0.604739 steals=8

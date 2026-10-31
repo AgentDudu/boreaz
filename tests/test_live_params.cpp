@@ -347,3 +347,39 @@ TEST_CASE("a note that was never retuned is the note that was played") {
     CHECK(period == doctest::Approx(84).epsilon(0.05));
     CHECK(engine.sounding_note(60) == 72);
 }
+
+TEST_CASE("--gain sets a parameter through the table, and refuses the way a file refuses") {
+    // The flag exists because "it is too quiet" is discovered in the first ten seconds, and a
+    // parameter file is not what you reach for then. It shares the parser, the table and the
+    // refusals with `--config`, which is the only reason it cannot drift from the slider.
+    Params params;
+    std::string error;
+    CHECK(boreaz::config::set_param_from_text("--gain", "master_gain_db", "-6.5", params, error));
+    CHECK(params.master_gain_db == doctest::Approx(-6.5f));
+    CHECK(error.empty());
+
+    const ParamSpec* gain = find("master_gain_db");
+    REQUIRE(gain != nullptr);
+    CHECK_FALSE(boreaz::config::set_param_from_text("--gain", "master_gain_db", "1000", params,
+                                                    error));
+    INFO(error);
+    // The message names the flag that was typed, not a line in a file nobody opened, and it names
+    // the range the table owns.
+    CHECK(error.find("--gain") != std::string::npos);
+    CHECK(error.find("12") != std::string::npos);
+    CHECK(params.master_gain_db == doctest::Approx(-6.5f)); // a refusal changes nothing
+
+    CHECK_FALSE(boreaz::config::set_param_from_text("--gain", "master_gain_db", "loud", params,
+                                                    error));
+    CHECK(error.find("--gain") != std::string::npos);
+    CHECK_FALSE(boreaz::config::set_param_from_text("--gain", "no_such_parameter", "1", params,
+                                                    error));
+
+    // An integer row goes through the same door, with the same rule about pretending.
+    Params whole;
+    CHECK_FALSE(boreaz::config::set_param_from_text("--transpose", "transpose_semitones", "1.5",
+                                                    whole, error));
+    CHECK(boreaz::config::set_param_from_text("--transpose", "transpose_semitones", "-2", whole,
+                                              error));
+    CHECK(whole.transpose_semitones == -2);
+}
