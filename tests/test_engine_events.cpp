@@ -253,3 +253,179 @@ TEST_CASE("controllers nothing has claimed yet are accepted and ignored") {
     CHECK(split.voices().voice(0).released());
     CHECK_FALSE(split.voices().voice(1).released());
 }
+
+// ---------------------------------------------------------------------------------------------
+// SFZ `trigger=release`. The instrument is fixture::FakeLibrary: a note that is 100 ms of +1 and a
+// recording of the let-go that is 100 ms of alternating +/-1, so `peak` and `mean` between them say
+// which of the two is sounding in any window, and no test has to reach into a voice pool.
+// ---------------------------------------------------------------------------------------------
+
+// An engine with the release instrument loaded and a short amp release - and, deliberately, 100 ms
+// of silence first. The engine slews a published parameter with a one-pole, so a note let go 20 ms
+// after the knob moved still fades over close to the old 600 ms, and a test that asked for "10 ms"
+// and got 27 ms is debugging the wrong thing.
+void ready(Engine& engine, fixture::FakeLibrary& library, float amp_release_s = 0.01f) {
+    engine.prepare(static_cast<double>(fixture::kRate));
+    Params params;
+    params.amp_release_s = amp_release_s;
+    engine.set_params(params);
+    engine.set_instrument(&library);
+    fixture::render(engine, 4410);
+}
+
+TEST_CASE("letting go of a key starts the release recording, and the note still leaves by itself") {
+    fixture::FakeLibrary library;
+    Engine engine;
+    ready(engine, library);
+
+    REQUIRE(engine.push_event(Event::note_on(0, 0, 60, 110)));
+    const Audio held = fixture::render(engine, 2205); // 50 ms
+    CHECK(library.release_lookups == 0); // nothing has been let go yet
+    // The note is a constant, so it has a mean as well as a peak: 0.7 from the pan, 0.25 from the
+    // default -12 dB master gain.
+    CHECK(fixture::mean(held, 1000, 2205, 0) > 0.15f);
+    CHECK(fixture::peak(held, 1000, 2205, 0) < 0.25f); // one voice, not two
+
+    // A note-off arrives as velocity 0, so the recording it picks can only come from the strike the
+    // engine remembered when the key went down.
+    REQUIRE(engine.push_event(Event::note_off(2205, 0, 60)));
+    const Audio let_go = fixture::render(engine, 2205);
+    CHECK(library.release_lookups == 1);
+    CHECK(library.last_release_velocity == 110);
+
+    // The note's 10 ms ramp is over by frame ~441, so what is still sounding at frame 882 is the
+    // release: loud, and not the note's constant, because an alternating waveform has no mean.
+    CHECK(fixture::peak(let_go, 882, 2205, 0) > 0.1f);
+    CHECK(std::fabs(fixture::mean(let_go, 882, 2205, 0)) < 0.01f);
+
+    // It was still sounding near the end of that window, and it stops when its own file stops:
+    // 100 ms from the key-up, so two windows later the block is silent. A release that outlived its
+    // length, or a note held open by its release, is a stuck note.
+    CHECK(fixture::peak(let_go, 1900, 2205, 0) > 0.1f);
+    const Audio tail = fixture::render(engine, 8820);
+    CHECK(fixture::peak(tail, 4410, 8820, 0) < fixture::kSilence);
+}
+
+TEST_CASE("an instrument with no release recordings is silent once its own envelope is done") {
+    // The CC0 starter instrument is 66 regions, none of them `trigger=release`. This is the shape the
+    // engine meets most often, and the answer to a key-up on it has to be the note's own amp release
+    // and nothing else.
+    fixture::FakeLibrary library;
+    library.has_releases = false;
+    Engine engine;
+    ready(engine, library);
+
+    REQUIRE(engine.push_event(Event::note_on(0, 0, 60, 110)));
+    const Audio held = fixture::render(engine, 1024);
+    REQUIRE(fixture::mean(held, 512, 1024, 0) > 0.15f);
+
+    REQUIRE(engine.push_event(Event::note_off(1024, 0, 60)));
+    const Audio let_go = fixture::render(engine, 4410);
+    CHECK(library.release_lookups == 1); // the lookup happened; the instrument had nothing to give
+    // Past the 10 ms ramp there is nothing - which is also the proof that the note's own recording
+    // was not quietly borrowed as a stand-in for the release.
+    CHECK(fixture::peak(let_go, 882, 4410, 0) < fixture::kSilence);
+    CHECK(engine.active_voices() == 0);
+}
+
+TEST_CASE("a release recording is not a seventeenth voice") {
+    fixture::FakeLibrary library;
+    Engine engine;
+    ready(engine, library);
+
+    // Sixteen keys down: the pool is exactly full, which is the state a release must not solve by
+    // stealing a sounding note.
+    for (int key = 48; key < 64; ++key)
+        REQUIRE(engine.push_event(Event::note_on(0, 0, static_cast<std::uint8_t>(key), 100)));
+    fixture::render(engine, 512);
+    REQUIRE(engine.active_voices() == 16);
+    REQUIRE(engine.steal_count() == 0);
+
+    // Let sixteen keys go in the same block. Sixteen key-ups want a release slot and eight exist.
+    for (int key = 48; key < 64; ++key)
+        REQUIRE(engine.push_event(Event::note_off(512, 0, static_cast<std::uint8_t>(key))));
+    const Audio let_go = fixture::render(engine, 512);
+
+    CHECK(library.release_lookups == 16); // one lookup per key-up, whichever slot it landed in
+    CHECK(engine.active_voices() == 0);   // the sixteen left by their own envelopes
+    CHECK(engine.steal_count() == 0);     // ... and not one was cut short to house a release
+    CHECK(engine.pool_size() == Engine::kMaxPolyphony);
+    // The let-go is audible on the way out, which is what the released voices turned into.
+    CHECK(fixture::peak(let_go, 128, 512, 0) > 0.1f);
+}
+
+TEST_CASE("panic takes the release recordings with it") {
+    // Two ways to say "stop": the panic button, which is an all-notes-off event, and CC 123, which
+    // is what a MIDI cable carries. A release recording that survives either is a stuck note with a
+    // nicer name.
+    for (const bool as_controller : {false, true}) {
+        CAPTURE(as_controller);
+        fixture::FakeLibrary library;
+        Engine engine;
+        ready(engine, library);
+
+        REQUIRE(engine.push_event(Event::note_on(0, 0, 60, 110)));
+        fixture::render(engine, 1024);
+        REQUIRE(engine.push_event(Event::note_off(1024, 0, 60)));
+        const Audio sounding = fixture::render(engine, 1024);
+        REQUIRE(fixture::peak(sounding, 512, 1024, 0) > 0.1f); // the release is on its way
+
+        const std::int64_t tick = engine.sample_position();
+        REQUIRE(engine.push_event(as_controller
+                                      ? Event::control(tick, 0, Engine::kCcAllNotesOff, 127)
+                                      : Event::all_notes_off(tick, 0)));
+        const Audio after = fixture::render(engine, 4410);
+        // Both are fading over the engine's release time, 10 ms here, so a fifth of a second later
+        // the block is digital silence - and stays it for the rest of what the recording's own length
+        // would have been.
+        CHECK(fixture::peak(after, 882, 4410, 0) < fixture::kSilence);
+    }
+}
+
+TEST_CASE("an instrument swap does not leave a release recording playing from the old store") {
+    fixture::FakeLibrary library;
+    Engine engine;
+    ready(engine, library);
+
+    REQUIRE(engine.push_event(Event::note_on(0, 0, 60, 110)));
+    fixture::render(engine, 1024);
+    REQUIRE(engine.push_event(Event::note_off(1024, 0, 60)));
+    const Audio sounding = fixture::render(engine, 1024);
+    REQUIRE(fixture::peak(sounding, 512, 1024, 0) > 0.1f);
+
+    engine.set_instrument(nullptr); // owns nothing, so it must not be able to read this data
+    const Audio after = fixture::render(engine, 4410);
+    for (std::size_t frame = 0; frame < after.frames(); ++frame) {
+        CAPTURE(frame);
+        CHECK(std::fabs(after.at(frame, 0)) < fixture::kSilence);
+        CHECK(std::fabs(after.at(frame, 1)) < fixture::kSilence);
+    }
+}
+
+TEST_CASE("a glissando through an instrument with releases stays finite and inside full scale") {
+    fixture::FakeLibrary library;
+    Engine engine;
+    engine.prepare(static_cast<double>(fixture::kRate));
+    engine.set_instrument(&library);
+
+    // Every key of the instrument struck and let go, in one pass: more key-ups than there are
+    // release slots, at default parameters, which is the case a fixed release pool exists to
+    // survive. The recordings also outlast the notes that started them, so the two overlap freely.
+    std::int64_t tick = 0;
+    for (int key = boreaz::dsp::Tuning::kFirstKey; key <= boreaz::dsp::Tuning::kLastKey; ++key) {
+        REQUIRE(engine.push_event(Event::note_on(tick, 0, static_cast<std::uint8_t>(key), 110)));
+        tick += 32;
+        REQUIRE(engine.push_event(Event::note_off(tick, 0, static_cast<std::uint8_t>(key))));
+        tick += 32;
+    }
+    const Audio sweep = fixture::render(engine, static_cast<int>(tick) + 66150);
+    CHECK(sweep.finite);
+    CHECK(sweep.peak <= 1.0f);         // the limiter's promise, releases included
+    CHECK(sweep.first_sound() < 512u); // and there is sound, which a broken lookup would not be
+    CHECK(library.release_lookups == 88);
+
+    // One and a half seconds after the last key went up the instrument is silent: an eight-slot pool
+    // that overflows, steals the oldest, and then leaks a voice is the failure this catches.
+    CHECK(fixture::peak(sweep, static_cast<std::size_t>(tick) + 61740u, sweep.frames(), 0) <
+          fixture::kSilence);
+}

@@ -30,8 +30,33 @@ class SampledVoice final : public Voice {
   public:
     // The instrument outlives the voice: it is loaded before the audio thread starts and is only
     // ever read from here. A null instrument is allowed and silent, which is how a pool can be
-    // built before the sample library has finished loading.
+    // built before the sample library has finished loading - and it is what lets the engine's
+    // release pool be a fixed array, pointed at a library later.
+    SampledVoice() = default;
     explicit SampledVoice(const Instrument* instrument) : instrument_(instrument) {}
+
+    // Play this voice from the instrument's `trigger=release` recordings instead of its notes. Only
+    // the engine's release pool asks: a release is the same read-head answering a different question,
+    // which is why it is a flag on this voice and not a third kind of voice.
+    void plays_release_samples(bool on) { release_samples_ = on; }
+
+    // Re-point an idle voice at another library (setup path only). A voice that is sounding keeps
+    // reading the recording it started on, so whoever switches a library underneath one must stop()
+    // it first - the buffer belongs to the store being replaced and may not outlive it.
+    void set_instrument(const Instrument* instrument) { instrument_ = instrument; }
+
+    // Let go of the recording with no ramp. The one place this belongs is a library switch, where
+    // the device is stopped and nothing is audible; anything the player would hear wants release().
+    void stop() {
+        state_ = State::kIdle;
+        sample_ = nullptr;
+        gain_ = 0.0f;
+        gain_target_ = 0.0f;
+        gain_step_ = 0.0f;
+        ramp_left_ = 0;
+        ending_ = false;
+        peak_gain_ = 0.0f;
+    }
 
     void start(const NoteRequest& request, const Params& params, double sample_rate,
                std::int64_t start_tick) override;
@@ -73,6 +98,7 @@ class SampledVoice final : public Voice {
 
     const Instrument* instrument_ = nullptr;
     const VoiceSample* sample_ = nullptr;
+    bool release_samples_ = false; // answered from the instrument's release recordings
 
     State state_ = State::kIdle;
     bool ending_ = false; // running out, or let go: ramping down, then idle

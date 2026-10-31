@@ -445,7 +445,7 @@ struct Parser {
             {"effect", "no FX sends yet (phase 8)"},
             {"send", "no FX sends yet (phase 8)"},
             {"filt", "modulated filter cutoff is a synth feature (phase 8)"},
-            {"offtime", "release samples are refused, so there is nothing to time out"},
+            {"offtime", "a key being let go is timed by the hand, not by the file, so the delay is dropped"},
             {"delay", "no start delay"},
             {"count", "no sample repetition counting"},
             {"seq_", "no sample sequencing"},

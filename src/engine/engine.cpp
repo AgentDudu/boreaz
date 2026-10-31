@@ -28,6 +28,11 @@ float bend_factor(float semitones) {
                : 1.0f;
 }
 
+// A key that was never struck can still be let go by a stray note-off, and a note that was stolen
+// by voice-stealing was struck. Middle-forward is the honest guess at how hard; the alternative,
+// not firing a release at all, loses the sound the opcode exists for.
+constexpr std::uint8_t kUnstruckVelocity = 100;
+
 } // namespace
 
 Engine::Engine(const Params& initial) {
@@ -47,6 +52,9 @@ Engine::Engine(const Params& initial) {
     master_.set_linear_immediate(db_to_linear(params.master_gain_db));
     // From here to the first process() call is setup, not the audio path.
     clip_.prepare(sample_rate_);
+    strike_.fill(kUnstruckVelocity);
+    for (SampledVoice& voice : releases_)
+        voice.plays_release_samples(true);
 }
 
 void Engine::prepare(double sample_rate) {
@@ -145,6 +153,12 @@ void Engine::render_chunk(float* output, int frames, const Params& params) {
         // `run` cannot be zero: every event due at this sample was just applied, so whatever is
         // next is at least one sample ahead.
         allocator_.render(scratch_l_ + offset, scratch_r_ + offset, run);
+        // The release recordings render at the same offset in the same pass, so a release starts on
+        // the sample its key-up landed on and still goes through the master gain and the clipper
+        // below. Idle voices cost one enum compare, which is why there is no "any sounding?" flag.
+        for (SampledVoice& voice : releases_)
+            voice.render(scratch_l_ + static_cast<std::size_t>(offset),
+                         scratch_r_ + static_cast<std::size_t>(offset), run);
         offset += run;
     }
 
@@ -174,6 +188,7 @@ void Engine::apply_event(const Event& event, const Params& params) {
             if (event.velocity == 0) {
                 allocator_.note_off(event.channel, note_for_key(event.note, params), params,
                                     position_, pedal_down_);
+                start_release(event.note, event.channel, params);
             } else {
                 note_on(event, params);
             }
@@ -181,6 +196,7 @@ void Engine::apply_event(const Event& event, const Params& params) {
         case EventType::kNoteOff:
             allocator_.note_off(event.channel, note_for_key(event.note, params), params, position_,
                                 pedal_down_);
+            start_release(event.note, event.channel, params);
             break;
         case EventType::kControlChange:
             if (event.note == kCcSustainPedal) {
@@ -191,6 +207,10 @@ void Engine::apply_event(const Event& event, const Params& params) {
                 }
             } else if (event.note == kCcAllSoundOff || event.note == kCcAllNotesOff) {
                 allocator_.panic(event.channel, position_, params);
+                // Same ramp, same promise: a release recording is not exempt from all-sound-off,
+                // because a hammer noise that survives the panic button is a stuck note with a
+                // nicer name.
+                fade_releases(params);
             }
             // Every other controller is accepted and ignored until the phase that gives it a
             // meaning.
@@ -202,11 +222,15 @@ void Engine::apply_event(const Event& event, const Params& params) {
             // Global on purpose: this is the panic button. Per-channel all-notes-off arrives as the
             // CC above, which is what a MIDI cable actually carries.
             allocator_.panic(-1, position_, params);
+            fade_releases(params);
             break;
     }
 }
 
 void Engine::note_on(const Event& event, const Params& params) {
+    // Remember how hard the key was hit, because the note-off that follows it arrives as velocity 0
+    // and the release recording has to be chosen by the strike and not by the let-go.
+    strike_[static_cast<std::size_t>(std::clamp<int>(event.note, 0, 127))] = event.velocity;
     NoteRequest request;
     request.channel = event.channel;
     request.key = event.note;
@@ -216,6 +240,48 @@ void Engine::note_on(const Event& event, const Params& params) {
     request.frequency =
         tuning_.frequency(request.note) * bend_factor(bend_[event.channel % kMidiChannels]);
     allocator_.allocate(request, params, sample_rate_, position_);
+}
+
+void Engine::start_release(int key, std::uint8_t channel, const Params& params) {
+    if (instrument_ == nullptr)
+        return; // the synthesiser has nothing to let go with, so there is no pool to look in
+    const int index = std::clamp<int>(key, 0, 127);
+
+    NoteRequest request;
+    request.channel = channel;
+    request.key = key;
+    request.note = note_for_key(key, params);
+    // The level and the recording come from the strike, so a pianissimo lets go quietly and a
+    // fortissimo lets go with the hammer noise in it - which is the whole reason the opcode exists.
+    request.velocity = static_cast<float>(strike_[static_cast<std::size_t>(index)]) * (1.0f / 127.0f);
+    request.bend_semitones = bend_[channel % kMidiChannels];
+    request.frequency = tuning_.frequency(request.note) * bend_factor(request.bend_semitones);
+
+    SampledVoice* slot = nullptr;
+    for (SampledVoice& voice : releases_) {
+        if (!voice.active()) {
+            slot = &voice;
+            break;
+        }
+    }
+    if (slot == nullptr) {
+        // All eight are still sounding, which is a glissando. The oldest lets go: the newest key-up
+        // is the one the ear is still waiting for, and this is the same rule the 16 use, which is
+        // why a release pool overflowing is a quieter event than a note pool overflowing.
+        slot = &releases_.front();
+        for (SampledVoice& voice : releases_) {
+            if (voice.start_tick() < slot->start_tick())
+                slot = &voice;
+        }
+    }
+    // A library with no release recordings answers nullptr, the voice goes straight back to idle,
+    // and this costs what an idle slot costs: one lookup per note-off.
+    slot->start(request, params, sample_rate_, position_);
+}
+
+void Engine::fade_releases(const Params& params) {
+    for (SampledVoice& voice : releases_)
+        voice.release(params, position_); // a no-op unless it is sounding
 }
 
 void Engine::pitch_bend(const Event& event, const Params& params) {

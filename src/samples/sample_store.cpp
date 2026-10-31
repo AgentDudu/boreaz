@@ -289,6 +289,7 @@ LoadResult SampleStore::load(const boreaz::sfz::Instrument& mapping, const std::
     LoadResult result;
     mapping_ = mapping;
     entries_.clear();
+    releases_.clear();
     files_.clear();
     bytes_ = 0;
     refused_ = 0;
@@ -300,6 +301,7 @@ LoadResult SampleStore::load(const boreaz::sfz::Instrument& mapping, const std::
     // leaves the store exactly as it was before it.
     auto fail = [this, &result](const std::string& message) {
         entries_.clear();
+        releases_.clear();
         files_.clear();
         mapping_ = boreaz::sfz::Instrument{};
         bytes_ = 0;
@@ -328,14 +330,11 @@ LoadResult SampleStore::load(const boreaz::sfz::Instrument& mapping, const std::
     };
     std::array<Coverage, 128> covered;
     for (const boreaz::sfz::Region& region : mapping_.regions) {
-        if (region.release_trigger) {
-            // A release sample is not a place to start a note, and there is no second pool for it
-            // yet (PLAN.md phase 6). Refusing it is honest; treating it as a note is not.
-            ++refused_;
-            result.warnings.push_back("region " + region.sample +
-                                      " is a release sample and is not played yet");
-            continue;
-        }
+        // A `trigger=release` region is decoded and held exactly like a note region; what differs is
+        // which list it lands in, and that it does not claim velocity coverage. It is not a place to
+        // start a note, so `find()` cannot answer with it and `find_release()` cannot answer with a
+        // note - the two lookups are separate precisely because the recordings are different things.
+        const bool release = region.release_trigger;
 
         const std::string path = join(root_dir, region.sample);
         std::size_t file_index = 0;
@@ -418,16 +417,24 @@ LoadResult SampleStore::load(const boreaz::sfz::Instrument& mapping, const std::
             result.warnings.push_back("region " + region.sample +
                                       " asks for loop_mode=sustain and is played once");
         }
+        if (release) {
+            // One shot, whatever the file or the mapping says: a key being let go happens once.
+            entry.sample.loops = false;
+            entry.sample.loop_start = 0;
+            entry.sample.loop_end = 0;
+        }
 
         entry.key = region.key_center;
         entry.lo_key = region.lo_key;
         entry.hi_key = region.hi_key;
         entry.lo_velocity = region.lo_velocity;
         entry.hi_velocity = region.hi_velocity;
-        for (int key = std::max(region.lo_key, 0); key <= std::min(region.hi_key, 127); ++key)
-            covered[static_cast<std::size_t>(key)].set(region.lo_velocity, region.hi_velocity);
-        entries_.push_back(std::move(entry));
-        ++result.regions;
+        if (!release) {
+            for (int key = std::max(region.lo_key, 0); key <= std::min(region.hi_key, 127); ++key)
+                covered[static_cast<std::size_t>(key)].set(region.lo_velocity, region.hi_velocity);
+        }
+        (release ? releases_ : entries_).push_back(std::move(entry));
+        ++(release ? result.releases : result.regions);
     }
 
     std::size_t gapped = 0;
@@ -445,7 +452,7 @@ LoadResult SampleStore::load(const boreaz::sfz::Instrument& mapping, const std::
     }
 
     if (entries_.empty())
-        return fail("no region in this mapping can be played");
+        return fail("no region in this mapping can be played as a note");
 
     result.ok = true;
     result.refused = refused_;
@@ -456,15 +463,16 @@ LoadResult SampleStore::load(const boreaz::sfz::Instrument& mapping, const std::
     return result;
 }
 
-const boreaz::engine::VoiceSample* SampleStore::find(int key, int velocity) const {
-    if (entries_.empty())
+const boreaz::engine::VoiceSample* SampleStore::lookup(const std::deque<Entry>& list, int key,
+                                                       int velocity, int low, int high) {
+    if (list.empty())
         return nullptr;
-    // Outside the instrument's own span: clamp to the edge recording. The plan wants those keys to
+    // Outside the span the caller names: clamp to the edge recording. The plan wants those keys to
     // sound wrong rather than silent, and a recording shifted by a few semitones is that.
-    const int clamped = std::clamp(key, mapping_.low_key, mapping_.high_key);
+    const int clamped = std::clamp(key, low, high);
 
-    for (std::size_t i = entries_.size(); i > 0; --i) {
-        const Entry& entry = entries_[i - 1];
+    for (std::size_t i = list.size(); i > 0; --i) {
+        const Entry& entry = list[i - 1];
         if (clamped >= entry.lo_key && clamped <= entry.hi_key && velocity >= entry.lo_velocity &&
             velocity <= entry.hi_velocity) {
             return &entry.sample;
@@ -473,8 +481,8 @@ const boreaz::engine::VoiceSample* SampleStore::find(int key, int velocity) cons
     // Nothing in this velocity band. The key's own recording, at whatever velocity the mapping
     // happens to hold, is a better answer than silence: a piano with no soft layer is still a piano,
     // and a piano that only plays at velocity 100 is not.
-    for (std::size_t i = entries_.size(); i > 0; --i) {
-        const Entry& entry = entries_[i - 1];
+    for (std::size_t i = list.size(); i > 0; --i) {
+        const Entry& entry = list[i - 1];
         if (clamped >= entry.lo_key && clamped <= entry.hi_key)
             return &entry.sample;
     }
@@ -484,7 +492,7 @@ const boreaz::engine::VoiceSample* SampleStore::find(int key, int velocity) cons
     // as a broken instrument and gets blamed on the synth.
     const Entry* nearest = nullptr;
     int best = 0;
-    for (const Entry& entry : entries_) {
+    for (const Entry& entry : list) {
         const int distance = key < entry.lo_key      ? entry.lo_key - key
                              : key > entry.hi_key    ? key - entry.hi_key
                                                      : 0;
@@ -495,6 +503,17 @@ const boreaz::engine::VoiceSample* SampleStore::find(int key, int velocity) cons
         }
     }
     return nearest == nullptr ? nullptr : &nearest->sample;
+}
+
+const boreaz::engine::VoiceSample* SampleStore::find(int key, int velocity) const {
+    return lookup(entries_, key, velocity, mapping_.low_key, mapping_.high_key);
+}
+
+const boreaz::engine::VoiceSample* SampleStore::find_release(int key, int velocity) const {
+    // No clamp to the mapping's span: that span describes what the *attacks* cover, which is often
+    // wider than a release library (chromatic hammer noise over the middle octave is one shape real
+    // libraries ship). The nearest-key scan already answers an uncovered key with the edge release.
+    return lookup(releases_, key, velocity, 0, 127);
 }
 
 } // namespace boreaz::samples

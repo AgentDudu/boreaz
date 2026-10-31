@@ -46,7 +46,8 @@ struct LoadResult {
     std::string error;
     std::vector<std::string> warnings;
 
-    std::size_t regions = 0;   // regions this store can play
+    std::size_t regions = 0;   // regions this store can play as a note
+    std::size_t releases = 0;  // regions it plays when a key goes up (`trigger=release`)
     std::size_t refused = 0;   // regions it cannot, and said so about
     std::size_t files = 0;     // distinct sample files read
     std::size_t bytes = 0;     // resident float PCM
@@ -58,6 +59,10 @@ struct LoadResult {
 //
 // `load_*` belongs to startup (or a test). After that the object is read-only, which is what lets a
 // voice hold a `const engine::Instrument*` and nothing else.
+//
+// A release region is loaded the same way a note region is, with one change forced: its loop is off.
+// A recording of a key being let go is one event, whatever the file's own `smpl` chunk says, and a
+// hammer noise that loops forever is a hiss nobody asked for.
 class SampleStore : public boreaz::engine::Instrument {
   public:
     // Read `path` (a `.sfz`), then every file it points at, resolved against `root_dir` - which is
@@ -73,6 +78,9 @@ class SampleStore : public boreaz::engine::Instrument {
 
     // boreaz::engine::Instrument
     const boreaz::engine::VoiceSample* find(int key, int velocity) const override;
+    // The same question for a key-up, over the release regions only. nullptr when the library has
+    // no release recordings, which is the common case and never a reason to play a note sample.
+    const boreaz::engine::VoiceSample* find_release(int key, int velocity) const override;
     bool empty() const override { return entries_.empty(); }
     std::size_t resident_bytes() const override { return bytes_; }
     std::size_t refused_regions() const override { return refused_; }
@@ -93,6 +101,13 @@ class SampleStore : public boreaz::engine::Instrument {
         int hi_key = 127;
     };
 
+    // The store's one lookup, walked by both questions: what do I play for this strike, and what do
+    // I play when this key goes up. One function because the precedence between the two must not be
+    // able to drift. `low`/`high` bound the clamp applied before matching - the instrument's own span
+    // for a note, the whole MIDI range for a release.
+    static const boreaz::engine::VoiceSample* lookup(const std::deque<Entry>& list, int key,
+                                                     int velocity, int low, int high);
+
     // One decoded file, shared by every region that names it (a mapping with 88 regions over 28
     // samples is normal, and holding them 88 times is not).
     struct File {
@@ -102,6 +117,12 @@ class SampleStore : public boreaz::engine::Instrument {
 
     boreaz::sfz::Instrument mapping_;
     std::deque<Entry> entries_;
+    // Release regions live beside the note regions and never in them: a release recording is not a
+    // place to start a note, so `find()` must not be able to answer with one, and it must not count
+    // toward the velocity coverage either (two attack layers and a hammer-noise release do not make
+    // a keyboard covered at every velocity). One `Entry` struct for both, because they are the same
+    // lookup with the same precedence rules.
+    std::deque<Entry> releases_;
     std::deque<File> files_;
     std::size_t bytes_ = 0;
     std::size_t refused_ = 0;
