@@ -455,11 +455,14 @@ int main(int argc, char** argv) {
 
     // Numbers, not adjectives. Everything on this line came from a counter the engine or the
     // device keeps, and this is the line a claim about glitches is argued from.
+    // The cpu figure is the audio thread's own busy time over the wall time the device was running
+    // - the number PLAN's "< 8% of one core" is about, and the only way to read it off a run
+    // without a profiler.
     std::cout << "boreaz: " << device.callbacks() << " callbacks, " << device.late_callbacks()
               << " late, " << device.restarts() << " restarts, " << engine.dropped_events()
               << " dropped, " << engine.steal_count() << " steals, position "
               << engine.sample_position() << " samples, " << (window ? window->frames() : 0.0)
-              << " frames." << std::endl;
+              << " frames, " << (device.cpu_fraction() * 100.0) << "% audio-thread cpu." << std::endl;
     device.stop();
     midi.close();
     device.close();
