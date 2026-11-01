@@ -259,9 +259,10 @@ Three data paths, deliberately separate:
   141 MB flagship costs **104 196 faults and 209 file reads**; rendering an 88-key sweep through it
   afterwards costs **0 file reads and 0 file writes**, which is the half of the promise that was
   ever a promise. The page-fault half was never literally true: across the four committed fixtures
-  on both engines the post-warm-up count is **0–9 soft faults per render** (the sweep is 3 058
-  blocks, so ≤ 0.3 % of blocks, reads still 0), which is the process first touching its own memory
-  and not disk — 2 faults on one run and 14 on the next proves it is noise, not a path. So §3
+  on both engines the post-warm-up count is **0–14 soft faults per render** (the worst of 27 renders;
+  the sweep is 3 058 blocks, so even the worst is 0.5 % of blocks, reads still 0), which is the
+  process first touching its own memory and not disk — 2 faults on one run and 14 on the next proves
+  it is noise, not a path. So §3
   forbids exactly what is now asserted: **no file I/O in the callback**, and `tools/release_check.py`
   fails if reads or writes ever go nonzero, or if the fault count reaches four digits, which is what
   a real page-in or a leak would look like.
