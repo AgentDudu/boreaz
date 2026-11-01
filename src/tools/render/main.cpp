@@ -222,8 +222,12 @@ bool parse_arguments(int argc, char** argv, Options& options, std::string& error
         }
         positional.push_back(argument);
     }
-    if (options.golden && positional.size() != 1) {
-        error = "--golden takes exactly one input MIDI file and writes no output file";
+    // A parameter file is allowed here too, and is the second name rather than the third: every
+    // A/B worth measuring is a parameter change, and a --golden that could only ever measure the
+    // defaults could not have found the drive's harmonics, the room's level, or anything else that
+    // only exists when a slider has moved.
+    if (options.golden && positional.size() > 2) {
+        error = "--golden takes an input MIDI file, an optional parameter file, and no output file";
         return false;
     }
     if (!options.golden && (positional.size() < 2 || positional.size() > 3)) {
@@ -234,10 +238,11 @@ bool parse_arguments(int argc, char** argv, Options& options, std::string& error
     options.input = positional[0];
     // Only --golden may be called with one name, and reading positional[1] there is reading past
     // the end of the vector: the tool died with std::length_error before printing anything.
-    if (positional.size() >= 2)
+    if (positional.size() >= 2 && !options.golden)
         options.output = positional[1];
-    if (positional.size() == 3)
-        options.params_path = positional[2];
+    const std::size_t params_at = options.golden ? 1u : 2u;
+    if (positional.size() == params_at + 1u)
+        options.params_path = positional[params_at];
     return true;
 }
 

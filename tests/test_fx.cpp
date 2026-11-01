@@ -1,11 +1,14 @@
-// The FX bus: the delay, the room, and the bus that holds them.
+// The FX bus: the drive, the delay, the room, and the bus that holds them.
 //
 // The delay came first because it is the effect whose every number can be asserted: an impulse
 // comes out `n` samples later, scaled by exactly the send, and the tail reaches exact zero instead
 // of trailing into denormals. The room is the one this instrument actually needs - a recorded grand
 // played dry is a MIDI file - and it is asserted the way a room can be: where it starts, how fast
 // it falls, how far under the note a full send sits, and that it is the same linear map when the
-// input is halved. What stays unasserted is whether it sounds like a hall, which is an ear's job.
+// input is halved. The drive is the one that is not linear, so it cannot be asserted with an
+// impulse: it is asserted against its own curve, which is a formula, and against the two properties
+// the curve was chosen for - quiet notes come out at the same level, and no note comes out louder
+// than it went in. What stays unasserted is whether any of it sounds good, which is an ear's job.
 
 #include <doctest/doctest.h>
 
@@ -16,6 +19,7 @@
 #include <vector>
 
 #include "boreaz/dsp/delay.h"
+#include "boreaz/dsp/distortion.h"
 #include "boreaz/dsp/reverb.h"
 #include "boreaz/engine/engine.h"
 #include "boreaz/engine/event.h"
@@ -23,6 +27,7 @@
 
 namespace {
 
+using boreaz::dsp::Distortion;
 using boreaz::dsp::Reverb;
 using boreaz::engine::Engine;
 using boreaz::engine::Event;
@@ -338,6 +343,9 @@ TEST_CASE("every send is a row like every other parameter, with the defaults tha
     CHECK(defaults.fx_reverb_mix == 0.0f);
     CHECK(defaults.fx_reverb_seconds > 0.0f);
     CHECK(defaults.fx_reverb_seconds < 12.0f); // the ceiling the room itself refuses
+    CHECK(defaults.fx_distortion_mix == 0.0f);
+    CHECK(defaults.fx_distortion_drive > 1.0f); // off is the mix, and the floor of drive is still a curve
+    CHECK(defaults.fx_distortion_drive < 10.0f); // the ceiling the curve itself refuses
 
     // The table owns the range, on every path a parameter arrives from.
     Params params;
@@ -345,19 +353,25 @@ TEST_CASE("every send is a row like every other parameter, with the defaults tha
     params.fx_delay_feedback = 4.0f;
     params.fx_reverb_mix = 40.0f;
     params.fx_reverb_seconds = -3.0f;
+    params.fx_distortion_mix = 40.0f;
+    params.fx_distortion_drive = 1000.0f;
     params.clamp_all();
     CHECK(params.fx_delay_mix == doctest::Approx(1.0));
     CHECK(params.fx_delay_feedback == doctest::Approx(0.95));
     CHECK(params.fx_reverb_mix == doctest::Approx(1.0));
     CHECK(params.fx_reverb_seconds == doctest::Approx(0.15)); // the floor, not a negative room
+    CHECK(params.fx_distortion_mix == doctest::Approx(1.0));
+    CHECK(params.fx_distortion_drive == doctest::Approx(10.0));
 
     // A NaN parameter poisons every sample it touches, so it becomes the row's default instead.
     Params broken;
     broken.fx_delay_mix = std::nanf("");
     broken.fx_reverb_seconds = std::nanf("");
+    broken.fx_distortion_drive = std::nanf("");
     broken.sanitize();
     CHECK(broken.fx_delay_mix == 0.0f);
     CHECK(broken.fx_reverb_seconds == doctest::Approx(1.8));
+    CHECK(broken.fx_distortion_drive == doctest::Approx(3.0));
 
     // And the bus agrees with the table about what "off" is, for either effect.
     CHECK_FALSE(FxBus::active(defaults));
@@ -367,6 +381,9 @@ TEST_CASE("every send is a row like every other parameter, with the defaults tha
     Params room;
     room.fx_reverb_mix = 0.001f;
     CHECK(FxBus::active(room));
+    Params driven;
+    driven.fx_distortion_mix = 0.001f;
+    CHECK(FxBus::active(driven));
 }
 
 TEST_CASE("reverb: a room answers 25 ms late, falls at the size it was told, and the ears differ") {
@@ -606,4 +623,248 @@ TEST_CASE("reverb: the size knob is a room, measured as a decay rather than as a
     CHECK(60.0 / small > 1.2);
     CHECK(60.0 / small < 2.4);
     CHECK(60.0 / large > 5.0);
+}
+
+// ---------------------------------------------------------------------------
+// The drive stage. Not linear, so no impulse: it is asserted against the formula it implements and
+// against the two properties that formula was picked for.
+
+namespace {
+
+// A steady sine at a frequency that divides the sample rate, so a correlation at f and at 3f lands
+// on bin centres and a harmonic is a number rather than a leakage artefact.
+std::vector<float> sine_at(double hz, int cycles, float amplitude) {
+    const int n = static_cast<int>(kRate / hz) * cycles;
+    std::vector<float> out(static_cast<std::size_t>(n));
+    const double step = 2.0 * 3.14159265358979323846 * hz / kRate;
+    for (int i = 0; i < n; ++i)
+        out[static_cast<std::size_t>(i)] =
+            amplitude * static_cast<float>(std::sin(step * static_cast<double>(i)));
+    return out;
+}
+
+// Correlation with the k-th harmonic of a sine that fits `cycles` times into the block, relative to
+// the fundamental. The cycle count is the whole trick: correlating on the block's own fundamental
+// (3 Hz for 16000 samples) measures nothing at all.
+double harmonic_ratio(const std::vector<float>& samples, int k, int cycles) {
+    const double n = static_cast<double>(samples.size());
+    double c = 0.0, s = 0.0, c1 = 0.0, s1 = 0.0;
+    for (std::size_t i = 0; i < samples.size(); ++i) {
+        const double base = 2.0 * 3.14159265358979323846 * static_cast<double>(i) *
+                            static_cast<double>(cycles) / n;
+        const double phase = base * static_cast<double>(k);
+        c += samples[i] * std::cos(phase);
+        s += samples[i] * std::sin(phase);
+        c1 += samples[i] * std::cos(base);
+        s1 += samples[i] * std::sin(base);
+    }
+    const double fundamental = std::sqrt(c1 * c1 + s1 * s1);
+    return fundamental > 0.0 ? std::sqrt(c * c + s * s) / fundamental : 0.0;
+}
+
+// Deterministic pseudo-noise in [-1, 1]: the peak rule is about arbitrary input, and a fixed
+// sequence keeps a failure reproducible.
+std::vector<float> noise_in(int frames) {
+    std::vector<float> out(static_cast<std::size_t>(frames));
+    std::uint32_t state = 0x2545f491u;
+    for (int i = 0; i < frames; ++i) {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        out[static_cast<std::size_t>(i)] = static_cast<float>(
+            static_cast<double>(static_cast<std::int32_t>(state)) / 2147483648.0);
+    }
+    return out;
+}
+
+} // namespace
+
+TEST_CASE("distortion: the curve is unity where the music lives and squash only at the peaks") {
+    Distortion drive;
+
+    // Small-signal unity: the slope of tanh(d*x)/d at zero is exactly 1, so a quiet note is
+    // coloured and not raised. Measured as the wet line, which is the difference the bus adds: on a
+    // note that peaks at 0.01 the difference has to be well under a tenth of a decibel.
+    drive.set_drive(3.0f);
+    const std::vector<float> quiet = sine_at(120.0, 40, 0.01f);
+    std::vector<float> wet(quiet.size(), 0.0f);
+    drive.process(quiet.data(), quiet.data(), wet.data(), wet.data(), static_cast<int>(wet.size()));
+    // The difference is the cubic term, d^2 x^3 / 3, so at 0.01 it is 3e-6 of a 0.01 note: 0.009 dB.
+    CHECK(max_abs(wet) < 1e-3f * max_abs(quiet));
+
+    // ... and at full scale the same curve is a hard squash: tanh(3)/3, checked against the formula.
+    CHECK(drive.saturate(1.0f) == doctest::Approx(std::tanh(3.0f) / 3.0f).epsilon(1e-6));
+    CHECK(drive.saturate(1.0f) < 0.34f); // -9.5 dB, from a curve that never raises a peak
+
+    // Monotonic, and never above the input: the property that means this stage never has to ask the
+    // master clipper for help.
+    float previous = -1.0f;
+    int violations = 0;
+    for (int i = 0; i <= 1000; ++i) {
+        const float x = static_cast<float>(i) / 1000.0f;
+        const float y = drive.saturate(x);
+        if (y < previous || y > x)
+            ++violations;
+        previous = y;
+    }
+    CHECK(violations == 0);
+
+    // The harmonics are the point. A 0.9 sine at drive 8 has to grow a third partial that the same
+    // sine at drive 1 does not.
+    const std::vector<float> hot = sine_at(120.0, 40, 0.9f);
+    std::vector<float> mild_out(hot.size()), shaped(hot.size());
+    Distortion mild;
+    mild.set_drive(1.0f);
+    drive.set_drive(8.0f);
+    for (std::size_t i = 0; i < hot.size(); ++i) {
+        mild_out[i] = mild.saturate(hot[i]);
+        shaped[i] = drive.saturate(hot[i]);
+    }
+    const double mild_third = harmonic_ratio(mild_out, 3, 40);
+    const double hot_third = harmonic_ratio(shaped, 3, 40);
+    const double hot_fifth = harmonic_ratio(shaped, 5, 40);
+    INFO("third partial: drive 1 " << mild_third << ", drive 8 " << hot_third
+         << ", fifth at drive 8 " << hot_fifth);
+    CHECK(hot_third > 0.2);
+    CHECK(hot_fifth > 0.1);
+    CHECK(hot_third > mild_third * 2.0);
+
+    // Both ears through the same curve with no cross-coupling: swap the inputs and the wet lines
+    // swap with them.
+    const std::vector<float> left = sine_at(120.0, 8, 0.7f);
+    const std::vector<float> right = noise_in(static_cast<int>(left.size()));
+    std::vector<float> wl(left.size()), wr(left.size());
+    drive.process(left.data(), right.data(), wl.data(), wr.data(),
+                  static_cast<int>(left.size()));
+    const std::vector<float> wl_was = wl, wr_was = wr;
+    drive.process(right.data(), left.data(), wl.data(), wr.data(),
+                  static_cast<int>(left.size()));
+    CHECK(wl == wr_was);
+    CHECK(wr == wl_was);
+
+    // The knob clamps to curves that exist, NaN included: a NaN drive would be a NaN multiplied
+    // into every sample of a block.
+    drive.set_drive(1000.0f);
+    CHECK(drive.drive() == doctest::Approx(10.0));
+    drive.set_drive(-5.0f);
+    CHECK(drive.drive() == doctest::Approx(1.0));
+    drive.set_drive(std::nanf(""));
+    CHECK(drive.drive() == doctest::Approx(1.0));
+    CHECK(std::isfinite(drive.saturate(0.5f)));
+}
+
+TEST_CASE("distortion: at full mix the bus carries the driven note, and drive never lifts a peak") {
+    const std::vector<float> in = noise_in(4000);
+
+    for (const float mix : {1.0f, 0.4f}) {
+        for (const float knob : {1.0f, 3.0f, 10.0f}) {
+            std::vector<float> left = in, right = in;
+            FxBus bus;
+            bus.prepare(kRate);
+            Params params;
+            params.fx_distortion_mix = mix;
+            params.fx_distortion_drive = knob;
+            bus.process_block(left.data(), right.data(), static_cast<int>(left.size()), params);
+
+            Distortion curve;
+            curve.set_drive(knob);
+            float worst = 0.0f;
+            float peak_out = 0.0f;
+            for (std::size_t i = 0; i < in.size(); ++i) {
+                const float want = in[i] + mix * (curve.saturate(in[i]) - in[i]);
+                worst = std::max(worst, std::fabs(want - left[i]));
+                peak_out = std::max(peak_out, std::fabs(left[i]));
+            }
+            INFO("mix " << mix << " drive " << knob << " worst error " << worst);
+            // Exact, not close: mix 1 is the curve and mix 0.4 is halfway to it. A wet line holding
+            // the shaped signal instead of the difference would show up here as a 6 dB error.
+            CHECK(worst < 1e-6f);
+            // And the stage cannot make the bus louder, whatever the mix or the drive.
+            CHECK(peak_out <= max_abs(in) + 1e-7f);
+        }
+    }
+}
+
+TEST_CASE("distortion: the drive colours a note without lifting it, and it feeds the echo") {
+    // The synthesiser path at unity master - the engine with no instrument loaded, The sampled instrument's peaks are far too quiet for a tanh
+    // to notice, and an effect that only works near full scale is worth knowing about.
+    Params base;
+    base.master_gain_db = 0.0f;
+    base.amp_release_s = 0.005f; // so a later window holds only what the delay left behind
+    base.fx_delay_time_ms = 220.0f;
+    base.fx_delay_feedback = 0.0f;
+
+    Params clean = base; // drive mix 0: the shipping default
+    Params driven = base;
+    driven.fx_distortion_mix = 1.0f;
+    driven.fx_distortion_drive = 8.0f;
+    Params driven_echo = driven;
+    driven_echo.fx_delay_mix = 0.6f;
+    Params echo_only = base;
+    echo_only.fx_delay_mix = 0.6f;
+
+    Engine clean_engine;
+    clean_engine.prepare(kRate);
+        clean_engine.set_params(clean);
+    Engine hot;
+    hot.prepare(kRate);
+        hot.set_params(driven);
+    Engine hot_echo;
+    hot_echo.prepare(kRate);
+        hot_echo.set_params(driven_echo);
+    Engine plain_echo;
+    plain_echo.prepare(kRate);
+        plain_echo.set_params(echo_only);
+    arm(clean_engine);
+    arm(hot);
+    arm(hot_echo);
+    arm(plain_echo);
+
+    const FxBuffer dry = render(clean_engine, 1);
+    const FxBuffer wet = render(hot, 1);
+    const FxBuffer wet_echo = render(hot_echo, 1);
+    const FxBuffer dry_echo = render(plain_echo, 1);
+
+    const std::size_t note = kSettleFrames;
+    const std::size_t note_end = kSettleFrames + static_cast<std::size_t>(0.04 * kRate);
+    REQUIRE(window_peak(dry.left, note, note_end) > 0.05f);
+
+    // (a) It is in the path.
+    CHECK(dry.left != wet.left);
+
+    // (b) Colour, not level. If the drive were only a gain the driven render would be a scalar
+    // multiple of the dry one, so fit the best scalar and require the residual. This is the
+    // assertion that means "harmonics": it is exactly the statement that the map is not a gain.
+    double dot = 0.0, dry_energy = 0.0;
+    for (std::size_t i = note; i < note_end; ++i) {
+        dot += static_cast<double>(wet.left[i]) * static_cast<double>(dry.left[i]);
+        dry_energy += static_cast<double>(dry.left[i]) * static_cast<double>(dry.left[i]);
+    }
+    const double k = dot / dry_energy;
+    double residual = 0.0, wet_energy = 0.0;
+    for (std::size_t i = note; i < note_end; ++i) {
+        const double diff = wet.left[i] - k * dry.left[i];
+        residual += diff * diff;
+        wet_energy += static_cast<double>(wet.left[i]) * static_cast<double>(wet.left[i]);
+    }
+    const double relative = std::sqrt(residual / wet_energy);
+    INFO("best fit gain " << k << ", residual of that fit " << relative);
+    CHECK(relative > 0.05);
+
+    // (c) The peak rule survives the whole chain: the drive may squash and may not lift.
+    CHECK(window_peak(wet.left, note, note_end) <=
+          window_peak(dry.left, note, note_end) + 1e-6f);
+
+    // (d) Order: the echo is a copy of what the drive left behind, so the echo-only window changes
+    // when the drive is on. An effect wired after the fader could pass (a) and fail this.
+    const std::size_t echo_at = kSettleFrames + static_cast<std::size_t>(0.226 * kRate);
+    const std::size_t echo_end = kSettleFrames + static_cast<std::size_t>(0.27 * kRate);
+    const float echo_level = window_peak(dry_echo.left, echo_at, echo_end);
+    float echo_difference = 0.0f;
+    for (std::size_t i = echo_at; i < std::min(echo_end, wet_echo.left.size()); ++i)
+        echo_difference =
+            std::max(echo_difference, std::fabs(wet_echo.left[i] - dry_echo.left[i]));
+    INFO("echo window " << echo_level << ", difference the drive made in it " << echo_difference);
+    CHECK(echo_level > 1e-4f);
+    CHECK(echo_difference > 0.02f * echo_level);
 }

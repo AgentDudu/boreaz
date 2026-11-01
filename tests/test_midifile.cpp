@@ -733,6 +733,21 @@ TEST_CASE("boreaz-render: a MIDI file in, a WAV file out, and twice is the same 
     CHECK(line.find("fnv1a64=") != std::string::npos);
     CHECK(line.find("frames=") != std::string::npos);
 
+    // --golden also takes the parameter file its own --help has always advertised. It used to
+    // refuse it, which meant the mode that exists to measure things could only ever measure the
+    // defaults: no effect A/B, no level rule at an odd gain, nothing.
+    CHECK(run_tool_captured("--golden " + fixture("lead-simple.mid") + " " + quote(params.string()),
+                            capture) == 0);
+    const std::string measured = trim(read_text(capture));
+    INFO(measured);
+    CHECK(measured.find("name=lead-simple.mid") != std::string::npos);
+    CHECK(measured != line); // the parameters moved the measurement, which is the entire point
+
+    // And still exactly one output file, which is not one: two names after --golden is a mistake.
+    CHECK(run_tool_captured("--golden " + fixture("lead-simple.mid") + " " +
+                                quote(params.string()) + " " + quote(params.string()),
+                            capture) == 2);
+
     std::filesystem::remove_all(dir);
 }
 
