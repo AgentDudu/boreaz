@@ -16,10 +16,12 @@ tested it.
 
 What is deliberately not here:
 
-  * `boreaz.exe`. It has no headless flag - headless is "runs until Ctrl+C", which a script cannot
-    end politely, and it opens a real audio device. The instrument path it uses is the same
-    `Engine::load_instrument` the render tool drives, so it is gated below; loading it in the app
-    is still a thing a human should do at a speaker.
+  * `boreaz.exe --gui`. A window cannot be *asserted* from a script: it stays open after the file
+    ends, so nothing here would close it, and what it draws is a matter for a human eye. What is
+    gated is the app with no window: a real device, the library, one MIDI file, and process
+    counters sampled while the driver was pulling callbacks. The instrument path it uses is the
+    same `Engine::load_instrument` the render tool drives; adopting one from inside the window is
+    still a thing a human should do at a speaker.
   * benchmarks. PLAN.md quotes `boreaz_bench.exe`, a "3286 assertions" total, an `engine` test
     suite, `--headless --ticks=N`, `--asset-root`, a `boreaz-cc0` preset name and `-ts=release`.
     None of those exist in this repository - no bench source file, no bench target, no suite named
@@ -34,6 +36,8 @@ import re
 import struct
 import subprocess
 import sys
+import threading
+import time
 import wave
 from pathlib import Path
 
@@ -60,6 +64,7 @@ def tool(name: str) -> str:
 
 
 RENDER = tool("boreaz-render")
+APP = tool("boreaz")
 TESTS = tool("boreaz_tests")
 INSTRUMENT = Path(ARGS.instrument)
 
@@ -144,6 +149,125 @@ def realtime(failures, instrument):
         failures.append("the engine reads files while it renders")
 
 
+# ---------------------------------------------------------------- the app itself, on a device
+#
+# `boreaz.exe` was excluded from this gate for six phases on the grounds that it cannot be ended
+# politely from a script. It can: give it a MIDI file and it stops when the file's tail has rung
+# out. What remained genuinely unmeasured is the app's own audio thread on a real driver, which is
+# what the render tool cannot show - so this runs the shipped binary, samples its process counters
+# from outside while a device is pulling callbacks, and asserts the same thing §3 asserts.
+#
+# Sampled from ctypes rather than counted inside the app on purpose: the binary under test stays
+# the binary that ships, with no flag switched on for the test, and the question is coarse enough
+# that a sample every 40 ms cannot miss it. The window opens on the line the app prints once the
+# device has started, so loading a 58 MB library is outside it.
+if os.name == "nt":
+    import ctypes
+    from ctypes import wintypes
+
+    class _Memory(ctypes.Structure):
+        _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD)] + [
+            (name, ctypes.c_size_t) for name in "abcdefgh"]
+
+    class _IO(ctypes.Structure):
+        _fields_ = [(name, ctypes.c_ulonglong) for name in (
+            "ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+            "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
+
+    _kernel32 = ctypes.windll.kernel32
+    _kernel32.OpenProcess.restype = wintypes.HANDLE
+    _kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    _kernel32.K32GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(_Memory),
+                                               wintypes.DWORD]
+    _kernel32.GetProcessIoCounters.argtypes = [wintypes.HANDLE, ctypes.POINTER(_IO)]
+
+    def process_counters(pid):
+        """(page faults, file reads) for a process, or None if it cannot be opened."""
+        handle = _kernel32.OpenProcess(0x0410, False, pid)  # QUERY_INFORMATION | VM_READ
+        if not handle:
+            return None
+        memory, io = _Memory(), _IO()
+        memory.cb = ctypes.sizeof(_Memory)
+        faults = memory.PageFaultCount if _kernel32.K32GetProcessMemoryInfo(
+            handle, ctypes.byref(memory), memory.cb) else 0
+        reads = io.ReadOperationCount if _kernel32.GetProcessIoCounters(
+            handle, ctypes.byref(io)) else 0
+        _kernel32.CloseHandle(handle)
+        return faults, reads
+else:
+    def process_counters(pid):
+        return None
+
+
+def app_live(failures, instrument):
+    """Run the app for real: a device, the library, one MIDI file, and numbers on the way out."""
+    print("\ngate: boreaz.exe on a real audio device")
+    ports = subprocess.run([APP, "--list-devices"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           text=True, errors="replace")
+    if ports.returncode != 0 or not ports.stdout.strip():
+        print("  skipped: no audio device on this machine")
+        return
+    # A virtual cable when the machine has one, because a gate has no business putting a note out
+    # loud at whoever is sitting in front of the speaker.
+    # shortcut: assumes a port named CABLE can be opened for playback, which is what VB-Cable is;
+    # when a machine has a CABLE that cannot, fall back to the default and print that it did.
+    cable = next((line.split(". ", 1)[1].strip() for line in ports.stdout.splitlines()
+                  if "CABLE" in line.upper()), "")
+    argv = [APP, "--period", "1024", "--gain", "-24"]
+    if cable:
+        argv += ["--device", cable]
+    if instrument:
+        argv += ["--instrument", instrument]
+    print("  " + subprocess.list2cmdline(argv + [OUT / "one.mid"]))
+
+    child = subprocess.Popen(argv + [OUT / "one.mid"], cwd=str(OUT), stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True, errors="replace")
+    lines = []
+    started = threading.Event()
+
+    def read():
+        for line in child.stdout:
+            lines.append(line.rstrip())
+            # The line the app prints after device.start(): from here the callback is running.
+            if "Ctrl+C stops" in line:
+                started.set()
+
+    watcher = threading.Thread(target=read, daemon=True)
+    watcher.start()
+    seen = []
+    while child.poll() is None:
+        time.sleep(0.04)
+        if started.is_set():
+            sample = process_counters(child.pid)
+            if sample:
+                seen.append(sample)
+    watcher.join(2.0)
+    output = "\n".join(lines)
+
+    stats = re.search(r"(\d+) callbacks, (\d+) late, (\d+) restarts, (\d+) dropped, (\d+) steals",
+                      output)
+    # The first sample is the baseline: reads counted after it are reads the running device made.
+    reads = seen[-1][1] - seen[0][1] if len(seen) > 1 else -1
+    faults = seen[-1][0] - seen[0][0] if len(seen) > 1 else -1
+    device_line = next((line for line in lines if "frame period" in line), "(no device line)")
+    print("  " + device_line.strip())
+    if stats:
+        print("  %s callbacks, %s late, %s restarts, %s dropped, %s steals - %d samples while it ran"
+              % (stats.group(1), stats.group(2), stats.group(3), stats.group(4), stats.group(5),
+                 len(seen)))
+    print("  while the device ran: %d page faults, %d file reads" % (faults, reads))
+
+    ok = child.returncode == 0 and stats is not None and reads == 0 and len(seen) > 2 and \
+        int(stats.group(1)) > 0 and int(stats.group(4)) == 0 and int(stats.group(5)) == 0
+    print(("OK: " if ok else "FAIL: ") + "the app played, dropped nothing, read nothing")
+    if not ok:
+        print(output[-1500:])
+        failures.append("boreaz.exe on a device")
+    # Late callbacks are reported and never asserted: this driver was measured at 21 late of 141
+    # at a 512 frame period and 0 at 1024, which is the Realtek, not this code, and an assertion
+    # that fails when a laptop changes power state is a gate nobody trusts.
+
+
 def midi(path):
     def vlq(value):
         out, stack = bytearray(), [value & 0x7F]
@@ -226,6 +350,7 @@ def main():
         cwd=str(ROOT / "build"))
     run(failures, "the computer keyboard layout", [TESTS, "-tc=computer keyboard"],
         cwd=str(ROOT / "build"))
+    app_live(failures, INSTRUMENT if INSTRUMENT.exists() else None)
 
     for name in ("with", "without"):
         subprocess.run([RENDER, "--instrument", OUT / (name + ".sfz"), "--rate", str(RATE),
