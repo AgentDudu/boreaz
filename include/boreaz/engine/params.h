@@ -57,6 +57,13 @@ struct Params {
     // build one. The clamp is the same one the delay line applies to anything that bypasses the
     // table.
     float fx_delay_feedback = 0.35f;
+    // The room. Size is RT60 - the seconds it takes to fall 60 dB - rather than a bare feedback
+    // number, because 0.95 against 0.98 is a cathedral and nothing in a parameter file means that
+    // in words. A full send puts the room 13.5 dB under a held note, which is a room you can hear
+    // rather than a second piano; the 0.6 a patch would reach is 3 dB under that again. Measured in
+    // tests/test_fx.cpp, which also owns the fact that the size knob under-delivers by about 11 %.
+    float fx_reverb_mix = 0.0f;
+    float fx_reverb_seconds = 1.8f;
 
     // Pitch bend reach in semitones at full deflection.
     float bend_range_semitones = 2.0f;

@@ -1,14 +1,11 @@
-// The FX bus, phase 8a: the delay and the bus that holds it.
+// The FX bus: the delay, the room, and the bus that holds them.
 //
-// The delay is the first effect because it is the one whose every number can be asserted: an
-// impulse comes out `n` samples later, scaled by exactly the send, and the tail reaches exact zero
-// instead of trailing into denormals. The claims here are arithmetic rather than impressions,
-// because this bus is where the reverb and the distortion land next.
-//
-// Deliberately missing, because they belong to an effect that is not built yet: a wet signal with
-// any stereo width to it, and any reverb tail at all. The delay is two independent lines with the
-// same time and no crossfeed, so a note in one ear never appears in the other, and it is tested as
-// such rather than passing for stereo.
+// The delay came first because it is the effect whose every number can be asserted: an impulse
+// comes out `n` samples later, scaled by exactly the send, and the tail reaches exact zero instead
+// of trailing into denormals. The room is the one this instrument actually needs - a recorded grand
+// played dry is a MIDI file - and it is asserted the way a room can be: where it starts, how fast
+// it falls, how far under the note a full send sits, and that it is the same linear map when the
+// input is halved. What stays unasserted is whether it sounds like a hall, which is an ear's job.
 
 #include <doctest/doctest.h>
 
@@ -19,12 +16,14 @@
 #include <vector>
 
 #include "boreaz/dsp/delay.h"
+#include "boreaz/dsp/reverb.h"
 #include "boreaz/engine/engine.h"
 #include "boreaz/engine/event.h"
 #include "boreaz/engine/fx_bus.h"
 
 namespace {
 
+using boreaz::dsp::Reverb;
 using boreaz::engine::Engine;
 using boreaz::engine::Event;
 using boreaz::engine::FxBus;
@@ -84,6 +83,18 @@ float window_peak(const std::vector<float>& samples, std::size_t from, std::size
     return peak;
 }
 
+// Energy per sample in [from, to). A room is a decay, and a decay is a sequence of levels rather
+// than a peak, so the windows have to be measured as a quantity that survives the ringing.
+float window_rms(const std::vector<float>& samples, std::size_t from, std::size_t to) {
+    double sum = 0.0;
+    std::size_t n = 0;
+    for (std::size_t i = from; i < std::min(to, samples.size()); ++i) {
+        sum += static_cast<double>(samples[i]) * static_cast<double>(samples[i]);
+        ++n;
+    }
+    return n > 0 ? static_cast<float>(std::sqrt(sum / static_cast<double>(n))) : 0.0f;
+}
+
 // A note that is genuinely over, and an echo that is not: with a 5 ms amp release the dry signal is
 // gone 50 ms after the note-off, and a 220 ms delay has barely started. Every engine-level claim
 // below is then "there is sound where no note is playing", which is the claim, rather than "this
@@ -98,11 +109,10 @@ Params fx_params() {
 
 // One A4, 50 ms long. Ticks are absolute, so the note starts after the settling silence.
 void arm(Engine& engine) {
+    REQUIRE(engine.push_event(Event::note_on(static_cast<std::uint32_t>(kSettleFrames), 0,
+                                             std::uint8_t(69), std::uint8_t(110))));
     REQUIRE(engine.push_event(
-        Event::note_on(static_cast<std::uint32_t>(kSettleFrames), 0, std::uint8_t(69),
-                       std::uint8_t(110))));
-    REQUIRE(engine.push_event(Event::note_off(
-        static_cast<std::uint32_t>(kSettleFrames + 2400), 0, std::uint8_t(69))));
+        Event::note_off(static_cast<std::uint32_t>(kSettleFrames + 2400), 0, std::uint8_t(69))));
 }
 
 } // namespace
@@ -124,7 +134,8 @@ TEST_CASE("delay: the echo is exactly n samples later and exactly as loud as it 
     in[100] = 1.0f;
     // The right input is a buffer of its own, and that is the test: handing the same pointer to
     // both inputs would make "the other ear stayed empty" true of a mono delay too.
-    delay.process(in.data(), silent.data(), wet_l.data(), wet_r.data(), static_cast<int>(in.size()));
+    delay.process(in.data(), silent.data(), wet_l.data(), wet_r.data(),
+                  static_cast<int>(in.size()));
 
     // Nothing before the tap, and nothing after it either with no feedback: a delay that leaks is
     // a reverb nobody designed.
@@ -163,8 +174,8 @@ TEST_CASE("delay: feedback is the ratio it is named for, and it stops at exact z
         const float want = std::pow(0.5f, static_cast<float>(pass));
         CHECK(wet_l[at] == doctest::Approx(want).epsilon(1e-4));
     }
-    CHECK(*std::max_element(wet_l.begin(),
-                            wet_l.begin() + static_cast<std::ptrdiff_t>(tap)) == 0.0f);
+    CHECK(*std::max_element(wet_l.begin(), wet_l.begin() + static_cast<std::ptrdiff_t>(tap)) ==
+          0.0f);
 
     // The tail has to *stop*. Decaying to 1e-38 and then feeding itself as a denormal forever is a
     // CPU leak and a hiss, and the only honest test of it is that the line is exactly empty.
@@ -285,10 +296,10 @@ TEST_CASE("the echo is the dry render plus the send times itself, and it is insi
     const FxBuffer ref = render(reference, 1);
     const FxBuffer out = render(echoed, 1);
 
-    // The wet output is the dry output plus a delayed copy of the dry output: the master gain factors
-    // out because it is the same number in both engines, and the clipper is linear at this level. A
-    // few frames past the block boundary, because the tap rounds the delay time to a whole frame -
-    // which is the only error here once the parameter slew has settled (see kSettleFrames).
+    // The wet output is the dry output plus a delayed copy of the dry output: the master gain
+    // factors out because it is the same number in both engines, and the clipper is linear at this
+    // level. A few frames past the block boundary, because the tap rounds the delay time to a whole
+    // frame - which is the only error here once the parameter slew has settled (see kSettleFrames).
     float worst = 0.0f;
     const float scale = max_abs(ref.left);
     REQUIRE(scale > 0.0f);
@@ -299,8 +310,9 @@ TEST_CASE("the echo is the dry render plus the send times itself, and it is insi
     INFO("worst error " << worst << " against a dry peak of " << scale);
     CHECK(worst < 2e-4f * scale);
 
-    // And the tail is inside the fader, not alongside it, because the bus sits before the gain: 20 dB
-    // down on the master is 20 dB down on the echo, measured in a window where only the echo is left.
+    // And the tail is inside the fader, not alongside it, because the bus sits before the gain: 20
+    // dB down on the master is 20 dB down on the echo, measured in a window where only the echo is
+    // left.
     Params quiet = base;
     quiet.master_gain_db = -60.0f; // the floor of the row, and exactly 20 dB below the render above
     Engine faded;
@@ -318,29 +330,280 @@ TEST_CASE("the echo is the dry render plus the send times itself, and it is insi
     CHECK(faded_peak == doctest::Approx(loud_peak / 10.0f).epsilon(0.02f));
 }
 
-TEST_CASE("the three sends are rows like every other parameter, with the defaults that mean off") {
+TEST_CASE("every send is a row like every other parameter, with the defaults that mean off") {
     const Params defaults;
     CHECK(defaults.fx_delay_mix == 0.0f);     // a piano that arrives already echoing is a patch
     CHECK(defaults.fx_delay_feedback < 1.0f); // 1.0 is an oscillator
     CHECK(defaults.fx_delay_time_ms <= 500.0f);
+    CHECK(defaults.fx_reverb_mix == 0.0f);
+    CHECK(defaults.fx_reverb_seconds > 0.0f);
+    CHECK(defaults.fx_reverb_seconds < 12.0f); // the ceiling the room itself refuses
 
     // The table owns the range, on every path a parameter arrives from.
     Params params;
     params.fx_delay_mix = 100.0f;
     params.fx_delay_feedback = 4.0f;
+    params.fx_reverb_mix = 40.0f;
+    params.fx_reverb_seconds = -3.0f;
     params.clamp_all();
     CHECK(params.fx_delay_mix == doctest::Approx(1.0));
     CHECK(params.fx_delay_feedback == doctest::Approx(0.95));
+    CHECK(params.fx_reverb_mix == doctest::Approx(1.0));
+    CHECK(params.fx_reverb_seconds == doctest::Approx(0.15)); // the floor, not a negative room
 
     // A NaN parameter poisons every sample it touches, so it becomes the row's default instead.
     Params broken;
     broken.fx_delay_mix = std::nanf("");
+    broken.fx_reverb_seconds = std::nanf("");
     broken.sanitize();
     CHECK(broken.fx_delay_mix == 0.0f);
+    CHECK(broken.fx_reverb_seconds == doctest::Approx(1.8));
 
-    // And the bus agrees with the table about what "off" is.
+    // And the bus agrees with the table about what "off" is, for either effect.
     CHECK_FALSE(FxBus::active(defaults));
-    Params on;
-    on.fx_delay_mix = 0.001f;
-    CHECK(FxBus::active(on));
+    Params echo;
+    echo.fx_delay_mix = 0.001f;
+    CHECK(FxBus::active(echo));
+    Params room;
+    room.fx_reverb_mix = 0.001f;
+    CHECK(FxBus::active(room));
+}
+
+TEST_CASE("reverb: a room answers 25 ms late, falls at the size it was told, and the ears differ") {
+    Reverb room;
+    room.prepare(kRate);
+    room.set_room_seconds(1.8);
+
+    std::vector<float> in(static_cast<std::size_t>(3 * kRate), 0.0f);
+    in[100] = 1.0f;
+    std::vector<float> wet_l(in.size(), 0.0f);
+    std::vector<float> wet_r(in.size(), 0.0f);
+    room.process(in.data(), in.data(), wet_l.data(), wet_r.data(), static_cast<int>(in.size()));
+
+    // The shortest comb is the room's aperture: 1116 frames at 44.1 kHz, 1215 here, one lap of the
+    // shortest line. A "reverb" that answers on the sample the note lands on is a phaser.
+    const std::size_t aperture = 1215;
+    CHECK(window_peak(wet_l, 0, 100 + aperture) == 0.0f);
+    CHECK(wet_l[100 + aperture] != 0.0f);
+
+    // And it falls, and keeps falling: each 250 ms window is quieter than the one before it. A peak
+    // cannot carry this claim - a comb output is a spike train, so peak and rms disagree by orders
+    // of magnitude - but energy per sample does.
+    for (std::size_t w = 0; w < 5; ++w) {
+        const std::size_t from = 100 + w * 12000;
+        const float before = window_rms(wet_l, from, from + 12000);
+        const float after = window_rms(wet_l, from + 12000, from + 24000);
+        INFO("window " << w << ": " << before << " then " << after);
+        CHECK(after < before * 0.75f);
+    }
+
+    // One source, two ears: the same input on both sides and the channels are still not the same
+    // signal, which is the whole stereo this effect has.
+    double diff = 0.0;
+    double magnitude = 0.0;
+    for (std::size_t i = 100 + aperture; i < wet_l.size(); ++i) {
+        diff += std::fabs(static_cast<double>(wet_l[i]) - static_cast<double>(wet_r[i]));
+        magnitude += std::fabs(static_cast<double>(wet_l[i]));
+    }
+    INFO("mean |L-R| over mean |L| = " << diff / magnitude);
+    CHECK(diff > 0.1 * magnitude);
+
+    // The tail stops, and nothing along the way is a number the master cannot survive.
+    CHECK(window_rms(wet_l, static_cast<std::size_t>(2.5 * kRate), wet_l.size()) < 1e-4f);
+    for (const float v : wet_l)
+        REQUIRE(std::isfinite(v));
+}
+
+TEST_CASE(
+    "reverb: a full send is 13.5 dB under the note, exactly linear, and cannot ring forever") {
+    // A held fortissimo, the level a piano actually reaches: 0.4 amplitude A3 for two seconds, long
+    // enough for a 1.8 s room to fill up.
+    const std::size_t n = static_cast<std::size_t>(4 * kRate);
+    std::vector<float> note(n, 0.0f);
+    for (std::size_t i = 0; i < n / 2; ++i)
+        note[i] = 0.4f * static_cast<float>(std::sin(2.0 * 3.14159265358979323846 * 220.0 *
+                                                     static_cast<double>(i) / kRate));
+
+    Reverb room;
+    room.prepare(kRate);
+    room.set_room_seconds(1.8);
+    std::vector<float> wet_l(n, 0.0f);
+    std::vector<float> wet_r(n, 0.0f);
+    room.process(note.data(), note.data(), wet_l.data(), wet_r.data(), static_cast<int>(n));
+
+    // The number that says `fx_reverb_mix` is a send and not a make-up gain. Measured as energy,
+    // because a comb output is a spike train and its peak is 3 dB more generous than its rms: one
+    // second into a held note, a full send is 13.5 dB under the note feeding it. A room any louder
+    // than that would be a second piano; quieter than -16 dB and the mix knob does nothing a player
+    // can hear.
+    const std::size_t filled = static_cast<std::size_t>(kRate);
+    const float note_rms = window_rms(note, filled, filled + 24000); // 0.4 sine: 0.283
+    const float room_rms = window_rms(wet_l, filled, filled + 24000);
+    const float send_db = 20.0f * std::log10(room_rms / note_rms);
+    INFO("full send at 1.8 s: " << room_rms << " against a note of " << note_rms << " = " << send_db
+                                << " dB");
+    CHECK(send_db > -16.0f);
+    CHECK(send_db < -10.0f);
+    // And it is a tail rather than a second voice: the peak 0.5-1.5 s after the key is let go is
+    // down about 34 dB, bounded here at 30 dB, which is heard as a room and not as a note that will
+    // not stop.
+    INFO("tail peak: " << window_peak(wet_l, n / 2 + 24000, n / 2 + 72000));
+    CHECK(window_peak(wet_l, n / 2 + 24000, n / 2 + 72000) < 0.4f * 0.032f);
+
+    // Linear to the last bit, which is what lets the mix mean a send: halve the input and every
+    // sample of the room halves.
+    Reverb quieter;
+    quieter.prepare(kRate);
+    quieter.set_room_seconds(1.8);
+    std::vector<float> half_note = note;
+    for (float& v : half_note)
+        v *= 0.5f;
+    std::vector<float> half_l(n, 0.0f);
+    std::vector<float> half_r(n, 0.0f);
+    quieter.process(half_note.data(), half_note.data(), half_l.data(), half_r.data(),
+                    static_cast<int>(n));
+    float worst = 0.0f;
+    for (std::size_t i = 0; i < n; ++i)
+        worst = std::max(worst, std::fabs(2.0f * half_l[i] - wet_l[i]));
+    INFO("worst |2 * half - full| = " << worst);
+    CHECK(worst < 1e-6f * note_rms);
+
+    // The longest room the table allows, hit with the hardest near-DC wave a parameter file can ask
+    // for. This is the headroom bound the master has to survive at a full send, and the reason the
+    // comb loops have a leak: 0.90 without one, 0.14 with it.
+    Reverb hall;
+    hall.prepare(kRate);
+    hall.set_room_seconds(12.0);
+    std::vector<float> hard(static_cast<std::size_t>(12 * kRate), 0.0f);
+    for (std::size_t i = 0; i < static_cast<std::size_t>(kRate); i += 2)
+        hard[i] = 0.5f;
+    std::vector<float> hall_l(hard.size(), 0.0f);
+    std::vector<float> hall_r(hard.size(), 0.0f);
+    hall.process(hard.data(), hard.data(), hall_l.data(), hall_r.data(),
+                 static_cast<int>(hard.size()));
+    INFO("12 s room, hardest input available: peak " << max_abs(hall_l));
+    CHECK(max_abs(hall_l) < 0.2f);
+    for (const float v : hall_l)
+        REQUIRE(std::isfinite(v));
+    CHECK(window_rms(hall_l, static_cast<std::size_t>(11 * kRate), hall_l.size()) < 1e-2f);
+}
+
+TEST_CASE("reverb: the size knob clamps to rooms that exist, and a rate change leaves no history") {
+    Reverb room;
+    room.prepare(kRate);
+    room.set_room_seconds(-1.0);
+    CHECK(room.room_seconds() == doctest::Approx(0.15)); // the floor, not a negative room
+    room.set_room_seconds(1.0e9);
+    CHECK(room.room_seconds() == doctest::Approx(12.0));
+    // The ceiling shows up where it matters, in the loop gain: below 0.995 per lap whatever the
+    // seconds said, which is a room, not an oscillator with a knob on it.
+    CHECK(room.feedback() <= 0.995f);
+    CHECK(room.feedback() > 0.0f);
+
+    const std::size_t at_48k = room.max_line_frames();
+    std::vector<float> in(2000, 0.0f);
+    in[10] = 1.0f;
+    std::vector<float> wet_l(2000, -1.0f);
+    std::vector<float> wet_r(2000, -1.0f);
+    room.process(in.data(), in.data(), wet_l.data(), wet_r.data(), 2000);
+    CHECK(max_abs(wet_l) > 0.0f);
+
+    // A line measured in samples means nothing at a different rate, so the history goes.
+    room.prepare(96000.0);
+    CHECK(room.all_silent());
+    CHECK(room.max_line_frames() > at_48k);
+
+    // Unprepared, an effect is silence rather than the caller's own buffer handed back.
+    Reverb cold;
+    std::fill(wet_l.begin(), wet_l.end(), -1.0f);
+    std::fill(wet_r.begin(), wet_r.end(), -1.0f);
+    cold.process(in.data(), in.data(), wet_l.data(), wet_r.data(), 2000);
+    CHECK(max_abs(wet_l) == 0.0f);
+    CHECK(max_abs(wet_r) == 0.0f);
+}
+
+TEST_CASE("the room outlives the note it came from and fades with the piano") {
+    Params base = fx_params();
+    base.fx_reverb_mix = 0.6f;
+    base.fx_reverb_seconds = 2.0f;
+    base.master_gain_db = -12.0f; // where the app ships
+    Params dry = base;
+    dry.fx_reverb_mix = 0.0f;
+
+    Engine bare_engine;
+    bare_engine.prepare(kRate);
+    bare_engine.set_params(dry);
+    Engine roomy;
+    roomy.prepare(kRate);
+    roomy.set_params(base);
+    arm(bare_engine);
+    arm(roomy);
+    const FxBuffer bare = render(bare_engine, 2);
+    const FxBuffer wet = render(roomy, 2);
+
+    // A second and a bit after a 50 ms note died: nothing is playing, so whatever is here is the
+    // room, and the same window in the dry engine is the proof that it is not the note.
+    const std::size_t from = kSettleFrames + 48000;
+    const std::size_t to = from + 24000;
+    INFO("dry " << window_peak(bare.left, from, to) << " against wet "
+                << window_peak(wet.left, from, to));
+    CHECK(window_peak(bare.left, from, to) < 1e-5f);
+    CHECK(window_peak(wet.left, from, to) > 1e-4f);
+
+    // Inside the fader rather than beside it, measured on the tail alone: 20 dB down on the master
+    // is 20 dB down on the room.
+    Params pulled = base;
+    pulled.master_gain_db = -32.0f;
+    Engine faded;
+    faded.prepare(kRate);
+    faded.set_params(pulled);
+    arm(faded);
+    const FxBuffer low = render(faded, 2);
+    const float loud = window_peak(wet.left, from, to);
+    const float soft = window_peak(low.left, from, to);
+    INFO("tail " << loud << " against the same tail 20 dB down: " << soft);
+    CHECK(soft == doctest::Approx(loud / 10.0f).epsilon(0.05f));
+}
+
+TEST_CASE("reverb: the size knob is a room, measured as a decay rather than as a coefficient") {
+    // One second of A4 and then silence, so the tail is the only thing left to measure. The decay
+    // is read off successive 500 ms windows and the fastest pair wins, because the earliest windows
+    // still hold the room filling up and would flatter the number.
+    const auto decay_db_per_second = [&](double seconds) {
+        Reverb room;
+        room.prepare(kRate);
+        room.set_room_seconds(seconds);
+        const std::size_t n = static_cast<std::size_t>((2.0 + 3.0 * seconds) * kRate);
+        std::vector<float> in(n, 0.0f);
+        for (std::size_t i = 0; i < static_cast<std::size_t>(kRate); ++i)
+            in[i] = 0.4f * static_cast<float>(std::sin(2.0 * 3.14159265358979323846 * 440.0 *
+                                                       static_cast<double>(i) / kRate));
+        std::vector<float> wet_l(n, 0.0f);
+        std::vector<float> wet_r(n, 0.0f);
+        room.process(in.data(), in.data(), wet_l.data(), wet_r.data(), static_cast<int>(n));
+
+        double fastest = 0.0;
+        for (double t = 1.25; t + 1.0 < 2.0 + 3.0 * seconds; t += 0.25) {
+            const std::size_t a = static_cast<std::size_t>(t * kRate);
+            const double before = window_rms(wet_l, a, a + 24000);
+            const double after = window_rms(wet_l, a + 24000, a + 48000);
+            if (before > 1e-9 && after > 1e-9)
+                fastest = std::max(fastest, -20.0 * std::log10(after / before) * 2.0);
+        }
+        return fastest;
+    };
+
+    const double small = decay_db_per_second(1.8);
+    const double large = decay_db_per_second(12.0);
+    INFO("1.8 s room: " << small << " dB/s (RT60 about " << 60.0 / small << " s), 12 s room: "
+                        << large << " dB/s (RT60 about " << 60.0 / large << " s)");
+    // The knob does what it says, in order and to within the honesty band the header quotes: asking
+    // for 1.8 s measures as 1.6 s because the damping and the leak each take a little off every
+    // lap.
+    CHECK(small > 0.0);
+    CHECK(large > 0.0);
+    CHECK(large < small / 3.0);
+    CHECK(60.0 / small > 1.2);
+    CHECK(60.0 / small < 2.4);
+    CHECK(60.0 / large > 5.0);
 }

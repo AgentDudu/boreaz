@@ -18,14 +18,15 @@
 
 #include "boreaz/config/params_file.h"
 #include "boreaz/engine/engine.h"
+#include "boreaz/engine/param_table.h"
 #include "boreaz/midifile/midifile.h"
 #include "boreaz/samples/sample_store.h"
 
 namespace {
 
-using boreaz::engine::Engine;
 using boreaz::config::load_params_file;
 using boreaz::config::set_param_from_text;
+using boreaz::engine::Engine;
 using boreaz::engine::Params;
 
 constexpr double kDefaultRate = 44100.0;
@@ -67,19 +68,37 @@ void usage() {
         "  IN.mid      format 0 or 1, ticks per quarter note (see --help of boreaz for the\n"
         "              subset, or rather: boreaz-midifile refuses what it cannot honour)\n"
         "  OUT.wav     16 bit PCM, stereo, overwritten if it exists\n"
-        "  PARAMS      optional 'key = value' file, one per line, # for comments.\n"
-        "              Keys are the engine parameters: master_gain_db, osc2_level,\n"
-        "              osc3_level, osc_detune_cents, noise_level, noise_decay_s,\n"
-        "              filter_cutoff_ratio, filter_resonance, filter_keytrack, amp_attack_s,\n"
-        "              amp_decay_s, amp_sustain, amp_release_s, pan_spread,\n"
-        "              bend_range_semitones, transpose_semitones, octave_shift\n"
-        "  --rate N    output sample rate in Hz (default 44100)\n"
-        "  --gain DB   master output level in dB, -72 to +12, instead of the PARAMS file's "
-        "master_gain_db\n"
-        "  --instrument FILE  play a recorded instrument instead of the synthesiser, so a\n"
-        "              rendered WAV is the audio the app would have made\n"
-        "\n"
-        "Exit status: 0 ok, 2 bad usage, 3 input unreadable, 4 output unwritable.\n");
+        "  PARAMS      optional 'key = value' file, one per line, # for comments.\n");
+    // The keys are printed out of the table rather than listed here. A second copy of the list is
+    // what has to be remembered when a parameter is added, and this one had already been forgotten:
+    // the text that used to sit here named 17 keys while the table held 18.
+    std::printf("              Keys are the engine parameters:");
+    int column = 45; // the column the colon ends on, so the wrapping below knows where it is
+    std::size_t rows = 0;
+    const boreaz::engine::ParamSpec* table = boreaz::engine::param_table(&rows);
+    for (std::size_t i = 0; i < rows; ++i) {
+        std::string item(table[i].key);
+        if (i + 1 < rows)
+            item += ',';
+        if (column + 1 + static_cast<int>(item.size()) >
+            79) { // 79: what the rest of the text fits in
+            std::printf("\n              ");
+            column = 14;
+        } else {
+            std::printf(" ");
+            ++column;
+        }
+        std::printf("%s", item.c_str());
+        column += static_cast<int>(item.size());
+    }
+    std::printf("\n");
+    std::printf("  --rate N    output sample rate in Hz (default 44100)\n"
+                "  --gain DB   master output level in dB, -72 to +12, instead of the PARAMS file's "
+                "master_gain_db\n"
+                "  --instrument FILE  play a recorded instrument instead of the synthesiser, so a\n"
+                "              rendered WAV is the audio the app would have made\n"
+                "\n"
+                "Exit status: 0 ok, 2 bad usage, 3 input unreadable, 4 output unwritable.\n");
 }
 
 bool parse_arguments(int argc, char** argv, Options& options, std::string& error) {
@@ -187,12 +206,12 @@ bool write_wav_header(std::ofstream& out, double rate, std::uint32_t frames) {
     put_u32(out, 44u - 8u + frames * 4u); // the whole file minus this field and the size field
     out.write("WAVE", 4);
     out.write("fmt ", 4);
-    put_u32(out, 16);                 // the canonical PCM format chunk
-    put_u16(out, 1);                  // 1 is PCM, not a codec we would have to name
-    put_u16(out, 2);                  // the engine is stereo out
+    put_u32(out, 16); // the canonical PCM format chunk
+    put_u16(out, 1);  // 1 is PCM, not a codec we would have to name
+    put_u16(out, 2);  // the engine is stereo out
     put_u32(out, sample_rate);
     put_u32(out, bytes_per_second);
-    put_u16(out, 4);                  // one frame of both channels
+    put_u16(out, 4); // one frame of both channels
     put_u16(out, 16);
     out.write("data", 4);
     put_u32(out, frames * 4u);
@@ -359,11 +378,12 @@ int main(int argc, char** argv) {
     std::printf("  output           %lld frames at %.0f Hz, 16 bit stereo, %.2f s\n",
                 static_cast<long long>(frames), options.rate,
                 static_cast<double>(frames) / options.rate);
-    std::printf("  peak             %.1f dBFS (%.4f), loudest moment %d voice(s)\n",
-                decibels(peak), static_cast<double>(peak), loudest_voice_count);
+    std::printf("  peak             %.1f dBFS (%.4f), loudest moment %d voice(s)\n", decibels(peak),
+                static_cast<double>(peak), loudest_voice_count);
     if (engine.steal_count() > 0)
-        std::printf("  voice stealing   %d voice(s) were stolen: the file wants more than %d notes\n",
-                    engine.steal_count(), Engine::kMaxPolyphony);
+        std::printf(
+            "  voice stealing   %d voice(s) were stolen: the file wants more than %d notes\n",
+            engine.steal_count(), Engine::kMaxPolyphony);
     if (dropped > 0)
         std::printf("  lost events      %zu could not be queued, so they are not in this file\n",
                     dropped);
