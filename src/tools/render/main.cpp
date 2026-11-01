@@ -16,6 +16,12 @@
 #include <string>
 #include <vector>
 
+#ifdef _WIN32
+#include <windows.h>
+
+#include <psapi.h>
+#endif
+
 #include "boreaz/config/params_file.h"
 #include "boreaz/engine/engine.h"
 #include "boreaz/engine/param_table.h"
@@ -33,6 +39,56 @@ constexpr double kDefaultRate = 44100.0;
 // 256 frames: under the engine's 512 frame scratch limit, and small enough that a render of any
 // length costs the same handful of kilobytes.
 constexpr int kBlock = 256;
+
+// PLAN's real-time promise - "zero file I/O or page faults in the callback" - has been written
+// down since phase 1 and counted once, ever. These are the process counters that say whether it is
+// true, read around the engine call and nothing else, on the thread that makes the sound, with
+// nothing else running: so a fault or a read inside the window belongs to the engine.
+struct Counters {
+    std::uint64_t faults = 0;
+    std::uint64_t reads = 0;
+    std::uint64_t writes = 0;
+
+    Counters& operator+=(const Counters& other) {
+        faults += other.faults;
+        reads += other.reads;
+        writes += other.writes;
+        return *this;
+    }
+};
+
+Counters counters_now() {
+#ifdef _WIN32
+    Counters out;
+    PROCESS_MEMORY_COUNTERS memory{};
+    memory.cb = sizeof(memory);
+    if (GetProcessMemoryInfo(GetCurrentProcess(), &memory, sizeof(memory)))
+        out.faults = memory.PageFaultCount;
+    IO_COUNTERS io{};
+    if (GetProcessIoCounters(GetCurrentProcess(), &io)) {
+        out.reads = io.ReadOperationCount;
+        out.writes = io.WriteOperationCount;
+    }
+    return out;
+#else
+    return {};
+#endif
+}
+
+Counters operator-(const Counters& a, const Counters& b) {
+    return {a.faults - b.faults, a.reads - b.reads, a.writes - b.writes};
+}
+
+// Blocks whose faults do not count against the claim: the first touch of the voice pool, the
+// scratch, and the song is a warm-up cost paid once, and the promise is about steady state.
+constexpr int kWarmBlocks = 32;
+
+// Printing zeros on a platform with no counters would be a claim, not a measurement.
+#ifdef _WIN32
+constexpr bool kCountersMeasured = true;
+#else
+constexpr bool kCountersMeasured = false;
+#endif
 
 constexpr int kOk = 0;
 constexpr int kUsage = 2;
@@ -52,6 +108,9 @@ struct Options {
     std::string instrument;
     double rate = kDefaultRate;
     bool golden = false; // print a golden line instead of writing a file
+    // Count page faults and file reads around the engine call. Off by default because the counters
+    // are two syscalls per block, which is the thing a timing run would object to.
+    bool counters = false;
 };
 
 void usage() {
@@ -97,6 +156,9 @@ void usage() {
                 "master_gain_db\n"
                 "  --instrument FILE  play a recorded instrument instead of the synthesiser, so a\n"
                 "              rendered WAV is the audio the app would have made\n"
+                "  --counters  report page faults and file reads around the engine call: the load,\n"
+                "              the first 32 blocks, and every block after them. Zero reads and zero\n"
+                "              faults in the last line is the real-time promise, measured\n"
                 "\n"
                 "Exit status: 0 ok, 2 bad usage, 3 input unreadable, 4 output unwritable.\n");
 }
@@ -105,6 +167,10 @@ bool parse_arguments(int argc, char** argv, Options& options, std::string& error
     std::vector<std::string> positional;
     for (int i = 1; i < argc; ++i) {
         const std::string argument = argv[i];
+        if (argument == "--counters") {
+            options.counters = true;
+            continue;
+        }
         if (argument == "--rate") {
             if (i + 1 >= argc) {
                 error = "--rate needs a value";
@@ -312,6 +378,7 @@ int main(int argc, char** argv) {
     // long as it is sounding.
     boreaz::samples::SampleStore store;
     Engine engine(params);
+    const Counters load_start = options.counters ? counters_now() : Counters{};
     if (!options.instrument.empty()) {
         const boreaz::samples::LoadResult sampled = store.load_mapping(options.instrument);
         if (!sampled.ok) {
@@ -321,6 +388,7 @@ int main(int argc, char** argv) {
         engine.set_instrument(&store);
     }
     engine.prepare(options.rate);
+    const Counters load_cost = options.counters ? counters_now() - load_start : Counters{};
 
     std::vector<float> block(static_cast<std::size_t>(kBlock) * 2u, 0.0f);
     std::vector<std::int16_t> pcm(static_cast<std::size_t>(kBlock) * 2u, 0);
@@ -329,14 +397,22 @@ int main(int argc, char** argv) {
     float peak = 0.0f;
     int loudest_voice_count = 0;
     std::int64_t written = 0;
+    Counters warm;
+    Counters steady;
+    int block_index = 0;
 
     while (written < frames) {
         const int chunk = static_cast<int>(
             std::min<std::int64_t>(kBlock, static_cast<std::int64_t>(block.size() / 2u)));
         const std::int64_t want =
             static_cast<std::int64_t>(std::min<std::int64_t>(chunk, frames - written));
+        const Counters before = options.counters ? counters_now() : Counters{};
         const boreaz::midifile::FeedResult fed = boreaz::midifile::feed_and_render(
             engine, song, cursor, block.data(), static_cast<int>(want));
+        if (options.counters) {
+            const Counters cost = counters_now() - before;
+            (block_index++ < kWarmBlocks ? warm : steady) += cost;
+        }
         cursor = fed.cursor;
         dropped += fed.dropped;
         for (std::int64_t i = 0; i < want * 2; ++i) {
@@ -352,6 +428,21 @@ int main(int argc, char** argv) {
                           want * 2 * static_cast<std::int64_t>(sizeof(std::int16_t))));
         written += want;
         loudest_voice_count = std::max(loudest_voice_count, engine.active_voices());
+    }
+
+    if (options.counters) {
+        if (!kCountersMeasured) {
+            std::printf("  counters         not measured on this platform\n");
+        } else {
+            const auto u = [](std::uint64_t v) { return static_cast<unsigned long long>(v); };
+            std::printf("  counters         page faults / file reads / file writes around the engine\n");
+            std::printf("    loading          %llu / %llu / %llu\n", u(load_cost.faults),
+                        u(load_cost.reads), u(load_cost.writes));
+            std::printf("    first %d blocks  %llu / %llu / %llu\n", kWarmBlocks, u(warm.faults),
+                        u(warm.reads), u(warm.writes));
+            std::printf("    after warm-up    %llu / %llu / %llu   <- zero here is the promise\n",
+                        u(steady.faults), u(steady.reads), u(steady.writes));
+        }
     }
 
     if (options.golden) {

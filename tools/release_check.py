@@ -30,6 +30,7 @@ import argparse
 import array
 import math
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -115,6 +116,34 @@ def release_wav(path, seconds):
     wav(path, int(RATE * seconds), make)
 
 
+def realtime(failures, instrument):
+    """The real-time promise, measured: while the engine renders, it issues no file reads.
+
+    `boreaz-render --counters` reads the process's own page-fault and IO counters around the engine
+    call and prints three lines - loading, the first blocks, everything after them. Only the last
+    line is asserted, and only its read count is pinned: the page-fault half of the promise was
+    never true in the strict sense (a render takes a handful of soft faults as the process first
+    touches its own memory) and `reads == 0` is what "no disk in the callback" actually means.
+    The fault count is bounded loosely, as a leak detector rather than as a proof.
+    """
+    argv = [RENDER, "--golden", "--counters"]
+    if instrument:
+        argv += ["--instrument", instrument]
+    proc = subprocess.run(argv + [OUT / "one.mid"], cwd=str(OUT), stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT, text=True, errors="replace")
+    steady = [line for line in proc.stdout.splitlines() if "after warm-up" in line]
+    print("\ngate: the engine reads no files while it is rendering")
+    print("  " + " ".join(str(a) for a in argv))
+    # "after warm-up   0 / 0 / 0   <- zero here is the promise", and the numbers are what matter.
+    numbers = re.findall(r"-?\d+", steady[0]) if steady else []
+    ok = proc.returncode == 0 and len(numbers) == 3 and int(numbers[0]) < 1000 and \
+        int(numbers[1]) == 0 and int(numbers[2]) == 0
+    print("  " + (steady[0].strip() if steady else proc.stdout[-300:]))
+    print(("OK: " if ok else "FAIL: ") + "no file reads and no page-fault flood after warm-up")
+    if not ok:
+        failures.append("the engine reads files while it renders")
+
+
 def midi(path):
     def vlq(value):
         out, stack = bytearray(), [value & 0x7F]
@@ -185,6 +214,7 @@ def main():
         run(failures, "a sampled instrument renders to a file",
             [RENDER, "--instrument", INSTRUMENT, OUT / "one.mid", OUT / "instrument.wav",
              OUT / "params.ini"])
+        realtime(failures, INSTRUMENT)
     else:
         print(f"\nskipped: no starter instrument at {INSTRUMENT} - tools/mkinstrument.py builds it")
     run(failures, "a synthesiser render still works",
