@@ -290,6 +290,10 @@ target_link_libraries(boreaz-render PRIVATE boreaz_midifile boreaz_config boreaz
                       boreaz_samples boreaz_sfz)
 boreaz_set_warnings(boreaz-render)
 boreaz_link_runtime_staticly(boreaz-render)
+if(WIN32)
+  # --counters reads PageFaultCount and the process IO counters.
+  target_link_libraries(boreaz-render PRIVATE psapi)
+endif()
 
 # What a mapping means, printed without playing it: regions, the opcodes the reader did not honour,
 # and what the library costs in RAM. It links the reader and the loader and nothing else - not the
