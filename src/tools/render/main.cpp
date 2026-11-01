@@ -6,6 +6,7 @@
 // 4 second one, and it never holds the whole render in memory.
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -400,6 +401,10 @@ int main(int argc, char** argv) {
     Counters warm;
     Counters steady;
     int block_index = 0;
+    // Engine wall time only - the WAV write and the golden hash are deliberately outside these
+    // windows, because the number a CPU claim is argued from has to be the callback's cost and
+    // nothing else. Two clock reads per block against 5 ms of work is not a measurement error.
+    std::uint64_t engine_ns = 0;
 
     while (written < frames) {
         const int chunk = static_cast<int>(
@@ -407,8 +412,13 @@ int main(int argc, char** argv) {
         const std::int64_t want =
             static_cast<std::int64_t>(std::min<std::int64_t>(chunk, frames - written));
         const Counters before = options.counters ? counters_now() : Counters{};
+        const auto tick = std::chrono::steady_clock::now();
         const boreaz::midifile::FeedResult fed = boreaz::midifile::feed_and_render(
             engine, song, cursor, block.data(), static_cast<int>(want));
+        engine_ns += static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() -
+                                                                 tick)
+                .count());
         if (options.counters) {
             const Counters cost = counters_now() - before;
             (block_index++ < kWarmBlocks ? warm : steady) += cost;
@@ -444,6 +454,22 @@ int main(int argc, char** argv) {
                         u(steady.faults), u(steady.reads), u(steady.writes));
         }
     }
+
+    // What the engine cost, said as a fraction of one core, which is the unit every CPU claim in
+    // PLAN is written in. The wall clock is taken around the engine call only, so this is the
+    // callback's work: no sample loading, no WAV write, no hash, no driver and no sleeping. A
+    // render runs as fast as it can, so engine time / audio time is the load one core would carry
+    // if this were the audio thread. It goes to stderr in both modes, like the warnings: stdout is
+    // the tool's report, and a regenerated golden must not be able to pick up a measurement.
+    const double audio_seconds = static_cast<double>(frames) / options.rate;
+    const double engine_seconds = static_cast<double>(engine_ns) * 1e-9;
+    const double core_fraction = audio_seconds > 0.0 ? engine_seconds / audio_seconds : 0.0;
+    const double speed = engine_seconds > 0.0 ? audio_seconds / engine_seconds : 0.0;
+    std::fprintf(stderr,
+                 "  engine work      %llu ms for %.2f s of audio = %.2f%% of one core (%.1fx "
+                 "realtime), %d voice(s) at the loudest moment\n",
+                 static_cast<unsigned long long>(engine_ns / 1000000u), audio_seconds,
+                 core_fraction * 100.0, speed, loudest_voice_count);
 
     if (options.golden) {
         // A basename, so a golden never carries this machine's paths into the repository.
