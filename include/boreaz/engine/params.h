@@ -64,6 +64,14 @@ struct Params {
     // tests/test_fx.cpp, which also owns the fact that the size knob under-delivers by about 11 %.
     float fx_reverb_mix = 0.0f;
     float fx_reverb_seconds = 1.8f;
+    // The drive stage, and the one effect on the bus that is a blend rather than a send into a
+    // space: at `fx_distortion_mix = 1` the bus carries exactly the driven note, at 0 exactly the
+    // clean one. The curve is `tanh(drive·x)/drive`, whose small-signal slope is 1.0 and whose peak
+    // is `tanh(drive)/drive` - so it can change a note's colour and can never raise its level, which
+    // tests/test_fx.cpp asserts in both directions. Default is off for the same reason the other two
+    // are: a piano that arrives already fuzzed is a patch, and the goldens get to prove it.
+    float fx_distortion_mix = 0.0f;
+    float fx_distortion_drive = 3.0f;
 
     // Pitch bend reach in semitones at full deflection.
     float bend_range_semitones = 2.0f;

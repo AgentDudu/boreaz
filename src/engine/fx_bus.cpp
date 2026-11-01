@@ -8,16 +8,17 @@ void FxBus::prepare(double sample_rate) {
     delay_.prepare(sample_rate);
     reverb_.prepare(sample_rate);
 }
-
 // Off is zero, exactly, because that is what the bypass in the engine compares against, and a send
 // too small for a float is not a thing a slider produces. Anything above zero still reaches the
 // effect: at -70 dB it is inaudible, and "inaudible" is not a reason to freeze a knob - the time,
 // the feedback and the room size are read on every block that a non-zero mix sends.
 bool FxBus::active(const Params& params) {
-    return params.fx_delay_mix > 0.0f || params.fx_reverb_mix > 0.0f;
+    return params.fx_distortion_mix > 0.0f || params.fx_delay_mix > 0.0f ||
+           params.fx_reverb_mix > 0.0f;
 }
 
 void FxBus::reset() {
+    distortion_.reset();
     delay_.reset();
     reverb_.reset();
 }
@@ -29,8 +30,26 @@ void FxBus::process_block(float* left, float* right, int frames, const Params& p
     // The table has already clamped these on every path that publishes them; they are clamped again
     // here because both numbers are about to be multiplied into the dry mix on the way to a
     // clipper.
+    const float drive = std::clamp(params.fx_distortion_mix, 0.0f, 1.0f);
     const float send = std::clamp(params.fx_delay_mix, 0.0f, 1.0f);
     const float room = std::clamp(params.fx_reverb_mix, 0.0f, 1.0f);
+
+    if (drive > 0.0f) {
+        distortion_.set_drive(params.fx_distortion_drive);
+        for (int done = 0; done < frames;) {
+            const int chunk = std::min(frames - done, kMaxChunkFrames);
+            // The stage writes the difference, so this line is a blend rather than a sum: at mix 1
+            // the bus carries exactly the driven note, and no amount of drive can lift a peak.
+            distortion_.process(left + done, right + done, drive_l_, drive_r_, chunk);
+            for (int i = 0; i < chunk; ++i) {
+                left[static_cast<std::size_t>(i + done)] +=
+                    drive * drive_l_[static_cast<std::size_t>(i)];
+                right[static_cast<std::size_t>(i + done)] +=
+                    drive * drive_r_[static_cast<std::size_t>(i)];
+            }
+            done += chunk;
+        }
+    }
 
     if (send > 0.0f) {
         // Read every block rather than on a knob move: these are a compare and a multiply, and a

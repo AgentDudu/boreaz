@@ -46,6 +46,9 @@ constexpr ParamSpec kTable[] = {
     // The FX bus. Every default is the effect off, which is not shyness: it is what lets the
     // committed goldens say the bus changed nothing, and it is what the row in `params.h` about "a
     // piano that arrives already echoing is a patch" means in practice.
+    {"fx_distortion_mix", "Drive mix", "", 0.0f, 1.0f, 0.0f, &Params::fx_distortion_mix, nullptr},
+    {"fx_distortion_drive", "Drive", "x", 1.0f, 10.0f, 3.0f, &Params::fx_distortion_drive,
+     nullptr},
     {"fx_delay_mix", "Delay mix", "", 0.0f, 1.0f, 0.0f, &Params::fx_delay_mix, nullptr},
     {"fx_delay_time_ms", "Delay time", " ms", 0.0f, 500.0f, 220.0f, &Params::fx_delay_time_ms,
      nullptr},

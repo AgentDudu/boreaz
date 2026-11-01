@@ -1,6 +1,7 @@
 #pragma once
 
 #include "boreaz/dsp/delay.h"
+#include "boreaz/dsp/distortion.h"
 #include "boreaz/dsp/reverb.h"
 #include "boreaz/engine/params.h"
 
@@ -19,8 +20,11 @@ namespace boreaz::engine {
 // Phase 8 grows this chain: the delay is first because it is the effect whose every number can be
 // asserted, and the reverb and the distortion both land in a bus that is already proven.
 //
-// Order in the chain is delay then room, so an echo goes into the room rather than arriving beside
-// it: one send feeds the other, which is what a slap into a hall does and what costs no extra wire.
+// Order in the chain is drive, delay, room: the distortion is the source's own voice, so it has to
+// be in front of everything that repeats or spaces it - an echo of a clean note into a driven
+// channel would put the effect's harmonics back under the delay's control - and the room is last
+// because it is the furthest thing from the speaker. Each stage is fed what the one before it left
+// on the dry sum, so a send feeds the next one without an extra wire.
 class FxBus {
   public:
     // The engine hands over chunks of at most `Engine::kMaxScratchFrames`; anything bigger is
@@ -43,10 +47,15 @@ class FxBus {
     void reset();
 
   private:
+    boreaz::dsp::Distortion distortion_;
     boreaz::dsp::Delay delay_;
     boreaz::dsp::Reverb reverb_;
+    // One wet buffer per stage, not one buffer reused: each stage is fed the same block, and a wet
+    // buffer that the stage before already wrote is not a wet buffer.
     float wet_l_[kMaxChunkFrames]{};
     float wet_r_[kMaxChunkFrames]{};
+    float drive_l_[kMaxChunkFrames]{};
+    float drive_r_[kMaxChunkFrames]{};
     // The room gets buffers of its own rather than reusing the delay's: the two are fed from the
     // same block, and a wet buffer that one effect has already written is not a wet buffer.
     float room_l_[kMaxChunkFrames]{};
