@@ -51,6 +51,9 @@ constexpr ParamSpec kTable[] = {
      nullptr},
     {"fx_delay_feedback", "Delay feedback", "", 0.0f, 0.95f, 0.35f, &Params::fx_delay_feedback,
      nullptr},
+    {"fx_reverb_mix", "Room mix", "", 0.0f, 1.0f, 0.0f, &Params::fx_reverb_mix, nullptr},
+    {"fx_reverb_seconds", "Room size", " s", 0.15f, 12.0f, 1.8f, &Params::fx_reverb_seconds,
+     nullptr},
 };
 
 } // namespace

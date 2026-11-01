@@ -1,6 +1,7 @@
 #pragma once
 
 #include "boreaz/dsp/delay.h"
+#include "boreaz/dsp/reverb.h"
 #include "boreaz/engine/params.h"
 
 namespace boreaz::engine {
@@ -17,6 +18,9 @@ namespace boreaz::engine {
 //
 // Phase 8 grows this chain: the delay is first because it is the effect whose every number can be
 // asserted, and the reverb and the distortion both land in a bus that is already proven.
+//
+// Order in the chain is delay then room, so an echo goes into the room rather than arriving beside
+// it: one send feeds the other, which is what a slap into a hall does and what costs no extra wire.
 class FxBus {
   public:
     // The engine hands over chunks of at most `Engine::kMaxScratchFrames`; anything bigger is
@@ -24,8 +28,8 @@ class FxBus {
     // wet buffers here are fixed, like everything else on this path.
     static constexpr int kMaxChunkFrames = 512;
 
-    // Setup path. The delay line is measured in samples, so it is sized when the rate is known and
-    // rebuilt from silence if the rate moves.
+    // Setup path. Both effects are measured in samples, so they are sized when the rate is known
+    // and rebuilt from silence if the rate moves.
     void prepare(double sample_rate);
 
     // In place on the planar dry sum. Reads the sends out of `params` every block, so a knob move
@@ -40,8 +44,13 @@ class FxBus {
 
   private:
     boreaz::dsp::Delay delay_;
+    boreaz::dsp::Reverb reverb_;
     float wet_l_[kMaxChunkFrames]{};
     float wet_r_[kMaxChunkFrames]{};
+    // The room gets buffers of its own rather than reusing the delay's: the two are fed from the
+    // same block, and a wet buffer that one effect has already written is not a wet buffer.
+    float room_l_[kMaxChunkFrames]{};
+    float room_r_[kMaxChunkFrames]{};
 };
 
 } // namespace boreaz::engine
