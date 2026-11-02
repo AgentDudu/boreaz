@@ -1,7 +1,9 @@
 #pragma once
 
 #include <algorithm>
-#include <cmath>
+#include <array>
+
+#include "boreaz/engine/mod_router.h"
 
 namespace boreaz::engine {
 
@@ -67,14 +69,37 @@ struct Params {
     // The drive stage, and the one effect on the bus that is a blend rather than a send into a
     // space: at `fx_distortion_mix = 1` the bus carries exactly the driven note, at 0 exactly the
     // clean one. The curve is `tanh(drive·x)/drive`, whose small-signal slope is 1.0 and whose peak
-    // is `tanh(drive)/drive` - so it can change a note's colour and can never raise its level, which
-    // tests/test_fx.cpp asserts in both directions. Default is off for the same reason the other two
-    // are: a piano that arrives already fuzzed is a patch, and the goldens get to prove it.
+    // is `tanh(drive)/drive` - so it can change a note's colour and can never raise its level,
+    // which tests/test_fx.cpp asserts in both directions. Default is off for the same reason the
+    // other two are: a piano that arrives already fuzzed is a patch, and the goldens get to prove
+    // it.
     float fx_distortion_mix = 0.0f;
     float fx_distortion_drive = 3.0f;
 
     // Pitch bend reach in semitones at full deflection.
     float bend_range_semitones = 2.0f;
+
+    // The second envelope and the two LFOs, which exist as modulation sources. Env2 shapes a
+    // destination over the note's life; the LFOs swing one forever. Defaults are a percussive
+    // Env2 (all the way down by the time the amp envelope has decayed) and two LFO rates far
+    // apart, because a slow and a fast one are what a patch reaches for first.
+    float env2_attack_s = 0.002f;
+    float env2_decay_s = 0.8f;
+    float env2_sustain = 0.0f;
+    float env2_release_s = 0.4f;
+    float lfo1_rate_hz = 5.5f;
+    float lfo2_rate_hz = 0.8f;
+
+    // The modulation slots, in the shape `mod_router.h` describes. All four arrays are indexed by
+    // slot, so the voice reads one loop and the panel walks thirty-two rows off the same table.
+    //
+    // Every slot starts switched off, with no depth: the router is inert until a patch wires it,
+    // which is what lets the committed goldens assert that adding eight slots of modulation cost
+    // an unpatched instrument nothing at all.
+    std::array<int, kModSlots> mod_source{};   // ModSource, as an index
+    std::array<int, kModSlots> mod_dest{};     // ModDest, as an index
+    std::array<float, kModSlots> mod_depth{};  // signed, -1..1
+    std::array<int, kModSlots> mod_unipolar{}; // 0 = bipolar, 1 = unipolar
 
     // Defined in `param_table.cpp`, over the descriptor table: the ranges are in one place, so a
     // parameter cannot be legal in a config file and out of range in the window. Called on every
@@ -99,7 +124,9 @@ struct Params {
                filter_cutoff_ratio == other.filter_cutoff_ratio &&
                filter_resonance == other.filter_resonance &&
                filter_keytrack == other.filter_keytrack && pan_spread == other.pan_spread &&
-               bend_range_semitones == other.bend_range_semitones;
+               bend_range_semitones == other.bend_range_semitones &&
+               mod_source == other.mod_source && mod_dest == other.mod_dest &&
+               mod_depth == other.mod_depth && mod_unipolar == other.mod_unipolar;
         // The FX sends are deliberately not here. They are read by the bus every block, so a delay
         // knob changes the sound on the block it lands on and needs no voice to be re-prepared -
         // and an effect parameter that counts here would refresh every voice on every knob move.

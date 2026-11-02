@@ -110,9 +110,18 @@ TEST_CASE("every engine parameter is one row of one table") {
         CHECK(spec.minimum <= spec.default_value);
         CHECK(spec.default_value <= spec.maximum);
 
-        // Exactly one kind of number. A row with neither is a parameter nobody can reach; a row
-        // with both is a parameter whose value depends on which function looked first.
-        CHECK((spec.real == nullptr) != (spec.integer == nullptr));
+        // Exactly one place the value lives: a real member, a whole-number member, or one element
+        // of an array. A row with none is a parameter nobody can reach; a row with two is a
+        // parameter whose value depends on which function looked first.
+        const int places = (spec.real != nullptr ? 1 : 0) + (spec.integer != nullptr ? 1 : 0) +
+                           (spec.array_kind != boreaz::engine::ParamArray::kNone ? 1 : 0);
+        CHECK(places == 1);
+        if (spec.array_kind != boreaz::engine::ParamArray::kNone) {
+            // The array rows index a fixed number of modulation slots, and the index is the only
+            // thing the compiler cannot check for them.
+            CHECK(spec.slot >= 0);
+            CHECK(spec.slot < boreaz::engine::kModSlots);
+        }
 
         // The default in the row is the default in the struct. Two defaults that disagree mean a
         // panel Reset lands somewhere the instrument never started.
@@ -192,6 +201,33 @@ TEST_CASE("a parameter file refuses a number the engine cannot use, and says wha
     write_file(fraction, "octave_shift = 1.5\n");
     CHECK_FALSE(load_params_file(fraction.string(), loaded, error));
     CHECK(error.find("whole number") != std::string::npos);
+
+    // The modulation rows are the case the member pointers could not answer for: a row that addresses
+    // an element of an `std::array` sets neither `real` nor `integer`, so a reader that guessed from
+    // them treated every cable as a whole number -- it refused `mod3_depth = 0.4`, the one row of the
+    // four whose whole job is to be continuous, and for the rows it did accept it wrote through a null
+    // member pointer.
+    const auto matrix = dir / "matrix.ini";
+    write_file(matrix,
+               "mod1_source = 1\nmod3_dest = 2\nmod3_depth = 0.4\nmod3_unipolar = 1\n");
+    Params wired{};
+    REQUIRE_MESSAGE(load_params_file(matrix.string(), wired, error), error);
+    CHECK(wired.mod_source[0] == 1);
+    CHECK(wired.mod_dest[2] == 2);
+    CHECK(wired.mod_depth[2] == doctest::Approx(0.4f));
+    CHECK(wired.mod_unipolar[2] == 1);
+    CHECK(wired.mod_source[2] == 0); // a row said nothing about the other slots
+
+    // A depth is continuous; an end of a cable is not, and saying so is what the row's range is for.
+    const auto half_cable = dir / "half_cable.ini";
+    write_file(half_cable, "mod3_source = 1.5\n");
+    CHECK_FALSE(load_params_file(half_cable.string(), wired, error));
+    CHECK(error.find("whole number") != std::string::npos);
+
+    const auto deep = dir / "deep.ini";
+    write_file(deep, "mod3_depth = 2\n");
+    CHECK_FALSE(load_params_file(deep.string(), wired, error));
+    CHECK(error.find("mod3_depth") != std::string::npos);
 
     // The instrument's own defaults are a file like any other, and the app refuses to start when
     // they do not load, so the table has to agree with what ships.

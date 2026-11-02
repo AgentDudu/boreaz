@@ -96,10 +96,18 @@ class Voice {
     void set_channel_gain(float gain) { channel_gain_ = gain; }
     float channel_gain() const { return channel_gain_; }
 
+    // CC1, the GM modulation wheel, 0..1. Live like the fader, and held per channel so a second
+    // keyboard on another channel keeps its own wheel. Only the synthesiser voice listens: a
+    // sampled instrument has no modulation matrix (PLAN.md phase 8), so for it the controller is
+    // accepted and ignored, exactly as it was before the router existed.
+    void set_mod_wheel(float level) { mod_wheel_ = level; }
+    float mod_wheel() const { return mod_wheel_; }
+
   protected:
     Voice() = default;
 
     float channel_gain_ = 1.0f;
+    float mod_wheel_ = 0.0f;
 };
 
 } // namespace boreaz::engine

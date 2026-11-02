@@ -9,19 +9,22 @@ two disagree on a number, this file is newer and PLAN is the thing that needs fi
 |---|---|
 | develop | **`10f1532`** — PRs **#33** (the limiter, and the golden gate learning to compare), **#32** (the drive stage), **#31** (the CPU, measured), **#30** (the room waits for presets), **#29**, **#28** (the gate runs the app), **#27** (the real-time counters), #26 (the room) |
 | open PR | none. **This repo has no CI at all** — `origin` is GitHub, `gh api …/actions/workflows` is empty, `gh pr checks` says "no checks reported". The gate is `python tools/release_check.py`, run locally, and that is the only thing between a branch and develop |
-| current branch | `develop` (nothing open) |
+| current branch | `feat/the-mod-router` (PR open against `develop`; read the base back, this checkout's default is `main`) |
 | instrument on disk | `third_party/instruments/salamander/` — 208 WAVs, 147.3 MB, gitignored |
 | gate | `python tools/release_check.py` → `OK: every gate ran` (the app on a real device, and **the goldens compared by value** — hash and peak against constants; until #33 the gate only checked a hash was printed); `ctest --test-dir build` → 1/1, `ctest --test-dir build-asan` → 1/1; **no golden moved** |
 | instruments on disk | also `third_party/instruments/upright-piano-KW/` — 66 regions, 109 MB, the gate's default `--instrument` |
-| tests | **252**, 17 in `tests/test_fx.cpp` (7 delay + bus, 5 room, 3 drive, 6 limiter) |
+| tests | **269**, 17 in `tests/test_mod_router.cpp` (the matrix by name, the units, the polarity, two sound claims), 17 in `tests/test_fx.cpp` (7 delay + bus, 5 room, 3 drive, 6 limiter) |
 
 **Phase 8, one slice at a time.** In: `dsp::Delay` (ring per ear, 0.5 s, integer tap, feedback ≤
 0.95), `dsp::Reverb` (4 damped combs per ear on one shared mono excitation + 2 all-passes per ear,
 30 Hz leak in every loop), `engine::FxBus` (skips itself when every send reads 0),
 `Engine::render_chunk` = voices → **FxBus** (`drive → delay → room`) → master gain → `tanh`, and
 seven table rows (`fx_distortion_mix/drive`, `fx_delay_mix/time_ms/feedback`,
-`fx_reverb_mix/seconds`). Still out: the mod router and polyBLEP — and nothing you hear changed,
-because every send ships at silence.
+`fx_reverb_mix/seconds`). **The mod router is in too** — 8 slots, 7 sources × 7 destinations, 38 rows
+(four a slot, `mod1_source` … `mod8_unipolar`, plus the six `env2_*`/LFO-rate rows a cable cannot work
+without), which takes the table from 25 knobs to **63**. Still out: polyBLEP, and the panel widgets a
+routed patch needs. Nothing you hear changed either way: every send ships at silence and
+every slot ships unwired.
 
 ## What phase 8 costs (measured 2026-11-02, PR #31)
 
@@ -92,6 +95,66 @@ Two bugs this found, both fixed: **`boreaz-render --golden` refused a parameter 
 takes `IN.mid [PARAMS]`), and the drive's own first test asserted a harmonic ratio against the
 *block's* fundamental, which for a 16000-sample block is 3 Hz and measures nothing. Correlate at
 `cycles` times the bin, not at the bin.
+
+## What the modulation router is, and its numbers (measured 2026-11-03)
+
+`include/boreaz/engine/mod_router.h` (the two enums and the free-function contract: shape, clamp,
+`mod_amount`, `keytrack_value`) and about 200 lines in `SynthVoice`: `prepare_modulation` for the flags,
+`apply_modulation`'s slot loop for the destination arithmetic. Five things the code does that a reader
+should be told:
+
+- **Polarity is a slot field, not a source property, and that is the whole design.** Velocity, wheel and
+  keytrack rest at 0; an LFO swings ±1; **Env2 falls back to 0 when the note lets go**. A per-source rule
+  turns "env2 → pitch, bipolar" into an envelope *pitch drop* whose depth depends on how long the key was
+  held. Unipolar passes the source through; bipolar reads `2v − 1`.
+- **The depth is in the destination's own units**: pitch ±2 semitones, cutoff **±3 octaves as `2^x`** (a
+  cutoff is a multiplier, so a linear depth would read hertz at A0 and kilohertz at C8), **pan the whole
+  field** added to the key's own position, levels ±1. Only the levels are floored at 0 — inverting an
+  oscillator's phase changes the timbre, not the mix. One place, `mod_amount`, and the tests quote it.
+- **Keytrack is exactly PLAN's rule** (A0 −1.0, C4 0.0, C8 +1.0) with the two halves scaled separately
+  (39 keys below centre, 48 above) so both ends are exact; the slopes therefore differ either side of
+  middle C. That is the one thing the plan's row left open, said at the function.
+- **One value per source per block, and only for a source somebody routed** (`mod_used_env2_`,
+  `mod_used_lfo1_`, `mod_used_lfo2_`, all worked out at `patch()`; `mod_active_` skips the loop). Env2 is
+  the voice's own mod envelope — fresh at `start()` so a reused voice cannot open the filter before the
+  key was hit — and it releases with the key, so it goes on modulating after the note is gone. The LFOs
+  are **not** reset at `start()`, which predates the router: a chord whose vibrato all begins at phase
+  zero is one instrument. So a routed LFO's phase belongs to the note and its rate is the assertable
+  number. Block rate has a price and a `shortcut:` comment: a 20 Hz LFO gets three steps per cycle at
+  64-frame blocks — nothing on a cutoff, stepped on fast vibrato, per-sample ramp is the upgrade.
+- **The wheel is not a parameter.** `Voice::set_mod_wheel`, one per channel (`channel_wheel_`,
+  `kCcModWheel = 1`), pushed onto sounding voices by `Engine::push_channel_controllers` — renamed from
+  `push_channel_gains` because it now carries both. A patch that zeroed a hand when it loaded is the bug
+  the plan already names for program change. `patch()` runs on every `set_params`, which is exactly why
+  the wheel stays out of `Params`. Sampled voices accept CC1 and ignore it.
+
+Cost, `tests/fixtures/midifile/lead-simple.mid`, offline, engine call only, `boreaz-render`'s own
+`% of one core` line, median of 5: **unwired 1.36 %**, one cable to pitch **1.37 %**, eight cables across
+every destination **1.38 %**, with a run-to-run spread of **1.33–1.79 %** on every set. None of the
+differences is resolvable, which is how "< 1 op/sample at default settings" was always going to pass.
+
+269 tests, 17 new. The pitch case asserts eleven exact semitone results out of the slot's own fields; the
+level cases assert exact int16 peaks (0.297525 unmodulated, 0.111847 with osc3 at its floor, 0.297639
+where a second slot cancels it — a cable that sums can cancel); the pan case asserts `tan((pan+1)π/4)`
+ratios rather than measuring them; the two sound claims are measured — **6.17 Hz against the 6.0 asked
+for** (17 cycles in 2.757 s), and a filter that goes 0.0001 → **0.1128** → 0.0001 across the envelope
+against a control that stays at 0.0001.
+
+**The bug worth knowing.** `ParamSpec` addresses a parameter three ways — `real`, `integer`, or
+`array_kind` + `slot` — and two callers branched on `spec.real != nullptr` and read `spec.integer`
+otherwise. Array rows set neither pointer, so a patch file refused `mod1_depth = 0.4` ("wants a whole
+number") and accepted the other three rows by writing through a **null member pointer**; the panel did
+the read equivalent for 33 of 63 rows. Fixed at the root with `param_is_integer(spec)` in the table,
+`param_read`/`param_write` at both call sites, a patch-file test for all four rows of a slot, and a loop
+that asserts **every** row reads back what the table wrote. Rule for the next row anybody adds: the table
+has three ways to address a parameter, so a caller that branches on which one is set has to ask
+`param_is_integer`, not guess.
+
+**Not done in 8.1:** the panel draws the matrix as 32 sliders ("M1 src", 0–6, no names) where eight
+source/destination pairs want list widgets — phase 8.4, with the search box PLAN asks for. The patch file
+already carries every cable (`params_file.cpp` walks the table; no format change was needed). The
+`env2_*` label next to `amp_*` is the naming decision the panel forces, and `env1_*` has gone un-named
+for four phases for the same reason.
 
 ## The room's numbers (re-deriving these costs an hour)
 
@@ -211,14 +274,17 @@ loops:  0 of 208 regions loop, because upstream has none. 20 of the 120 note rec
    the `tanh`, ceiling 2.0, composite output `tanh(2.0)` = 0.964028, no parameters, no makeup gain. What
    it buys is the top of the fader: 66 303 pinned samples → 0, and 1.51× rms for 1.16× peak (a little
    of that is the peak itself, +1.32 dB, because there is deliberately no makeup gain). PLAN §8.1 and
-   the §6 row carry the numbers. **Next: the mod router, then polyBLEP** — the last two phase-8 items
-   with no code, and polyBLEP is a CPU *saving*, see §7's engine-cost row. Two process facts for
-   whoever goes next: open the PR with `--base develop` and read the base back (this checkout's default
-   is `main`), and the remote is `AgentDudu/boreaz` — `gh api` on the wrong owner 404s and proves
-   nothing. And nothing to copy from the `tanh` argument: this is the last stage, which is why it has no
-   send and no parameters.
-2. **The rest of phase 8's exit criteria**: per-voice modulation < 1 op/sample at defaults (the mod
-   router is not started), and CPU < 8 % — **met by the shipping sampled path** (1.1-1.4 % with all
+   the §6 row carry the numbers.
+1b. **The mod router is in** (`feat/the-mod-router`): see the section above for the rules and the cost.
+   **Next, in this order: the panel widgets (a routed patch is buildable from a `.ini` today — the loader
+   walks the table, so all 63 rows including the 32 cable rows already ride `--params` and `--load`; what
+   a human cannot do is *pick* a source, because the panel draws "M1 src" as a 0–6 slider), then the
+   `env2_*`/`amp_*` labels the panel forces, then polyBLEP** —
+   and polyBLEP is a CPU *saving*, see §7's engine-cost row. Two process facts stay true: open the PR with
+   `--base develop` and read the base back (this checkout's default is `main`), and the remote is
+   `AgentDudu/boreaz` — `gh api` on the wrong owner 404s and proves nothing.
+2. **The rest of phase 8's exit criteria**: per-voice modulation < 1 op/sample at defaults — **met**, 1.36 %
+   unwired against 1.38 % with all eight slots routed, inside a 1.33–1.79 % run-to-run spread. CPU < 8 % — **met by the shipping sampled path** (1.1-1.4 % with all
    three effects) and **not met by the synthesiser** (8.03 %), which is a phase-3 number and wants
    polyBLEP. Measure anything level-related at `--gain -40`, never at a post-`tanh` peak.
 3. **The panel.** `--gui` ran once by hand (window opened, file played, killed after 6 s) and nobody
@@ -232,6 +298,16 @@ loops:  0 of 208 regions loop, because upstream has none. 20 of the 120 note rec
    and the reverb default above.
 
 ## Gotchas, all paid for
+
+- **A green test suite can be yesterday's binary.** `cmake --build build 2>&1 | grep -E " error "` prints
+  nothing when the failing translation unit is one you have not looked at, and the `boreaz_tests.exe` you
+  then run is the one that was already there. This cost two "all tests pass" readings in one session on the
+  modulation tests. Check the build's exit status, then run the suite.
+- **A HANDOFF that lives in a workspace instead of the repository is a document nobody has.** The copy this
+  session was handed described PRs #34–#36 and a `develop` protection workflow; `gh pr list --state all`
+  stops at #33 and no commit or branch anywhere in the repository mentions them. If a state file is worth
+  reading it is worth committing — and when the two disagree, believe `git log` and `gh pr list`, then say
+  so out loud, which is what this bullet is.
 
 - **A comb output is a spike train.** Peak and rms of the same room tail differ by 20 dB and more,
   so every room claim has to be an rms-over-a-window claim; the first version of the level assertion

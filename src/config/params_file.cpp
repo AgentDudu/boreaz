@@ -32,7 +32,7 @@ bool apply_value(const boreaz::engine::ParamSpec& spec, const std::string& key,
                  const std::string& value, Params& params, const std::string& where,
                  std::string& error) {
     const std::string prefix = where + ": '" + key + "'";
-    if (spec.real != nullptr) {
+    if (!boreaz::engine::param_is_integer(spec)) {
         // strtod plus "and it consumed the whole string": `sscanf("%f")` is happy to read the 2
         // in "2..0" and call the line good, which is a patch that quietly does not say what it
         // says.
@@ -68,7 +68,9 @@ bool apply_value(const boreaz::engine::ParamSpec& spec, const std::string& key,
                 std::to_string(static_cast<int>(spec.maximum)) + ", got '" + value + "'";
         return false;
     }
-    params.*(spec.integer) = parsed;
+    // Through the table, never through `spec.integer`: a row that lives in an array has no member
+    // pointer of its own, and the table is what knows which element of which array it is.
+    boreaz::engine::param_write(spec, static_cast<float>(parsed), params);
     return true;
 }
 

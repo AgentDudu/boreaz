@@ -56,6 +56,7 @@ Engine::Engine(const Params& initial) {
     fx_.prepare(sample_rate_);
     strike_.fill(kUnstruckVelocity);
     channel_gain_.fill(1.0f);
+    channel_wheel_.fill(0.0f);
     for (SampledVoice& voice : releases_)
         voice.plays_release_samples(true);
 }
@@ -137,14 +138,16 @@ void Engine::retune_voices(int semitones, const Params& params) {
     }
 }
 
-void Engine::push_channel_gains() {
+void Engine::push_channel_controllers() {
     for (int index = 0; index < allocator_.pool_size(); ++index) {
         Voice& voice = allocator_.voice(index);
         if (!voice.active())
             continue;
         const int channel = voice.channel();
-        if (channel >= 0 && channel < kMidiChannels)
+        if (channel >= 0 && channel < kMidiChannels) {
             voice.set_channel_gain(channel_gain_[static_cast<std::size_t>(channel)]);
+            voice.set_mod_wheel(channel_wheel_[static_cast<std::size_t>(channel)]);
+        }
     }
     // The release pool takes its level from the key that went down, and CC7 is not a key: a channel
     // fader pulled to zero while a hammer noise is sounding is a player asking for silence.
@@ -152,8 +155,10 @@ void Engine::push_channel_gains() {
         if (!voice.active())
             continue;
         const int channel = voice.channel();
-        if (channel >= 0 && channel < kMidiChannels)
+        if (channel >= 0 && channel < kMidiChannels) {
             voice.set_channel_gain(channel_gain_[static_cast<std::size_t>(channel)]);
+            voice.set_mod_wheel(channel_wheel_[static_cast<std::size_t>(channel)]);
+        }
     }
 }
 
@@ -173,13 +178,13 @@ void Engine::render_chunk(float* output, int frames, const Params& params) {
             apply_event(next, params);
             moved = true;
         }
-        // The fader is pushed after the events of this stretch are applied, not once per block at
-        // the top: a note and a CC7 that arrive in the same block must not leak one block of sound
-        // at the level the fader used to be at, which is exactly the case when a keyboard sends its
-        // volume along with the first note. Idle blocks cost nothing, which is why this is not
-        // unconditional.
+        // The controllers are pushed after the events of this stretch are applied, not once per
+        // block at the top: a note and a CC7 that arrive in the same block must not leak one block
+        // of sound at the level the fader used to be at, which is exactly the case when a keyboard
+        // sends its volume along with the first note. Idle blocks cost nothing, which is why this
+        // is not unconditional.
         if (moved)
-            push_channel_gains();
+            push_channel_controllers();
         int run = frames - offset;
         if (queue_.peek(next)) {
             const std::int64_t due = next.tick - (position_ + offset);
@@ -275,7 +280,13 @@ void Engine::apply_event(const Event& event, const Params& params) {
             start_release(event.note, event.channel, params);
             break;
         case EventType::kControlChange:
-            if (event.note == kCcChannelVolume) {
+            if (event.note == kCcModWheel) {
+                // 0..1, unipolar, like the controller: a wheel at rest sends 0 and must not pull a
+                // destination down by its full depth. Per channel for the fader's reason — two
+                // keyboards, two hands, two wheels.
+                channel_wheel_[event.channel % kMidiChannels] =
+                    static_cast<float>(event.velocity) * (1.0f / 127.0f);
+            } else if (event.note == kCcChannelVolume) {
                 // Per channel and not global, because a general MIDI file sets its own drum channel
                 // quiet and a shared fader would take the piano down with it.
                 channel_gain_[event.channel % kMidiChannels] =

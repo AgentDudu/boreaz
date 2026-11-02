@@ -85,8 +85,10 @@ void ParamsPanel::draw(boreaz::engine::Engine& engine, const FrameView& view,
         // The unit goes next to the number, not in a column header: a slider has to be readable in
         // the same glance as the slider.
         const std::string label = std::string(spec.label) + "##" + spec.key;
-        if (spec.real != nullptr) {
-            float value = params_.*(spec.real);
+        // Both branches read and write through the table: a row that lives in an `std::array` has no
+        // member pointer of its own, and the panel is not the place to guess which array a row is in.
+        if (!boreaz::engine::param_is_integer(spec)) {
+            float value = boreaz::engine::param_read(spec, params_);
             const std::string format = std::string("%0.3f") + spec.unit;
             if (ImGui::SliderFloat(label.c_str(), &value, spec.minimum, spec.maximum,
                                    format.c_str())) {
@@ -94,7 +96,7 @@ void ParamsPanel::draw(boreaz::engine::Engine& engine, const FrameView& view,
                 dirty = true;
             }
         } else {
-            int value = params_.*(spec.integer);
+            int value = static_cast<int>(boreaz::engine::param_read(spec, params_));
             const std::string format = std::string("%d") + spec.unit;
             if (ImGui::SliderInt(label.c_str(), &value, static_cast<int>(spec.minimum),
                                  static_cast<int>(spec.maximum), format.c_str())) {

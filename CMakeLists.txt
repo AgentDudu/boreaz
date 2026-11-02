@@ -321,6 +321,7 @@ if(BOREAZ_BUILD_TESTS)
     tests/test_envelope.cpp
     tests/test_gain.cpp
     tests/test_synth_voice.cpp
+    tests/test_mod_router.cpp
     tests/test_sfz.cpp
     tests/test_sample_store.cpp
     tests/test_sampled_voice.cpp
