@@ -96,7 +96,7 @@ takes `IN.mid [PARAMS]`), and the drive's own first test asserted a harmonic rat
 *block's* fundamental, which for a 16000-sample block is 3 Hz and measures nothing. Correlate at
 `cycles` times the bin, not at the bin.
 
-## What the modulation router is, and its numbers (measured 2026-11-03)
+## What the modulation router is, and its numbers (measured 2026-11-03, PR #34)
 
 `include/boreaz/engine/mod_router.h` (the two enums and the free-function contract: shape, clamp,
 `mod_amount`, `keytrack_value`) and about 200 lines in `SynthVoice`: `prepare_modulation` for the flags,
