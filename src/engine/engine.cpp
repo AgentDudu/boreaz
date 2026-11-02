@@ -215,7 +215,7 @@ void Engine::render_chunk(float* output, int frames, const Params& params) {
     //
     // What that buys, measured on the 88-key glissando: at the top of the master row (+12 dB) the
     // old chain wrote 66303 samples pinned at exactly +-32767 of 1565550, and the render after this
-    // stage lands at 0.964020 with none pinned, because the gain reduction spreads over the
+    // stage lands at 0.964020 as written to int16 (0.964028 as a float peak) with none pinned, because the gain reduction spreads over the
     // neighbourhood of a peak instead of cutting its top off. At the shipping -12 dB master it buys
     // nothing at all, which is the point: 0.6479 is the loudest the synthesiser asks for there, the
     // gain never leaves 1.0, and the engine test renders the same file with and without this stage

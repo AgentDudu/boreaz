@@ -212,7 +212,7 @@ loops:  0 of 208 regions loop, because upstream has none. 20 of the 120 note rec
    branch is `main`) and the base read back from the reply. The remote is `AgentDudu/boreaz` —
    `gh api` against the wrong owner 404s and proves nothing. It sits **behind** the `tanh` rather
    than replacing it, and it applies no gain at all, so the reason to merge it is the top of the
-   fader: 66 303 pinned samples → 0, and the top of the fader buys 1.5× rms for 1.0× peak. See
+   fader: 66 303 pinned samples → 0, and the top of the fader buys 1.51× rms for 1.16× peak (no makeup gain, by design, so the peak does move a little: +1.32 dB). See
    PLAN §8.1 and the row in §6. **Next after it: the mod router, then polyBLEP** (the two phase-8
    items with no code yet, and polyBLEP is a CPU *saving* — see §7's engine-cost row).
    The one thing NOT to copy from the `tanh` argument: the limiter is the last stage, so it is the

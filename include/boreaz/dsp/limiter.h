@@ -9,7 +9,7 @@
 // tanh can never engage (measured: the tanh's output peaks at 0.99991 on the loudest thing in the
 // repository), and a promise nothing can break is not a test either. So this sits **after the fader
 // and in front of the tanh**, where it is the stage that catches overload and the tanh is a curve
-// that costs 0.13 dB on a peak instead of the 4.5 dB it was eating at 0 dB master. The tanh cannot
+// that costs 0.13 dB on a peak at the shipping `-12 dB` master instead of the 1.82 dB it was eating at `0 dB`. The tanh cannot
 // undo what this decides, because `tanh(x) <= x` for x >= 0.
 //
 // What it is: a peak limiter with an instantaneous attack and a one-pole release, one linked gain
@@ -35,8 +35,9 @@
 //     the gain is 1.0f, and multiplying by 1.0f is bit-identical, so the committed goldens and every
 //     level claim measured at the shipping `-12 dB` master survived this landing unchanged - and are
 //     asserted to, not hoped to: `Engine::bypass_limiter()` renders the same file both ways and the
-//     test counts the samples that moved. At -12 dB the answer is 0 of 96 000; the synthesiser peaks
-//     at 0.6479 there and the sampled flagship at 0.6047, both far under 2.0.
+//     test counts the samples that moved. At -12 dB the answer is 0 of 96 000: the loudest committed
+//     synthesiser fixture (glissando-88) peaks at 0.6479 there, the others at 0.6047 / 0.3069 / 0.2993, and the
+//     shipping recorded upright at 0.2819 - all of them long way under 2.0.
 //
 //   - **nothing leaves here above the ceiling**, whatever comes in: random, DC at a thousand, a sine
 //     at ten. The gain is never above 1.0 and the attack is applied to the sample that triggered it,
@@ -62,26 +63,30 @@ namespace boreaz::dsp {
 class Limiter {
   public:
     // The ceiling is where the curve behind this stage stops being worth asking for, and the number
-    // is measured, not assumed: `tanh` eats 0.61 dB at an input of 1.5, 3.58 dB at 2.0, 6.34 dB at
-    // 3.0, and by 9.02 it rounds to exactly 1.0, which is not a ceiling but a square wave. So the cap
-    // sits at 2.0 - the loudest thing the curve is asked to do is compress by three tenths of a dB,
+    // is measured, not assumed: a signal at 1.0 leaves the curve at 0.7616 (-2.37 dBFS, so a cap at 1.0 is
+    // a ceiling 2.37 dB under full scale and most of the master row thrown away), at 1.5 at 0.9051, at 2.0
+    // at 0.9640, at 3.0 at 0.9951, and by 9.02 it rounds to exactly 1.0, which is not a ceiling but a
+    // square wave. So the cap sits at 2.0 - the loudest the curve is ever asked to compress is 6.34 dB,
     // the composite output ceiling is tanh(2.0) = 0.964 (-0.32 dBFS), and full scale is out of reach
     // by a third of a decibel with the limiter doing the work the curve was doing badly.
     //
-    // Two other numbers were measured before this one was chosen, and both are wrong in a way worth
-    // writing down. A cap of 1.0 - the obvious answer - leaves the engine's loudest sample at 0.7616,
-    // because the curve is then asked to work up to its own 2.37 dB of compression: two and a half dB
-    // of range quietly deleted, at every master gain, and the fader above the engagement point only
-    // buys rms. A cap of 1.0986123 (ln 3, which is what "where tanh reaches 1.0" looks like if you
-    // solve it badly - `atanh(1)` is infinity) lands on 0.8000 for the same reason. Deliberately not
-    // a parameter: a limiter whose ceiling can be set above where the chain runs out of curve is a
-    // make-work knob for the DAC.
+    // One more candidate was measured and rejected: 1.0986123 (= ln 3, which is what "where tanh
+    // reaches 1.0" looks like if it is solved badly - `atanh(1)` is infinity) puts the composite output
+    // at 0.8000, 5 % louder than 2.0 does, for 9.11 dB of curve instead of 6.34. Deliberately not a
+    // parameter either: a limiter whose ceiling can be set above where the chain runs out of curve is
+    // a make-work knob for the DAC.
     static constexpr float kCeiling = 2.0f;
 
-    // The release, in seconds, from the sweep in the header of the commit that landed this: it is
-    // long enough that a 100 Hz sine at four times full scale comes back at its own level inside a
-    // quarter-cycle rather than being re-limited on every partial, and short enough that the second
-    // chord of a staccato passage is still caught. Setting up, not per sample.
+    // The release, in seconds, measured rather than felt: 50 ms is what a 100 Hz tone at four times
+    // the ceiling needs in order to come back far enough between partials not to be re-limited on
+    // every one of them (the gain reaches 0.28 of the source inside one 10 ms period, and the third
+    // harmonic settles at 31 % of the fundamental - where the `tanh` it relieves reports 29 %), while
+    // a 3 ms release on the same tone reports 34 % and buys nothing. Time also explains why the
+    // release cannot smear a transient: the stage is called once per engine chunk (96 frames, 2.18 ms
+    // at 44.1 kHz), so one release tick moves the gain 4.35 % of the way back and 63 % of the way
+    // takes 23 chunks. At a device callback's 1024 frame period one tick would be 23.2 ms, 46 % of
+    // the time constant, and the release would be doing its work *inside* the block that triggered
+    // it. Setting up, not per sample.
     static constexpr double kReleaseSeconds = 0.050;
 
     void prepare(double sample_rate) {
