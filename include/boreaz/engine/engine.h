@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "boreaz/dsp/gain.h"
+#include "boreaz/dsp/limiter.h"
 #include "boreaz/dsp/tuning.h"
 #include "boreaz/engine/event.h"
 #include "boreaz/engine/fx_bus.h"
@@ -77,10 +78,18 @@ class Engine {
     int pool_size() const { return allocator_.pool_size(); }
     int steal_count() const { return steal_count_.load(std::memory_order_relaxed); }
     std::int64_t sample_position() const { return position_; }
-    // The loudest sample of the last block, before the limiter bent it. 1.0 is where the tanh
-    // starts working, so this is the clip meter: 0.7 is a mix with room, 1.05 is a mix that is
-    // being squashed and nobody said so. Per block, not per sample, which is what a light needs.
+    // The loudest sample of the last block, before the limiter bent it. 2.0 is the ceiling, so this
+    // is the clip meter: 0.7 is a mix with room, 3.0 is a mix being held down by a dB and a half and
+    // nobody said so. Per block, not per sample, which is what a light needs - and it reads the
+    // *demand*, because after the limiter the output peak is a constant this stage guarantees and a
+    // meter on top of a guarantee reports nothing.
     float drive_peak() const { return drive_peak_.load(std::memory_order_relaxed); }
+
+    // Take the limiter out of the master chain. Not a parameter and not a sound: it exists so a test
+    // can render the same file twice and require the two to be bit-identical at the shipping level,
+    // which is the only way to show a committed golden was not refreshed to cover a change. Setup
+    // path only, like everything else that is not the callback.
+    void bypass_limiter(bool bypass = true) { limiter_bypassed_ = bypass; }
     std::size_t dropped_events() const { return queue_.dropped(); }
     bool sustain_pedal_down() const { return pedal_down_; }
     float bend_semitones(std::uint8_t channel) const { return bend_[channel % kMidiChannels]; }
@@ -169,6 +178,10 @@ class Engine {
     float scratch_r_[kMaxScratchFrames]{};
 
     boreaz::dsp::Gain master_;
+    // After the fader, before the tanh: the stage that decides how loud the output may be. Behind
+    // the tanh it could never engage, because a tanh at drive 1.0 tops out at full scale by itself.
+    boreaz::dsp::Limiter limiter_;
+    bool limiter_bypassed_ = false;
     boreaz::dsp::SoftClip clip_;
     // Between the voices and the master gain: an effect return that sat after the fader would be a
     // second master volume that keeps playing when the piano is faded out.

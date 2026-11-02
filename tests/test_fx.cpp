@@ -20,6 +20,7 @@
 
 #include "boreaz/dsp/delay.h"
 #include "boreaz/dsp/distortion.h"
+#include "boreaz/dsp/limiter.h"
 #include "boreaz/dsp/reverb.h"
 #include "boreaz/engine/engine.h"
 #include "boreaz/engine/event.h"
@@ -28,6 +29,7 @@
 namespace {
 
 using boreaz::dsp::Distortion;
+using boreaz::dsp::Limiter;
 using boreaz::dsp::Reverb;
 using boreaz::engine::Engine;
 using boreaz::engine::Event;
@@ -54,7 +56,17 @@ struct FxBuffer {
 };
 
 // The settle is part of the buffer, so index kSettleFrames is where the note starts.
-FxBuffer render(Engine& engine, int seconds) {
+// The ordinary render below, with the two meter readings a limiter test needs. They are optional
+// out-parameters rather than a member read after the fact because drive_peak() is per block: a
+// render that ends in silence would report 0, which is a true statement about the last block and a
+// false one about the notes.
+float& meter_default() {
+    static float scratch = 0.0f;
+    return scratch;
+}
+
+FxBuffer render(Engine& engine, int seconds, float& demand_out = meter_default(),
+                float& peak_out = meter_default()) {
     FxBuffer out;
     out.left.resize(kSettleFrames +
                     static_cast<std::size_t>(kRate) * static_cast<std::size_t>(seconds));
@@ -63,7 +75,10 @@ FxBuffer render(Engine& engine, int seconds) {
     for (std::size_t done = 0; done < out.left.size(); done += 96) {
         std::fill(block.begin(), block.end(), 0.0f);
         engine.process(block.data(), 96);
+        demand_out = std::max(demand_out, engine.drive_peak());
         for (int i = 0; i < 96; ++i) {
+            peak_out = std::max(peak_out, std::max(std::fabs(block[static_cast<std::size_t>(2 * i)]),
+                                                   std::fabs(block[static_cast<std::size_t>(2 * i + 1)])));
             out.left[done + static_cast<std::size_t>(i)] = block[static_cast<std::size_t>(2 * i)];
             out.right[done + static_cast<std::size_t>(i)] =
                 block[static_cast<std::size_t>(2 * i + 1)];
@@ -118,6 +133,24 @@ void arm(Engine& engine) {
                                              std::uint8_t(69), std::uint8_t(110))));
     REQUIRE(engine.push_event(
         Event::note_off(static_cast<std::uint32_t>(kSettleFrames + 2400), 0, std::uint8_t(69))));
+}
+
+// The limiter needs notes that reach the ceiling, and one voice is not enough: sixteen of them, on
+// sixteen different keys, is the loudest thing this engine can be asked for. Different keys because
+// a note retriggered on a key the engine is already holding takes that voice instead of adding one,
+// which is what a piano does and what makes a same-key cluster an amplitude test that fails.
+void arm_loud(Engine& engine) {
+    for (int i = 0; i < 16; ++i) {
+        const auto note = static_cast<std::uint8_t>(45 + i);
+        // 96 frames earlier than the window this is measured in, because the engine publishes its
+        // parameters once per block and the block the notes land in is prepared for the block
+        // before: arming at the first frame of the window asks for 8 dB and gets 3.
+        const auto tick = static_cast<std::int64_t>(kSettleFrames) - 96;
+        REQUIRE(engine.push_event(
+            Event::note_on(tick, 0, note, static_cast<std::uint8_t>(127))));
+        REQUIRE(engine.push_event(
+            Event::note_off(static_cast<std::int64_t>(kSettleFrames) + 48000, 0, note))); // 1 s
+    }
 }
 
 } // namespace
@@ -679,6 +712,8 @@ std::vector<float> noise_in(int frames) {
 
 } // namespace
 
+// The limiter's tone test wants an rms over a window it has already cut down to a slice, and the
+// window helpers above are the engine's version of that question.
 TEST_CASE("distortion: the curve is unity where the music lives and squash only at the peaks") {
     Distortion drive;
 
@@ -867,4 +902,266 @@ TEST_CASE("distortion: the drive colours a note without lifting it, and it feeds
     INFO("echo window " << echo_level << ", difference the drive made in it " << echo_difference);
     CHECK(echo_level > 1e-4f);
     CHECK(echo_difference > 0.02f * echo_level);
+}
+
+TEST_CASE("limiter: the ceiling holds for anything, and a signal under it is not touched at all") {
+    Limiter limiter;
+    limiter.prepare(kRate);
+
+    // The ceiling is not full scale and reads like a bug until you see where this sits: in front of
+    // the master tanh, so the engine's own ceiling is tanh(kCeiling) = 0.964. See the header.
+    const float ceiling = Limiter::kCeiling;
+    CHECK(ceiling > 1.5f);
+    CHECK(ceiling < 3.0f);
+
+    // Bit transparency below the ceiling. Not "close to": multiplying by 1.0f is exact, and the
+    // committed goldens are only still valid because of it.
+    const std::vector<float> quiet = noise_in(4000);
+    std::vector<float> l(quiet), r(quiet);
+    const std::vector<float> was_l = l, was_r = r;
+    CHECK(limiter.process_block(l.data(), r.data(), static_cast<int>(l.size())) < ceiling);
+    CHECK(l == was_l);
+    CHECK(r == was_r);
+    CHECK(limiter.gain() == 1.0f);
+
+    // The rule, for anything: random at twenty times full scale, DC at a thousand, a sine at ten,
+    // and a buffer that is mostly silence with one enormous spike in it.
+    std::vector<float> hot = noise_in(4000);
+    for (float& v : hot)
+        v *= 20.0f;
+    l = hot;
+    r = hot;
+    limiter.reset();
+    limiter.process_block(l.data(), r.data(), static_cast<int>(l.size()));
+    CHECK(max_abs(l) <= ceiling);
+    CHECK(max_abs(r) <= ceiling);
+
+    l.assign(2000, 1000.0f);
+    r.assign(2000, -1000.0f);
+    limiter.reset();
+    limiter.process_block(l.data(), r.data(), static_cast<int>(l.size()));
+    CHECK(max_abs(l) <= ceiling);
+    CHECK(max_abs(r) <= ceiling);
+
+    const std::vector<float> hot_tone = sine_at(100.0, 20, 10.0f);
+    l = hot_tone;
+    r = hot_tone;
+    limiter.reset();
+    limiter.process_block(l.data(), r.data(), static_cast<int>(l.size()));
+    CHECK(max_abs(l) <= ceiling);
+
+    l.assign(2000, 0.0f);
+    r = l;
+    l[1500] = 500.0f;
+    limiter.reset();
+    limiter.process_block(l.data(), r.data(), static_cast<int>(l.size()));
+    CHECK(max_abs(l) <= ceiling);
+
+    // An enormous sample is caught on the sample that carries it. A limiter with a one block attack
+    // would be a limiter with a whole block of leaked signal in front of every hit, and the callback
+    // has no room for lookahead: it cannot see the sample after the one it is working on.
+    l.assign(480, 0.0f);
+    r = l;
+    l[100] = 100.0f; // 17 dB over the ceiling
+    limiter.reset();
+    limiter.process_block(l.data(), r.data(), static_cast<int>(l.size()));
+    CHECK(l[99] == 0.0f);
+    CHECK(l[100] <= ceiling);
+    CHECK(limiter.gain() < 0.2f); // ducked hard; the exact value is the curve below
+
+    // The release, asserted as the shape it has to have: one block at a time (the attack only
+    // happens on the first sample of a block, so a block-sized window would measure the recovery
+    // from whatever the last block's first sample asked for), climbing toward unity and never past
+    // it. kReleaseSeconds is 50 ms, so 48 ms - two time constants - is 86 % of the way up.
+    Limiter ramp;
+    ramp.prepare(kRate);
+    const int frames = static_cast<int>(kRate);
+    l.assign(static_cast<std::size_t>(frames), 0.0f);
+    r.assign(static_cast<std::size_t>(frames), 0.0f);
+    l[0] = 20.0f * ceiling;
+    ramp.reset();
+    float worst_above = 0.0f;
+    float hit = 1.0f;
+    int at = 0;
+    for (int i = 0; i < frames; ++i) {
+        ramp.process_block(l.data() + i, r.data() + i, 1);
+        if (i == 0)
+            hit = ramp.gain();
+        worst_above = std::max(worst_above, ramp.gain() - 1.0f);
+        if (i == 4799) // 100 ms
+            at = static_cast<int>((ramp.gain() - hit) / (1.0f - hit) * 100.0f);
+    }
+    // The CHECKs for this measurement sit with the claim, below.
+
+    // It lets go, and how it lets go is the shape the box promises. A limiter that stays down after
+    // the peak is a mute; one that snaps back is a click. Measured per sample, because the release
+    // curve is a curve and not a block boundary: 48 ms is two time constants of
+    // kReleaseSeconds = 50 ms, so 100 ms is two time constants and 86 % of the way back is the
+    // target (measured 86.5 %, which is 1 - e^-2 to the sample). 20x the ceiling drives the gain to
+    // 0.05 - far enough that a residue would still show. One time constant measures 61.7 %.
+    INFO("after a hit of 20x the ceiling the gain was " << hit << ", and it recovered " << at
+         << " % of the way back in 100 ms");
+    CHECK(hit < 0.06f);
+    CHECK(worst_above == 0.0f); // it climbs to unity and never past it
+    CHECK(at > 75);
+    CHECK(at < 95);
+
+    // And with a hit the size of a stray 100 it is gone by the end of the same second, so a limiter
+    // can never be a mute.
+    l.assign(48000, 0.0f);
+    r = l;
+    l[0] = 100.0f;
+    limiter.reset();
+    limiter.process_block(l.data(), r.data(), static_cast<int>(l.size()));
+    // Not exactly 1.0: a one-pole release approaches unity and never arrives, and one second is
+    // twenty time constants, which is what the number is for.
+    CHECK(limiter.gain() > 0.999f);
+
+    // One linked gain, which is the difference between a master bus and two independent limpers:
+    // the quiet ear is held down by the loud ear's peak, and the image does not move.
+    l.assign(200, 0.0f);
+    r = l;
+    for (std::size_t i = 50; i < 150; ++i) {
+        l[i] = 3.0f;
+        r[i] = 0.5f;
+    }
+    limiter.reset();
+    limiter.process_block(l.data(), r.data(), static_cast<int>(l.size()));
+    CHECK(max_abs(l) <= ceiling);
+    CHECK(max_abs(r) < 0.5f); // and not because the right ear was left alone
+
+    // What the ceiling does to a tone is a claim about the *chain*, so it is measured with the curve
+    // in place, in the engine-level case below. On its own the interesting half is that the stage is
+    // a gain and not a shaper, which the two CHECKs directly under this show: a sine at four times
+    // the ceiling comes out a sine.
+    const std::vector<float> sine_in = sine_at(100.0, 40, 0.75f * ceiling);
+    l = sine_in;
+    r.assign(l.size(), 0.0f);
+    limiter.reset();
+    limiter.process_block(l.data(), r.data(), static_cast<int>(l.size()));
+    // Measured over whole cycles only, and only after the gain has finished moving: a gain that is
+    // still releasing is phase modulation, which is what a release is, and correlating across the
+    // boundary would report the release as distortion.
+    CHECK(max_abs(l) <= ceiling);
+    // The samples that never asked for the ceiling, at the moment the gain was unity: identical in
+    // both directions, ulp and sign included. This is what a curve behind the stage cannot promise,
+    // and it is why the goldens survived the stage being wired in.
+    for (std::size_t i = 0; i < 240; ++i)
+        REQUIRE(l[i] == sine_in[i]);
+    CHECK(max_abs(sine_in) < Limiter::kCeiling); // a signal the stage was never asked to touch
+
+    // A block of NaN cannot latch the state. The samples themselves still go through the clamp the
+    // engine has behind this, which turns a NaN into full scale exactly as it did before.
+    l.assign(96, std::nanf(""));
+    r = l;
+    limiter.reset();
+    limiter.process_block(l.data(), r.data(), static_cast<int>(l.size()));
+    CHECK(std::isfinite(limiter.gain()));
+    l.assign(96, 0.001f);
+    r = l;
+    limiter.process_block(l.data(), r.data(), static_cast<int>(l.size()));
+    CHECK(limiter.gain() == 1.0f);
+    CHECK(max_abs(l) > 0.0009f);
+
+    // An unprepared stage must not be a divide by zero or a frozen gain.
+    Limiter cold;
+    l.assign(96, 0.5f);
+    r = l;
+    cold.process_block(l.data(), r.data(), static_cast<int>(l.size()));
+    CHECK(max_abs(l) == 0.5f);
+    CHECK(std::isfinite(cold.gain()));
+    cold.prepare(0.0);
+    l.assign(96, 0.0f);
+    l[0] = 10.0f;
+    cold.process_block(l.data(), r.data(), static_cast<int>(l.size()));
+    CHECK(std::isfinite(cold.gain()));
+    CHECK(max_abs(l) <= Limiter::kCeiling);
+}
+
+TEST_CASE("the master chain holds the ceiling, metered where the ceiling is decided") {
+    // Sixteen voices held for a second, at the top of the master row: the mix asks for 3.2 against a
+    // ceiling of 2.0, which is the number the meter exists to show and the number the old chain turned
+    // into a waveform pinned at full scale. The meter is per block - the last block of a render that
+    // ends in silence reads zero - so this render watches it instead of asking it afterwards.
+    struct Metered {
+        FxBuffer audio;
+        float demand = 0.0f;   // the loudest sample the limiter was asked to fit
+        float peak = 0.0f;     // and the loudest thing that came out
+        double energy = 0.0;
+        std::size_t samples = 0;
+        float rms() const { return static_cast<float>(std::sqrt(energy / static_cast<double>(samples))); }
+    };
+    const auto render_metered = [](const Params& params) {
+        Engine engine;
+        engine.prepare(kRate);
+        engine.set_params(params);
+        arm_loud(engine);
+        Metered out;
+        out.audio = render(engine, 1, out.demand, out.peak);
+        for (const float v : out.audio.left) {
+            out.energy += static_cast<double>(v) * static_cast<double>(v);
+            ++out.samples;
+        }
+        return out;
+    };
+
+    Params top;
+    top.master_gain_db = 12.0f;
+    const Metered limited = render_metered(top);
+    INFO("+12 dB master, 16 voices: asked for " << limited.demand << ", came out at " << limited.peak
+         << ", rms " << limited.rms());
+    CHECK(limited.demand > 3.0f);   // 10 dB over the ceiling it was given
+    CHECK(limited.peak < 0.97f);    // tanh(2.0): the composite ceiling of the whole chain
+    CHECK(limited.peak > 0.96f);    // and it is *at* it, not under it by good fortune
+    CHECK(limited.demand > limited.peak * 3.0f); // the meter is the demand, not the result
+
+    Params zero;
+    zero.master_gain_db = 0.0f;
+    const Metered unity = render_metered(zero);
+    INFO("0 dB master: asked for " << unity.demand << ", came out at " << unity.peak
+         << ", rms " << unity.rms());
+    CHECK(unity.demand < Limiter::kCeiling); // a user at 0 dB never asks for limiting at all
+    CHECK(unity.demand > 0.5f);
+
+    // The rule PLAN states as "nothing may pass +-1.0", asserted on samples rather than on a peak
+    // that happens to be under it: at this level the old chain passed a peak test too, while writing
+    // tens of thousands of samples pinned at exactly full scale to do it.
+    for (const float v : limited.audio.left)
+        REQUIRE(std::fabs(v) < 0.99f);
+    for (const float v : limited.audio.right)
+        REQUIRE(std::fabs(v) < 0.99f);
+
+    // The claim the goldens rest on, stated where it can actually be proven: at the master the app
+    // ships with, taking the stage out of the chain changes no bit at all. A golden that matches
+    // after a new stage is only evidence the golden was refreshed, unless the same file is rendered
+    // both ways - which is what this hook is for, and the only reason it exists.
+    Engine bypassed;
+    bypassed.prepare(kRate);
+    bypassed.set_params(Params{});
+    bypassed.bypass_limiter();
+    arm_loud(bypassed);
+    const FxBuffer without = render(bypassed, 1);
+    Engine present;
+    present.prepare(kRate);
+    present.set_params(Params{});
+    arm_loud(present);
+    const FxBuffer with = render(present, 1);
+    REQUIRE(without.left.size() == with.left.size());
+    std::size_t different = 0;
+    for (std::size_t i = 0; i < with.left.size(); ++i) {
+        if (without.left[i] != with.left[i])
+            ++different;
+        if (without.right[i] != with.right[i])
+            ++different;
+    }
+    INFO(different << " of " << with.left.size() * 2 << " samples moved when the stage was removed "
+                   << "at the shipping master");
+    CHECK(different == 0);
+
+    // And the top of the fader still buys level, which is the difference between a limiter and a
+    // mute: the peak cannot move, so the body of the sound has to.
+    INFO("twelve dB more asked for bought " << (limited.rms() / std::max(1e-9f, unity.rms()))
+         << "x the rms for " << (limited.peak / std::max(1e-9f, unity.peak)) << "x the peak");
+    CHECK(limited.rms() > unity.rms() * 1.5f);
+    CHECK(limited.peak < unity.peak * 1.6f);
 }
