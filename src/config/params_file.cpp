@@ -25,9 +25,10 @@ using boreaz::engine::Params;
 // One key and its text, applied. `where` names the place it came from - "line 12", "--gain" - so
 // the message reads like the thing the person typed rather than like the function that parsed it.
 //
-// Strict in two directions: the whole string has to be a number, and the number has to be inside the
-// parameter's own range. A file or a flag that quietly did something near what it says is worse than
-// one that stops, and `Params::clamp_all` downstream cannot tell "you meant 1000" from "I meant 100".
+// Strict in two directions: the whole string has to be a number, and the number has to be inside
+// the parameter's own range. A file or a flag that quietly did something near what it says is worse
+// than one that stops, and `Params::clamp_all` downstream cannot tell "you meant 1000" from "I
+// meant 100".
 bool apply_value(const boreaz::engine::ParamSpec& spec, const std::string& key,
                  const std::string& value, Params& params, const std::string& where,
                  std::string& error) {
@@ -149,8 +150,8 @@ std::string known_keys() {
     return out;
 }
 
-bool set_param_from_text(const std::string& flag, const std::string& key,
-                         const std::string& value, Params& params, std::string& error) {
+bool set_param_from_text(const std::string& flag, const std::string& key, const std::string& value,
+                         Params& params, std::string& error) {
     const boreaz::engine::ParamSpec* spec = boreaz::engine::param_spec(key);
     if (spec == nullptr) {
         error = "'" + key + "' is not an engine parameter. Known keys are listed in --help";

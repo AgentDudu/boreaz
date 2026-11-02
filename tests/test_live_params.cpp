@@ -24,8 +24,8 @@
 using boreaz::config::load_params_file;
 using boreaz::engine::Engine;
 using boreaz::engine::Event;
-using boreaz::engine::ParamSpec;
 using boreaz::engine::Params;
+using boreaz::engine::ParamSpec;
 using boreaz::engine::SynthVoice;
 using fixture::Audio;
 
@@ -125,7 +125,8 @@ TEST_CASE("every engine parameter is one row of one table") {
 
         // The default in the row is the default in the struct. Two defaults that disagree mean a
         // panel Reset lands somewhere the instrument never started.
-        CHECK(boreaz::engine::param_read(spec, defaults) == doctest::Approx(spec.default_value).epsilon(0.001));
+        CHECK(boreaz::engine::param_read(spec, defaults) ==
+              doctest::Approx(spec.default_value).epsilon(0.001));
 
         // The key is the lookup, so a duplicate would shadow a parameter.
         CHECK(find(spec.key) == &spec);
@@ -134,7 +135,8 @@ TEST_CASE("every engine parameter is one row of one table") {
     CHECK(find("not_a_parameter") == nullptr);
 }
 
-TEST_CASE("the table is what a range means: clamping, sanitising, and the panel and the file agree") {
+TEST_CASE(
+    "the table is what a range means: clamping, sanitising, and the panel and the file agree") {
     Params params{};
     const ParamSpec* gain = find("master_gain_db");
     REQUIRE(gain != nullptr);
@@ -150,7 +152,8 @@ TEST_CASE("the table is what a range means: clamping, sanitising, and the panel 
     broken.amp_sustain = std::numeric_limits<float>::infinity();
     broken.transpose_semitones = 9999;
     broken.sanitize();
-    CHECK(broken.filter_cutoff_ratio == doctest::Approx(find("filter_cutoff_ratio")->default_value));
+    CHECK(broken.filter_cutoff_ratio ==
+          doctest::Approx(find("filter_cutoff_ratio")->default_value));
     CHECK(broken.amp_sustain ==
           doctest::Approx(find("amp_sustain")->default_value)); // the default, not zero
     CHECK(broken.transpose_semitones == 24);
@@ -202,14 +205,13 @@ TEST_CASE("a parameter file refuses a number the engine cannot use, and says wha
     CHECK_FALSE(load_params_file(fraction.string(), loaded, error));
     CHECK(error.find("whole number") != std::string::npos);
 
-    // The modulation rows are the case the member pointers could not answer for: a row that addresses
-    // an element of an `std::array` sets neither `real` nor `integer`, so a reader that guessed from
-    // them treated every cable as a whole number -- it refused `mod3_depth = 0.4`, the one row of the
-    // four whose whole job is to be continuous, and for the rows it did accept it wrote through a null
-    // member pointer.
+    // The modulation rows are the case the member pointers could not answer for: a row that
+    // addresses an element of an `std::array` sets neither `real` nor `integer`, so a reader that
+    // guessed from them treated every cable as a whole number -- it refused `mod3_depth = 0.4`, the
+    // one row of the four whose whole job is to be continuous, and for the rows it did accept it
+    // wrote through a null member pointer.
     const auto matrix = dir / "matrix.ini";
-    write_file(matrix,
-               "mod1_source = 1\nmod3_dest = 2\nmod3_depth = 0.4\nmod3_unipolar = 1\n");
+    write_file(matrix, "mod1_source = 1\nmod3_dest = 2\nmod3_depth = 0.4\nmod3_unipolar = 1\n");
     Params wired{};
     REQUIRE_MESSAGE(load_params_file(matrix.string(), wired, error), error);
     CHECK(wired.mod_source[0] == 1);
@@ -218,7 +220,8 @@ TEST_CASE("a parameter file refuses a number the engine cannot use, and says wha
     CHECK(wired.mod_unipolar[2] == 1);
     CHECK(wired.mod_source[2] == 0); // a row said nothing about the other slots
 
-    // A depth is continuous; an end of a cable is not, and saying so is what the row's range is for.
+    // A depth is continuous; an end of a cable is not, and saying so is what the row's range is
+    // for.
     const auto half_cable = dir / "half_cable.ini";
     write_file(half_cable, "mod3_source = 1.5\n");
     CHECK_FALSE(load_params_file(half_cable.string(), wired, error));
@@ -282,7 +285,8 @@ TEST_CASE("a cutoff slider thrown from one end of its range to the other does no
     const float low = find("filter_cutoff_ratio")->minimum;
     const float high = find("filter_cutoff_ratio")->maximum;
 
-    // The same note, already sitting at the end of the range: what its own waveform does per sample.
+    // The same note, already sitting at the end of the range: what its own waveform does per
+    // sample.
     Engine steady(at(high));
     steady.prepare(fixture::kRate);
     note_on(steady, 0, 60, 110);
@@ -302,7 +306,8 @@ TEST_CASE("a cutoff slider thrown from one end of its range to the other does no
     // itself. Anything larger is a seam; a real discontinuity here is two orders of magnitude up.
     INFO("peak " << after.peak << ", jump while thrown " << thrown_jump << ", steady jump "
                  << steady_jump);
-    REQUIRE(after.peak > fixture::kSilence); // it is still playing, or the comparison is meaningless
+    REQUIRE(after.peak >
+            fixture::kSilence); // it is still playing, or the comparison is meaningless
     REQUIRE(steady_jump > 0.0f);
     CHECK(thrown_jump <= steady_jump * 1.25f);
     CHECK(after.finite);
@@ -343,7 +348,7 @@ TEST_CASE("a voice retuned past the top of the range stays inside it") {
     SynthVoice voice;
     boreaz::engine::NoteRequest request;
     request.key = 108;
-    request.note = 108;                       // C8, the top of the instrument
+    request.note = 108; // C8, the top of the instrument
     request.velocity = 1.0f;
     request.frequency = 4186.01f;
     voice.start(request, params, fixture::kRate, 0);
@@ -396,8 +401,8 @@ TEST_CASE("--gain sets a parameter through the table, and refuses the way a file
 
     const ParamSpec* gain = find("master_gain_db");
     REQUIRE(gain != nullptr);
-    CHECK_FALSE(boreaz::config::set_param_from_text("--gain", "master_gain_db", "1000", params,
-                                                    error));
+    CHECK_FALSE(
+        boreaz::config::set_param_from_text("--gain", "master_gain_db", "1000", params, error));
     INFO(error);
     // The message names the flag that was typed, not a line in a file nobody opened, and it names
     // the range the table owns.
@@ -405,11 +410,11 @@ TEST_CASE("--gain sets a parameter through the table, and refuses the way a file
     CHECK(error.find("12") != std::string::npos);
     CHECK(params.master_gain_db == doctest::Approx(-6.5f)); // a refusal changes nothing
 
-    CHECK_FALSE(boreaz::config::set_param_from_text("--gain", "master_gain_db", "loud", params,
-                                                    error));
+    CHECK_FALSE(
+        boreaz::config::set_param_from_text("--gain", "master_gain_db", "loud", params, error));
     CHECK(error.find("--gain") != std::string::npos);
-    CHECK_FALSE(boreaz::config::set_param_from_text("--gain", "no_such_parameter", "1", params,
-                                                    error));
+    CHECK_FALSE(
+        boreaz::config::set_param_from_text("--gain", "no_such_parameter", "1", params, error));
 
     // An integer row goes through the same door, with the same rule about pretending.
     Params whole;

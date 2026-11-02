@@ -10,12 +10,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <limits>
 #include <string>
 #include <string_view>
-#include <cstddef>
 #include <vector>
 
 #include <doctest/doctest.h>
@@ -217,9 +217,9 @@ TEST_CASE("a source is normalised, and the destination decides what depth means"
     // Depth is a fraction of the destination's full travel, and the travel is in the destination's
     // own units. Depth cannot leave -1..1 (the table's rows clamp it there), so asking for more
     // travel than one slot gives means routing a second slot.
-    CHECK(mod_amount(ModDest::kCutoff, 1.0f, 1.0f) == doctest::Approx(3.0f));   // octaves
-    CHECK(mod_amount(ModDest::kPitch, 1.0f, 1.0f) == doctest::Approx(2.0f));    // semitones
-    CHECK(mod_amount(ModDest::kPan, 1.0f, 1.0f) == doctest::Approx(1.0f));      // full width
+    CHECK(mod_amount(ModDest::kCutoff, 1.0f, 1.0f) == doctest::Approx(3.0f)); // octaves
+    CHECK(mod_amount(ModDest::kPitch, 1.0f, 1.0f) == doctest::Approx(2.0f));  // semitones
+    CHECK(mod_amount(ModDest::kPan, 1.0f, 1.0f) == doctest::Approx(1.0f));    // full width
     CHECK(mod_amount(ModDest::kOsc2Level, 0.5f, -1.0f) == doctest::Approx(-0.5f));
     CHECK(mod_amount(ModDest::kCutoff, 1.0f, 0.5f) == doctest::Approx(1.5f));
     CHECK(mod_amount(ModDest::kPitch, 0.0f, 1.0f) == 0.0f);
@@ -267,12 +267,13 @@ TEST_CASE("every slot of the matrix is a row of the table, and one row moves one
         }
     }
 
-    // And every row of the table, array or not, reads back what the table wrote. The array rows nearly
-    // went without this: reaching for `spec.integer` because a row had no `real` was reaching for a
-    // null pointer a third of the way through the table.
+    // And every row of the table, array or not, reads back what the table wrote. The array rows
+    // nearly went without this: reaching for `spec.integer` because a row had no `real` was
+    // reaching for a null pointer a third of the way through the table.
     for (std::size_t row = 0; row < count; ++row) {
         const ParamSpec& spec = table[row];
-        Params fresh{}; // the loop above's `params` is already wired up; this guard starts from clean
+        Params
+            fresh{}; // the loop above's `params` is already wired up; this guard starts from clean
         param_write(spec, spec.default_value, fresh);
         INFO(spec.key);
         CHECK(param_read(spec, fresh) == spec.default_value);
@@ -313,14 +314,14 @@ TEST_CASE("the pitch destination is the destination's own units, and the voice o
     // frequency the oscillator was actually set to. Nothing here is measured off a waveform.
     struct Case {
         ModSource source;
-        float wheel;         // what the wheel reads; velocity is fixed below
+        float wheel; // what the wheel reads; velocity is fixed below
         float depth;
         bool unipolar;
-        double semitones;    // what the note should end up
+        double semitones; // what the note should end up
         const char* why;
     };
 
-    constexpr float kStrike = 0.8f;  // a note that is actually audible: velocity 0 is silence
+    constexpr float kStrike = 0.8f; // a note that is actually audible: velocity 0 is silence
 
     const Case cases[] = {
         // Full travel is 2 semitones, so that is what a wheel pushed to the top at full depth is
@@ -342,7 +343,8 @@ TEST_CASE("the pitch destination is the destination's own units, and the voice o
         // A4 is 9 keys above C4 on a 48-key ramp, so the source reads +0.1875: unipolar that puts
         // it at 0.59375 of the travel and bipolar at 0.1875 of it. One flag is the difference
         // between "the filter opens as you go up" and "the notes below middle C are pulled down".
-        {ModSource::kKeyTrack, 0.0f, 1.0f, true, 2.0 * (0.5 + 0.5 * (9.0 / 48.0)), "keytrack, unipolar"},
+        {ModSource::kKeyTrack, 0.0f, 1.0f, true, 2.0 * (0.5 + 0.5 * (9.0 / 48.0)),
+         "keytrack, unipolar"},
         {ModSource::kKeyTrack, 0.0f, 1.0f, false, 2.0 * (9.0 / 48.0), "keytrack, bipolar"},
     };
 
@@ -365,7 +367,8 @@ TEST_CASE("an off slot and a zero depth leave the note where it started") {
     Params params = patch();
     route(params, 0, ModSource::kOff, ModDest::kPitch, 1.0f, true);
     route(params, 1, ModSource::kWheel, ModDest::kPitch, 0.0f, true);
-    route(params, 2, ModSource::kWheel, ModDest::kOff, 1.0f, true); // a depth on a destination of off
+    route(params, 2, ModSource::kWheel, ModDest::kOff, 1.0f,
+          true); // a depth on a destination of off
 
     SynthVoice voice;
     strike(voice, params, 1.0f, 1.0f); // wheel and velocity both pushed as far as they go
@@ -474,9 +477,10 @@ TEST_CASE("the pan destination moves the image by the amount the slot asked for"
     };
 
     // Pan 0.5 is 3/8 pi: sin over cos is 2.414. Half a velocity in a unipolar slot is half a pan.
-    CHECK(stereo_ratio(1.0f, true, 0.5f) == doctest::Approx(std::sin(0.75 * 3.14159265358979 / 2.0) /
-                                                            std::cos(0.75 * 3.14159265358979 / 2.0))
-                                                .epsilon(1.0e-3));
+    CHECK(stereo_ratio(1.0f, true, 0.5f) ==
+          doctest::Approx(std::sin(0.75 * 3.14159265358979 / 2.0) /
+                          std::cos(0.75 * 3.14159265358979 / 2.0))
+              .epsilon(1.0e-3));
     // The same depth with the flag off reads 2v-1, which is 0 at half: dead centre.
     CHECK(stereo_ratio(1.0f, false, 0.5f) == doctest::Approx(1.0).epsilon(1.0e-6));
     // And no depth means no pan whatever the velocity does.
@@ -509,9 +513,10 @@ TEST_CASE("a depth that is not a number cannot make the voice not a number") {
     // The table clamps depth to +-1, so this cannot arrive from a file or a slider. It can arrive
     // from a struct built in code, and the voice is the last place that can still say no.
     Params params = patch();
-    route(params, 0, ModSource::kLfo1, ModDest::kPitch, std::numeric_limits<float>::quiet_NaN(), true);
-    route(params, 1, ModSource::kWheel, ModDest::kCutoff,
-          std::numeric_limits<float>::infinity(), true);
+    route(params, 0, ModSource::kLfo1, ModDest::kPitch, std::numeric_limits<float>::quiet_NaN(),
+          true);
+    route(params, 1, ModSource::kWheel, ModDest::kCutoff, std::numeric_limits<float>::infinity(),
+          true);
 
     const std::vector<float> sound = play(params, 0.2f, 0.8f, 0.5f);
     REQUIRE(sound.size() > 0);
@@ -554,7 +559,6 @@ TEST_CASE("Env2 routed to the cutoff opens the filter at the strike and lets it 
     CHECK(struck / settled > 4.0 * (flat / late));
 }
 
-
 TEST_CASE("the rows are wired to the slots the voice reads") {
     // The table addresses Params by (array kind, slot). If that address is wrong, a slider moves
     // the wrong cable and every test above still passes on the values it wrote by hand.
@@ -570,8 +574,10 @@ TEST_CASE("the rows are wired to the slots the voice reads") {
     for (std::size_t slot = 0; slot < kModSlots; ++slot) {
         Params probe;
         const std::string stem = std::to_string(slot + 1);
-        write("mod" + stem + "_source", static_cast<float>(static_cast<int>(ModSource::kLfo2)), probe);
-        write("mod" + stem + "_dest", static_cast<float>(static_cast<int>(ModDest::kOsc3Level)), probe);
+        write("mod" + stem + "_source", static_cast<float>(static_cast<int>(ModSource::kLfo2)),
+              probe);
+        write("mod" + stem + "_dest", static_cast<float>(static_cast<int>(ModDest::kOsc3Level)),
+              probe);
         write("mod" + stem + "_depth", travel[slot], probe);
         write("mod" + stem + "_unipolar", static_cast<float>(params.mod_unipolar[slot]), probe);
         CHECK(probe.mod_source[slot] == params.mod_source[slot]);
@@ -611,7 +617,8 @@ TEST_CASE("every row has a unique name, and one name writes one element") {
 TEST_CASE("reading and writing a router row round-trips, and depth leaves the slot as a float") {
     Params params;
     REQUIRE(write("mod3_dest", static_cast<float>(static_cast<int>(ModDest::kPan)), params));
-    CHECK(read("mod3_dest", params) == doctest::Approx(static_cast<float>(static_cast<int>(ModDest::kPan))));
+    CHECK(read("mod3_dest", params) ==
+          doctest::Approx(static_cast<float>(static_cast<int>(ModDest::kPan))));
     CHECK(params.mod_unipolar[2] == 0); // the flag is its own row, not a bit of the destination
 
     REQUIRE(write("mod3_depth", 0.4f, params));
