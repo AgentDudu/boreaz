@@ -52,6 +52,7 @@ Engine::Engine(const Params& initial) {
     master_.set_linear_immediate(db_to_linear(params.master_gain_db));
     // From here to the first process() call is setup, not the audio path.
     clip_.prepare(sample_rate_);
+    limiter_.prepare(sample_rate_);
     fx_.prepare(sample_rate_);
     strike_.fill(kUnstruckVelocity);
     channel_gain_.fill(1.0f);
@@ -62,6 +63,7 @@ Engine::Engine(const Params& initial) {
 void Engine::prepare(double sample_rate) {
     sample_rate_ = sample_rate > 0.0 ? static_cast<float>(sample_rate) : 44100.0f;
     clip_.prepare(sample_rate_);
+    limiter_.prepare(sample_rate_);
     // The delay line is measured in samples, so a rate change rebuilds it from silence rather than
     // replaying 44.1 kHz history at 48 kHz.
     fx_.prepare(sample_rate_);
@@ -204,19 +206,50 @@ void Engine::render_chunk(float* output, int frames, const Params& params) {
     // Master gain ramps inside the chunk, so a gain move is a slide and not a click.
     master_.process_block(scratch_l_, frames);
     master_.process_block(scratch_r_, frames);
+    // The limiter, then the curve, then the clamp - in that order, and the order is the whole
+    // argument. Behind the tanh this stage could never engage: a tanh at drive 1.0 has an output
+    // under 1.0 by construction (measured, the loudest committed render tops out at 0.99991), so a
+    // limiter there is a box in a diagram and nothing else. In front of it, it is the stage that
+    // catches overload and the tanh becomes a curve costing its best case - `tanh(x) <= x`, so the
+    // curve can only shrink what the limiter already made legal, never undo it.
+    //
+    // What that buys, measured on the 88-key glissando: at the top of the master row (+12 dB) the
+    // old chain wrote 66303 samples pinned at exactly +-32767 of 1565550, and the render after this
+    // stage lands at 0.964020 as written to int16 (0.964028 as a float peak) with none pinned, because the gain reduction spreads over the
+    // neighbourhood of a peak instead of cutting its top off. At the shipping -12 dB master it buys
+    // nothing at all, which is the point: 0.6479 is the loudest the synthesiser asks for there, the
+    // gain never leaves 1.0, and the engine test renders the same file with and without this stage
+    // and counts the samples that moved. Zero is the only number that keeps a golden honest.
+    //
+    // With the stage bypassed the meter still has to read something, or the bypass would quietly take
+    // the clip light with it: the same peak, computed the slow way, with no gain applied.
+    float ceiling_demand = 0.0f;
+    if (limiter_bypassed_) {
+        for (int i = 0; i < frames; ++i) {
+            const float l = std::fabs(scratch_l_[i]);
+            const float r = std::fabs(scratch_r_[i]);
+            if (l > ceiling_demand)
+                ceiling_demand = l;
+            if (r > ceiling_demand)
+                ceiling_demand = r;
+        }
+    } else {
+        ceiling_demand = limiter_.process_block(scratch_l_, scratch_r_, frames);
+    }
     // tanh first: sixteen voices summed past full scale should saturate, not turn into a square
-    // wave. The clamp after it is the promise that nothing leaves this block above full scale,
-    // which the real limiter (plan 3, FX bus) takes over in the FX phase - and at the drive this
-    // engine ships with (1.0, because nothing anywhere calls set_drive) tanh never reaches full
-    // scale from anything short of ~10 of it, so the clamp below is a formality today, not a net.
+    // wave. The clamp after it is the promise that nothing leaves this block above full scale, which
+    // the limiter in front now owns as its whole job; this clamp stays as the promise for a chain the
+    // limiter is not in front of, namely a master tanh whose drive somebody eventually makes a knob.
     // Measured: drive 1.0 costs 0.13 dB on the flagship's loudest transient at the default -12 dB
     // master and 1.8 dB at 0 dB, so the curve is deliberately left where the ear cannot count it.
     const float drive_l = clip_.process_block(scratch_l_, frames);
     const float drive_r = clip_.process_block(scratch_r_, frames);
     const float drive = drive_l > drive_r ? drive_l : drive_r;
-    // One relaxed store per block. A meter that reads a value from two blocks ago is still a
-    // working meter, and this keeps the display off the audio path's critical instructions.
-    drive_peak_.store(drive, std::memory_order_relaxed);
+    // The meter reads what reached the ceiling, not what came out of it: after the limiter the first
+    // number is 1.0 by construction and says nothing, while the one before says how far over the mix
+    // really was. One relaxed store per block - a meter two blocks old is still a working meter.
+    const float meter = ceiling_demand > drive ? ceiling_demand : drive;
+    drive_peak_.store(meter, std::memory_order_relaxed);
     for (int i = 0; i < frames; ++i) {
         output[static_cast<std::size_t>(i) * 2u] = std::clamp(scratch_l_[i], -1.0f, 1.0f);
         output[static_cast<std::size_t>(i) * 2u + 1u] = std::clamp(scratch_r_[i], -1.0f, 1.0f);
