@@ -7,11 +7,11 @@ two disagree on a number, this file is newer and PLAN is the thing that needs fi
 
 | | |
 |---|---|
-| develop | **`f7ff4a6`** — PRs **#32** (the drive stage), **#31** (the CPU, measured), **#30** (the room waits for presets), **#29**, **#28** (the gate runs the app), **#27** (the real-time counters), #26 (the room) |
+| develop | **`10f1532`** — PRs **#33** (the limiter, and the golden gate learning to compare), **#32** (the drive stage), **#31** (the CPU, measured), **#30** (the room waits for presets), **#29**, **#28** (the gate runs the app), **#27** (the real-time counters), #26 (the room) |
 | open PR | none. **This repo has no CI at all** — `origin` is GitHub, `gh api …/actions/workflows` is empty, `gh pr checks` says "no checks reported". The gate is `python tools/release_check.py`, run locally, and that is the only thing between a branch and develop |
-| current branch | `develop` |
+| current branch | `develop` (nothing open) |
 | instrument on disk | `third_party/instruments/salamander/` — 208 WAVs, 147.3 MB, gitignored |
-| gate | `python tools/release_check.py` → `OK: every gate ran` (now including the app on a real device); `ctest --test-dir build` → 1/1, `ctest --test-dir build-asan` → 1/1; **no golden moved** |
+| gate | `python tools/release_check.py` → `OK: every gate ran` (the app on a real device, and **the goldens compared by value** — hash and peak against constants; until #33 the gate only checked a hash was printed); `ctest --test-dir build` → 1/1, `ctest --test-dir build-asan` → 1/1; **no golden moved** |
 | instruments on disk | also `third_party/instruments/upright-piano-KW/` — 66 regions, 109 MB, the gate's default `--instrument` |
 | tests | **252**, 17 in `tests/test_fx.cpp` (7 delay + bus, 5 room, 3 drive, 6 limiter) |
 
@@ -207,16 +207,16 @@ loops:  0 of 208 regions loop, because upstream has none. 20 of the 120 note rec
 
 ## Do next
 
-1. **The limiter is built, on a branch that is not merged yet.** `feat/the-ceiling` @ `30375dc`,
-   one commit off `f7ff4a6`; the PR **must** be opened `--base develop` (this checkout's default
-   branch is `main`) and the base read back from the reply. The remote is `AgentDudu/boreaz` —
-   `gh api` against the wrong owner 404s and proves nothing. It sits **behind** the `tanh` rather
-   than replacing it, and it applies no gain at all, so the reason to merge it is the top of the
-   fader: 66 303 pinned samples → 0, and the top of the fader buys 1.51× rms for 1.16× peak (no makeup gain, by design, so the peak does move a little: +1.32 dB). See
-   PLAN §8.1 and the row in §6. **Next after it: the mod router, then polyBLEP** (the two phase-8
-   items with no code yet, and polyBLEP is a CPU *saving* — see §7's engine-cost row).
-   The one thing NOT to copy from the `tanh` argument: the limiter is the last stage, so it is the
-   one effect that cannot be a bypassed send without a level jump; it has no parameters, by design.
+1. **The limiter is merged** (#33, `feat/the-ceiling`): `dsp::Limiter` after the fader and in front of
+   the `tanh`, ceiling 2.0, composite output `tanh(2.0)` = 0.964028, no parameters, no makeup gain. What
+   it buys is the top of the fader: 66 303 pinned samples → 0, and 1.51× rms for 1.16× peak (a little
+   of that is the peak itself, +1.32 dB, because there is deliberately no makeup gain). PLAN §8.1 and
+   the §6 row carry the numbers. **Next: the mod router, then polyBLEP** — the last two phase-8 items
+   with no code, and polyBLEP is a CPU *saving*, see §7's engine-cost row. Two process facts for
+   whoever goes next: open the PR with `--base develop` and read the base back (this checkout's default
+   is `main`), and the remote is `AgentDudu/boreaz` — `gh api` on the wrong owner 404s and proves
+   nothing. And nothing to copy from the `tanh` argument: this is the last stage, which is why it has no
+   send and no parameters.
 2. **The rest of phase 8's exit criteria**: per-voice modulation < 1 op/sample at defaults (the mod
    router is not started), and CPU < 8 % — **met by the shipping sampled path** (1.1-1.4 % with all
    three effects) and **not met by the synthesiser** (8.03 %), which is a phase-3 number and wants
