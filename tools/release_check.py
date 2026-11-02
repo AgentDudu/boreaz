@@ -78,9 +78,36 @@ def run(failures, what, argv, cwd=str(OUT), expect=0, grep=None):
     if ok and grep:
         ok = grep in proc.stdout
     if ok:
-        print("  " + (grep if grep else "exit %d" % proc.returncode))
+        print("  " + (grep or f"exit {proc.returncode}"))
     else:
         print(proc.stdout[-3000:])
+    print(("OK: " if ok else "FAIL: ") + what)
+    if not ok:
+        failures.append(what)
+
+
+# The committed goldens: `one.mid` through the shipping defaults (`master_gain_db` -12), as the
+# render tool measures it. Comparing them is the whole point, and until 2026-11-02 this gate only
+# checked that a line containing `fnv1a64=` was printed - so `--gain 12`, which moves the hash from
+# e124adf1851914b9 to ff6d22238f543655 and the peak from 0.1426 to 0.9640, passed it. Every level
+# claim in PLAN that says "the goldens are the gate" was true of the number and not of the gate.
+GOLDEN_SYNTH = ("e124adf1851914b9", "0.142584")
+GOLDEN_SAMPLED = ("8d2611517da3c819", "0.117014")
+
+
+def golden(failures, what, argv, want):
+    """Run --golden and compare fnv1a64= and peak= against the committed pair."""
+    print("\ngate: " + what)
+    print("  " + " ".join(str(a) for a in argv))
+    proc = subprocess.run([str(a) for a in argv], cwd=str(ROOT), stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT, text=True, errors="replace")
+    line = next((text for text in (proc.stdout or "").splitlines() if "fnv1a64=" in text), "")
+    hash_match = re.search(r"fnv1a64=([0-9a-f]+)", line)
+    peak_match = re.search(r"peak=([0-9.]+)", line)
+    got = (hash_match.group(1), peak_match.group(1)) if hash_match and peak_match else None
+    ok = proc.returncode == 0 and got == want
+    print("  " + (f"fnv1a64={got[0]} peak={got[1]}   want {want[0]} / {want[1]}" if got
+                  else (proc.stdout or "")[-600:]))
     print(("OK: " if ok else "FAIL: ") + what)
     if not ok:
         failures.append(what)
@@ -94,7 +121,9 @@ def wav(path, frames, make):
         buf.extend((int(max(-1.0, min(1.0, left)) * 32767),
                     int(max(-1.0, min(1.0, right)) * 32767)))
     with wave.open(str(path), "wb") as out:
-        out.setnchannels(2), out.setsampwidth(2), out.setframerate(RATE)
+        out.setnchannels(2)
+        out.setsampwidth(2)
+        out.setframerate(RATE)
         out.writeframes(buf.tobytes())
 
 
@@ -226,7 +255,7 @@ def app_live(failures, instrument):
     started = threading.Event()
 
     def read():
-        for line in child.stdout:
+        for line in child.stdout or []:
             lines.append(line.rstrip())
             # The line the app prints after device.start(): from here the callback is running.
             if "Ctrl+C stops" in line:
@@ -252,10 +281,9 @@ def app_live(failures, instrument):
     device_line = next((line for line in lines if "frame period" in line), "(no device line)")
     print("  " + device_line.strip())
     if stats:
-        print("  %s callbacks, %s late, %s restarts, %s dropped, %s steals - %d samples while it ran"
-              % (stats.group(1), stats.group(2), stats.group(3), stats.group(4), stats.group(5),
-                 len(seen)))
-    print("  while the device ran: %d page faults, %d file reads" % (faults, reads))
+        print(f"  {stats.group(1)} callbacks, {stats.group(2)} late, {stats.group(3)} restarts, "
+              f"{stats.group(4)} dropped, {stats.group(5)} steals - {len(seen)} samples while it ran")
+    print(f"  while the device ran: {faults} page faults, {reads} file reads")
 
     ok = child.returncode == 0 and stats is not None and reads == 0 and len(seen) > 2 and \
         int(stats.group(1)) > 0 and int(stats.group(4)) == 0 and int(stats.group(5)) == 0
@@ -327,14 +355,13 @@ def main():
     run(failures, "boreaz_tests", [TESTS], cwd=str(ROOT / "build"))
 
     # The render contract, both ways round. --golden prints measurements and writes no file, and
-    # --instrument takes a mapping: the assertion is that a run with the loader switched on still
-    # produces measurements, and that the default synthesiser path is untouched by its existence.
-    run(failures, "the render contract (synthesiser)",
-        [RENDER, "--golden", OUT / "one.mid"], grep="fnv1a64=")
+    # --instrument takes a mapping. The assertion is the hash and the peak themselves, not the fact
+    # that a hash was printed: see `golden()` for what the difference cost.
+    golden(failures, "the render contract (synthesiser)", [RENDER, "--golden", OUT / "one.mid"],
+           GOLDEN_SYNTH)
     if INSTRUMENT.exists():
-        run(failures, "the render contract (sampled instrument)",
-            [RENDER, "--golden", "--instrument", INSTRUMENT, OUT / "one.mid"],
-            grep="fnv1a64=")
+        golden(failures, "the render contract (sampled instrument)",
+               [RENDER, "--golden", "--instrument", INSTRUMENT, OUT / "one.mid"], GOLDEN_SAMPLED)
         run(failures, "a sampled instrument renders to a file",
             [RENDER, "--instrument", INSTRUMENT, OUT / "one.mid", OUT / "instrument.wav",
              OUT / "params.ini"])
@@ -362,7 +389,7 @@ def main():
                         ("1.20-1.45 s, everything gone", 1.20, 1.45)):
         left = rms(OUT / "with.wav", a, b)
         right = rms(OUT / "without.wav", a, b)
-        print("%-26s %8.4f %10.6f" % (label, left, right))
+        print(f"{label:<26} {left:8.4f} {right:10.6f}")
         if label.startswith("note held"):
             assert left > 0.05 and right > 0.05, "the note itself must sound in both"
         if label.startswith("30-100"):
@@ -376,7 +403,7 @@ def main():
     print("OK: the release is audible only where a release region exists")
 
     if failures:
-        print("\n%d gate(s) failed: %s" % (len(failures), ", ".join(failures)))
+        print(f"\n{len(failures)} gate(s) failed: {', '.join(failures)}")
         return 1
     print("\nOK: every gate ran")
     return 0
