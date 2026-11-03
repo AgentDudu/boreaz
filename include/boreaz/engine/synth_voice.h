@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 
 #include "boreaz/dsp/envelope.h"
@@ -42,6 +43,22 @@ class SynthVoice final : public Voice {
 
     // Re-pitch a sounding voice (pitch bend). Phases are kept, so it glides instead of clicking.
     void set_frequency(float hertz, const Params& params) override;
+
+    // What this voice is asking its oscillators and its mixer for in the block that was rendered
+    // last, after the modulation router. `render` reads these same functions, which is the only
+    // reason they are here rather than private: a voice whose modulation can only be inferred from
+    // its samples is a voice whose arithmetic can only be tested by guessing at waveforms.
+    float pitch_hz() const noexcept { return osc1_.frequency(); }
+    float osc2_level() const noexcept { return mixed_level(applied_.osc2_level, mod_.osc2_level); }
+    float osc3_level() const noexcept { return mixed_level(applied_.osc3_level, mod_.osc3_level); }
+    float noise_level() const noexcept { return mixed_level(applied_.noise_level, mod_.noise_level); }
+
+    // A modulated level is added and then floored at zero: a negative level is a legal gain
+    // inversion on an oscillator, but "move this level down" that ends up inverting the wave
+    // changes the timbre rather than the balance, which is not what the destination means.
+    static float mixed_level(float base, float modulation) noexcept {
+        return std::max(0.0f, base + modulation);
+    }
 
     // Transpose or octave shift moved the keyboard under this note: move the note number, the pitch,
     // and the cutoff that follows the note. See `Voice::retune`.
@@ -95,6 +112,28 @@ class SynthVoice final : public Voice {
         }
     };
 
+    // What the eight modulation slots add up to for one block, in each destination's own units.
+    // Zero means the destination is untouched, which is why an unpatched instrument reads the same
+    // numbers out of `Params` that it always did.
+    struct Modulation {
+        float cutoff_octaves = 0.0f;
+        float pitch_semitones = 0.0f;
+        float osc2_level = 0.0f;
+        float osc3_level = 0.0f;
+        float noise_level = 0.0f;
+        float pan = 0.0f;
+    };
+
+    // Work out which slots are wired at all, and so which sources have to be evaluated and which
+    // destinations have to be moved. Called when a note starts and whenever a parameter moves; the
+    // render loop only ever reads the result, which is what keeps an unpatched voice free of the
+    // router's cost entirely.
+    void prepare_modulation(const Params& params);
+
+    // Evaluate the sources for one block and fold the slots into `mod_`, then move the destinations
+    // that need moving before any of this block's samples are generated.
+    void apply_modulation(int frames);
+
     State state_ = State::kIdle;
 
     boreaz::dsp::Oscillator osc1_{boreaz::dsp::Waveform::Sine};
@@ -102,6 +141,31 @@ class SynthVoice final : public Voice {
     boreaz::dsp::Oscillator osc3_{boreaz::dsp::Waveform::Saw};
     boreaz::dsp::Svf filter_;
     boreaz::dsp::Adsr amp_;
+
+    // The router's own state. Env2 is a second ADSR struck with the note, and the two LFOs are free
+    // oscillators whose phase runs from the voice's start; all three are evaluated once per block,
+    // which is the rate the real-time rules set for LFOs and filter coefficients.
+    boreaz::dsp::Adsr env2_;
+    boreaz::dsp::Oscillator lfo1_{boreaz::dsp::Waveform::Sine};
+    boreaz::dsp::Oscillator lfo2_{boreaz::dsp::Waveform::Sine};
+
+    // One bit per source and one per destination, so the block does not test eight slots.
+    bool mod_used_env2_ = false;
+    bool mod_used_lfo1_ = false;
+    bool mod_used_lfo2_ = false;
+    bool mod_moves_cutoff_ = false;
+    bool mod_moves_pitch_ = false;
+    bool mod_moves_pan_ = false;
+    bool mod_active_ = false; // nothing wired at all: `render` then behaves exactly as it did
+
+    // The values the note would use with no modulation, kept so a block can be re-derived from
+    // them instead of drifting a little further every block.
+    Modulation mod_{};
+    float cutoff_hz_ = 0.0f;
+    float osc1_hz_ = 0.0f;
+    float osc2_hz_ = 0.0f;
+    float osc3_hz_ = 0.0f;
+    float pan_base_ = 0.0f;
     Noise noise_{};
     float noise_phase_ = 0.0f;
     float noise_step_ = 1.0f;

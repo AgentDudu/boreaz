@@ -66,6 +66,18 @@ class Oscillator {
         return waveform_at(waveform_, current);
     }
 
+    // Advance `frames` without producing samples, and return the waveform's value where the block
+    // began. A block-rate LFO wants one value per block, not the 64 `step` would evaluate, and the
+    // real-time rules already update LFO increments once per block for the same reason. The phase
+    // is wrapped with floor rather than the single subtract `step` gets away with, because a block
+    // spans many cycles of a fast LFO.
+    float advance_block(int frames) noexcept {
+        const float current = phase_;
+        phase_ = current + increment_ * static_cast<float>(frames);
+        phase_ -= std::floor(phase_);
+        return waveform_at(waveform_, current);
+    }
+
     void render(float* out, int frames) noexcept {
         for (int i = 0; i < frames; ++i) {
             out[i] = step();

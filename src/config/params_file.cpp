@@ -25,14 +25,15 @@ using boreaz::engine::Params;
 // One key and its text, applied. `where` names the place it came from - "line 12", "--gain" - so
 // the message reads like the thing the person typed rather than like the function that parsed it.
 //
-// Strict in two directions: the whole string has to be a number, and the number has to be inside the
-// parameter's own range. A file or a flag that quietly did something near what it says is worse than
-// one that stops, and `Params::clamp_all` downstream cannot tell "you meant 1000" from "I meant 100".
+// Strict in two directions: the whole string has to be a number, and the number has to be inside
+// the parameter's own range. A file or a flag that quietly did something near what it says is worse
+// than one that stops, and `Params::clamp_all` downstream cannot tell "you meant 1000" from "I
+// meant 100".
 bool apply_value(const boreaz::engine::ParamSpec& spec, const std::string& key,
                  const std::string& value, Params& params, const std::string& where,
                  std::string& error) {
     const std::string prefix = where + ": '" + key + "'";
-    if (spec.real != nullptr) {
+    if (!boreaz::engine::param_is_integer(spec)) {
         // strtod plus "and it consumed the whole string": `sscanf("%f")` is happy to read the 2
         // in "2..0" and call the line good, which is a patch that quietly does not say what it
         // says.
@@ -68,7 +69,9 @@ bool apply_value(const boreaz::engine::ParamSpec& spec, const std::string& key,
                 std::to_string(static_cast<int>(spec.maximum)) + ", got '" + value + "'";
         return false;
     }
-    params.*(spec.integer) = parsed;
+    // Through the table, never through `spec.integer`: a row that lives in an array has no member
+    // pointer of its own, and the table is what knows which element of which array it is.
+    boreaz::engine::param_write(spec, static_cast<float>(parsed), params);
     return true;
 }
 
@@ -147,8 +150,8 @@ std::string known_keys() {
     return out;
 }
 
-bool set_param_from_text(const std::string& flag, const std::string& key,
-                         const std::string& value, Params& params, std::string& error) {
+bool set_param_from_text(const std::string& flag, const std::string& key, const std::string& value,
+                         Params& params, std::string& error) {
     const boreaz::engine::ParamSpec* spec = boreaz::engine::param_spec(key);
     if (spec == nullptr) {
         error = "'" + key + "' is not an engine parameter. Known keys are listed in --help";

@@ -35,6 +35,7 @@ class Engine {
     // GM's channel volume. A keyboard's volume slider is this controller, so it is a mixer input
     // and not an engine parameter: it belongs to a channel, it arrives on the audio path, and it is
     // meant to move while a note is sounding.
+    static constexpr std::uint8_t kCcModWheel = 1;
     static constexpr std::uint8_t kCcChannelVolume = 7;
     static constexpr std::uint8_t kCcAllSoundOff = 120;
     static constexpr std::uint8_t kCcAllNotesOff = 123;
@@ -152,7 +153,10 @@ class Engine {
     // an event, which is what makes a CC7 move land on a note that is already held instead of only
     // on the next note, and makes a fader and a note that arrive in the same block agree. Cheap: a
     // compare and a store per voice, and idle blocks do not call it at all.
-    void push_channel_gains();
+    // Push the live per-channel controllers — CC7's fader and CC1's mod wheel — onto every voice
+    // that is sounding, in both pools. Both travel together because a voice holds the value of each
+    // and a controller moved while a note was already held has to reach it.
+    void push_channel_controllers();
 
     EventQueue queue_;
     ParamBus params_;
@@ -193,6 +197,7 @@ class Engine {
     // CC7 per channel, linear. Unity until a cable says otherwise: GM's own default is 100, and
     // starting there would be a 2.1 dB surprise for anything that never sends the controller.
     std::array<float, kMidiChannels> channel_gain_{};
+    std::array<float, kMidiChannels> channel_wheel_{}; // CC1, 0..1, one per channel like the fader
     bool pedal_down_ = false;
 
     std::atomic<float> drive_peak_{0.0f};
