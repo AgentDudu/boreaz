@@ -27,11 +27,14 @@
 #include "boreaz/engine/synth_voice.h"
 
 using boreaz::engine::keytrack_value;
+using boreaz::engine::kModDestNames;
 using boreaz::engine::kModSlots;
+using boreaz::engine::kModSourceNames;
 using boreaz::engine::mod_amount;
 using boreaz::engine::ModDest;
 using boreaz::engine::ModSource;
 using boreaz::engine::NoteRequest;
+using boreaz::engine::param_choices;
 using boreaz::engine::param_read;
 using boreaz::engine::param_spec;
 using boreaz::engine::param_table;
@@ -685,4 +688,98 @@ TEST_CASE("the wheel reaches a voice, and one voice's wheel is not another's") {
     second.set_mod_wheel(0.0f);
     advance(second, 0.01f);
     CHECK(second.pitch_hz() == doctest::Approx(kA4).epsilon(1.0e-6));
+}
+
+TEST_CASE("the words a cable is drawn with are the numbers a patch file writes") {
+    std::size_t source_count = 0;
+    std::size_t dest_count = 0;
+    const char* const* sources = param_choices(ParamArray::kModSource, &source_count);
+    const char* const* dests = param_choices(ParamArray::kModDest, &dest_count);
+
+    // One word per enumerator, which is what the array sizes in mod_router.h already refuse to
+    // compile otherwise; the checks are here so the failure names the list rather than a header.
+    CHECK(sources != nullptr);
+    CHECK(dests != nullptr);
+    CHECK(source_count == std::size_t(ModSource::kCount));
+    CHECK(dest_count == std::size_t(ModDest::kCount));
+
+    // Pinned to the enumerators rather than to the order, because reordering an enum is a thing
+    // somebody adding a source will do, and a panel that then calls velocity "Wheel" is a defect no
+    // engine test would ever notice.
+    using S = ModSource;
+    CHECK(std::string_view(kModSourceNames[std::size_t(S::kOff)]) == "Off");
+    CHECK(std::string_view(kModSourceNames[std::size_t(S::kEnv2)]) == "Mod env");
+    CHECK(std::string_view(kModSourceNames[std::size_t(S::kLfo1)]) == "LFO 1");
+    CHECK(std::string_view(kModSourceNames[std::size_t(S::kLfo2)]) == "LFO 2");
+    CHECK(std::string_view(kModSourceNames[std::size_t(S::kVelocity)]) == "Velocity");
+    CHECK(std::string_view(kModSourceNames[std::size_t(S::kKeyTrack)]) == "Key track");
+    CHECK(std::string_view(kModSourceNames[std::size_t(S::kWheel)]) == "Wheel");
+
+    using D = ModDest;
+    CHECK(std::string_view(kModDestNames[std::size_t(D::kOff)]) == "Off");
+    CHECK(std::string_view(kModDestNames[std::size_t(D::kCutoff)]) == "Cutoff");
+    CHECK(std::string_view(kModDestNames[std::size_t(D::kPitch)]) == "Pitch");
+    CHECK(std::string_view(kModDestNames[std::size_t(D::kOsc2Level)]) == "Osc 2");
+    CHECK(std::string_view(kModDestNames[std::size_t(D::kOsc3Level)]) == "Osc 3");
+    CHECK(std::string_view(kModDestNames[std::size_t(D::kNoiseLevel)]) == "Hammer noise");
+    CHECK(std::string_view(kModDestNames[std::size_t(D::kPan)]) == "Pan");
+
+    // Four of the six destinations move a parameter that has a row of its own, and they are named
+    // for it, so the list and the slider above it cannot become two vocabularies. Pitch and pan
+    // have no row to match - a note's pitch and its position are not parameters - so they are named
+    // for the thing itself.
+    CHECK(std::string_view(kModDestNames[std::size_t(D::kCutoff)]) ==
+          param_spec("filter_cutoff_ratio")->label);
+    CHECK(std::string_view(kModDestNames[std::size_t(D::kOsc2Level)]) ==
+          param_spec("osc2_level")->label);
+    CHECK(std::string_view(kModDestNames[std::size_t(D::kOsc3Level)]) ==
+          param_spec("osc3_level")->label);
+    CHECK(std::string_view(kModDestNames[std::size_t(D::kNoiseLevel)]) ==
+          param_spec("noise_level")->label);
+
+    // Every cable row's stored value is a word its own list has, and the word is "Off": a patch in
+    // progress has a source with no destination, and neither end may default to something audible.
+    std::size_t rows = 0;
+    const ParamSpec* table = param_table(&rows);
+    int cables = 0;
+    for (std::size_t row = 0; row < rows; ++row) {
+        const ParamSpec& spec = table[row];
+        std::size_t count = 0;
+        const char* const* words = param_choices(spec.array_kind, &count);
+        if (words == nullptr)
+            continue;
+        ++cables;
+        const float value = param_read(spec, Params{});
+        CHECK(value == 0.0f);
+        CHECK(std::string_view(words[static_cast<int>(value)]) == "Off");
+    }
+    CHECK(cables == 2 * kModSlots);
+
+    // A depth is a number and a unipolar flag is a switch: neither has a list, and the panel draws
+    // them as a slider and a checkbox.
+    std::size_t none = 1;
+    CHECK(param_choices(ParamArray::kNone, &none) == nullptr);
+    CHECK(none == 0);
+    CHECK(param_choices(ParamArray::kModDepth, &none) == nullptr);
+    CHECK(param_choices(ParamArray::kModUnipolar, &none) == nullptr);
+
+    // The one thing a list widget must never be handed is an index its list has not got: a patch
+    // file may well say `mod1_source = 40`, and it is the row's own clamp, not the panel's memory,
+    // that stops ImGui being asked for a word that does not exist. Checked against the list length
+    // rather than the row's range so the two cannot disagree silently.
+    for (const float bad : {-1.0f, 6.0f, 40.0f, 1.5e9f}) {
+        Params patched;
+        param_write(*param_spec("mod1_source"), bad, patched);
+        const float stored = param_read(*param_spec("mod1_source"), patched);
+        CHECK(stored >= 0.0f);
+        CHECK(stored < static_cast<float>(source_count));
+    }
+
+    // The naming decision, written down where it can break: the modulation envelope is "Mod env"
+    // next to the cable that names it, and the amp envelope keeps the bare word a player reads.
+    CHECK(std::string_view(param_spec("env2_attack_s")->label) == "Mod env attack");
+    CHECK(std::string_view(param_spec("env2_release_s")->label) == "Mod env release");
+    CHECK(std::string_view(param_spec("amp_attack_s")->label) == "Attack");
+    CHECK(std::string_view(param_spec("mod1_source")->label) == "M1 source");
+    CHECK(std::string_view(param_spec("mod8_unipolar")->label) == "M8 unipolar");
 }

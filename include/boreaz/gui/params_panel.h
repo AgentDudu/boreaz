@@ -53,6 +53,9 @@ class ParamsPanel {
     bool visible_ = false;
     bool synced_ = false; // the first frame takes the engine's parameters rather than defaults
     boreaz::engine::Params params_{};
+    // Only part of the table is on screen at once now that the matrix is in it, so the panel can be
+    // asked for one parameter instead of scrolled through for one.
+    char filter_[48] = "";
     char path_[256] = ""; // the text in the library field
     std::string status_;  // the last thing the panel has to say about a load
     const boreaz::engine::Instrument* pending_ = nullptr;

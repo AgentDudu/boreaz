@@ -34,15 +34,31 @@ enum class ModDest : std::uint8_t {
     // in progress has a source with no destination, and a destination that defaults to the filter
     // makes a half-wired patch audible on every voice. Off costs nothing on either end.
     kOff = 0,
-    kCutoff,       // full travel = 3 octaves either way, so a full-depth LFO spans 8x each way
-    kPitch,      // full travel = 2 semitones either way, which is PLAN.md's "a vibrato of +-2
-                 // semitones at default depth", read as the depth knob's whole travel
-    kOsc2Level,  // full travel = the whole level, added to the parameter's own value
+    kCutoff,    // full travel = 3 octaves either way, so a full-depth LFO spans 8x each way
+    kPitch,     // full travel = 2 semitones either way, which is PLAN.md's "a vibrato of +-2
+                // semitones at default depth", read as the depth knob's whole travel
+    kOsc2Level, // full travel = the whole level, added to the parameter's own value
     kOsc3Level,
     kNoiseLevel,
     kPan, // full travel = hard left to hard right, added to the key's own position
     kCount
 };
+
+// What each end of a cable is called in the window. They live beside the enums for one reason: the
+// `.ini` says `mod1_dest = 2` and the panel says "Pitch", and those two have to be the same cable.
+// A list kept anywhere else is a list that drifts from the arithmetic, which is the same argument
+// the parameter table makes about ranges. Each array is sized by `kCount`, so an enumerator added
+// without a word, or a word added without an enumerator, stops compiling.
+//
+// The words are the labels of the rows they modulate, not a third vocabulary: the destination list
+// reads "Cutoff", "Osc 2" and "Hammer noise" because those are the sliders a cable moves, and the
+// panel calls the modulation envelope "Mod env" for the same reason - the row above it is
+// "Mod env attack".
+inline constexpr const char* kModSourceNames[std::size_t(ModSource::kCount)] = {
+    "Off", "Mod env", "LFO 1", "LFO 2", "Velocity", "Key track", "Wheel"};
+
+inline constexpr const char* kModDestNames[std::size_t(ModDest::kCount)] = {
+    "Off", "Cutoff", "Pitch", "Osc 2", "Osc 3", "Hammer noise", "Pan"};
 
 constexpr int kModSlots = 8;
 
@@ -73,7 +89,8 @@ inline float keytrack_value(int key) noexcept {
 // centring a resting source is what turns "vibrato" into "the note is flat until you move the
 // wheel".
 inline bool source_is_unipolar(ModSource source) noexcept {
-    return source == ModSource::kVelocity || source == ModSource::kEnv2 || source == ModSource::kWheel;
+    return source == ModSource::kVelocity || source == ModSource::kEnv2 ||
+           source == ModSource::kWheel;
 }
 
 // Bring a source into the shape the slot asked for, always landing in -1..1.
@@ -91,8 +108,7 @@ inline float shape_source_value(ModSource source, float value, bool unipolar) no
     if (source_is_unipolar(source))
         return unipolar ? std::clamp(value, 0.0f, 1.0f)
                         : std::clamp(2.0f * value - 1.0f, -1.0f, 1.0f);
-    return unipolar ? std::clamp(0.5f * value + 0.5f, 0.0f, 1.0f)
-                    : std::clamp(value, -1.0f, 1.0f);
+    return unipolar ? std::clamp(0.5f * value + 0.5f, 0.0f, 1.0f) : std::clamp(value, -1.0f, 1.0f);
 }
 
 // How far the destination moves, in the destination's own units: octaves for the cutoff,
