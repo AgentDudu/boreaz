@@ -154,7 +154,7 @@ target_compile_features(boreaz_dsp INTERFACE cxx_std_20)
 # Parameter files: the field table, the parser, and where the instrument's own defaults live. Its
 # own library because the app, the render tool and the tests all read the same files, and a table
 # that exists twice is a preset that plays one way and renders another.
-add_library(boreaz_config STATIC src/config/params_file.cpp)
+add_library(boreaz_config STATIC src/config/params_file.cpp src/config/app_settings.cpp)
 target_include_directories(boreaz_config PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(boreaz_config PUBLIC boreaz_engine)
 target_compile_features(boreaz_config PUBLIC cxx_std_20)
@@ -332,6 +332,7 @@ if(BOREAZ_BUILD_TESTS)
     tests/test_engine_events.cpp
     tests/test_fx.cpp
     tests/test_factory_patches.cpp
+    tests/test_app_settings.cpp
     tests/test_live_params.cpp
     tests/test_params_panel.cpp
     tests/test_keyboard_layout.cpp

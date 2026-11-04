@@ -237,8 +237,13 @@ else:
 def app_live(failures, instrument):
     """Run the app for real: a device, the library, one MIDI file, and numbers on the way out."""
     print("\ngate: boreaz.exe on a real audio device")
+    # The app remembers the port, the library and the patch of the last session that had a window. A
+    # gate measures what the repository says, not what this machine happened to do last, so the child
+    # is given an empty memory: APPDATA is the folder that file and the saved patches live in, and a
+    # run with no window never writes it, so this folder stays empty and outside the repository.
+    clean = dict(os.environ, APPDATA=str(OUT / "no-machine-memory"))
     ports = subprocess.run([APP, "--list-devices"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                           text=True, errors="replace")
+                           text=True, errors="replace", env=clean)
     if ports.returncode != 0 or not ports.stdout.strip():
         print("  skipped: no audio device on this machine")
         return
@@ -256,7 +261,7 @@ def app_live(failures, instrument):
     print("  " + subprocess.list2cmdline(argv + [OUT / "one.mid"]))
 
     child = subprocess.Popen(argv + [OUT / "one.mid"], cwd=str(OUT), stdout=subprocess.PIPE,
-                             stderr=subprocess.STDOUT, text=True, errors="replace")
+                             stderr=subprocess.STDOUT, text=True, errors="replace", env=clean)
     lines = []
     started = threading.Event()
 

@@ -74,6 +74,11 @@ class AppWindow {
     double seconds_elapsed() const;
     PanelKind panel_kind() const { return panel_; }
 
+    // The patch the mixer adopted most recently, which is the patch the player was hearing when the
+    // window closed. The app writes it into its own setup file; it is the one fact about the
+    // session that lives in the panel rather than in the app.
+    const std::string& last_patch() const { return mixer_.last_patch(); }
+
   private:
     bool create_surface(std::string& error);
     void destroy_surface();
