@@ -362,6 +362,14 @@ the second is the waterfall's motion wearing a colour ramp).
 ## 5. Git workflow
 
 - `main` = released. `develop` = integration. Never commit straight to `main`.
+- **`main` is promoted, never merged.** `python tools/promote_main.py` writes a commit whose tree is
+  `develop`'s minus the working notes — `PLAN.md`, `HANDOFF*`, `docs/HANDOFF*`, `docs/pr-*.md` — and
+  whose parent is the current `main`, so the push is a fast-forward and the protected branch stays
+  protected. A merge would undo the point: `develop` edits those notes constantly, so every merge of
+  `develop` into `main` brings them straight back. The tool checks its own output — the diff between
+  the promoted tree and `develop` has to be exactly the files it dropped — and `README` says which
+  files live on which branch. `main` is protected against force-push on GitHub, which is why the tool
+  parents onto the existing tip rather than writing an orphan.
 - Branches: `feature/<name>` off `develop`, `fix/<name>` for bugs, `release/x.y` when we
   cut one, `hotfix/<name>` off `main`. Merge back with a merge commit (no squash — the
   phase history is our documentation).
