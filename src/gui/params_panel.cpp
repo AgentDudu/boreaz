@@ -106,27 +106,32 @@ void ParamsPanel::scan_patches() {
     patches_stale_ = false;
 
     std::error_code ignored;
-    const std::filesystem::path dir{boreaz::config::patches_dir()};
-    if (!std::filesystem::is_directory(dir, ignored))
-        return;
+    // The voices that shipped with the app first, then the player's own: the shipped list is in a
+    // known order and never moves underneath the rows a save adds.
+    const std::filesystem::path dirs[] = {boreaz::config::patches_dir(),
+                                          boreaz::config::user_patches_dir()};
+    for (const std::filesystem::path& dir : dirs) {
+        if (!std::filesystem::is_directory(dir, ignored))
+            continue;
 
-    std::vector<std::filesystem::path> files;
-    for (const auto& entry : std::filesystem::directory_iterator(dir, ignored)) {
-        if (entry.is_regular_file(ignored) && entry.path().extension() == ".txt")
-            files.push_back(entry.path());
-    }
-    // Sorted by file name, because the list has to be the same order every time it opens: rows that
-    // move between frames are a thing you cannot click on.
-    std::sort(files.begin(), files.end());
+        std::vector<std::filesystem::path> files;
+        for (const auto& entry : std::filesystem::directory_iterator(dir, ignored)) {
+            if (entry.is_regular_file(ignored) && entry.path().extension() == ".txt")
+                files.push_back(entry.path());
+        }
+        // Sorted by file name, because the list has to be the same order every time it opens: rows
+        // that move between frames are a thing you cannot click on.
+        std::sort(files.begin(), files.end());
 
-    for (const auto& file : files) {
-        PatchEntry patch;
-        patch.path = file.string();
-        std::string reason;
-        if (!boreaz::config::read_patch_meta(patch.path, patch.name, patch.instrument, reason))
-            patch.name = file.filename().string(); // a file that will not open still gets a row
-        patch.label = patch.name.empty() ? file.filename().string() : patch.name;
-        patches_.push_back(std::move(patch));
+        for (const auto& file : files) {
+            PatchEntry patch;
+            patch.path = file.string();
+            std::string reason;
+            if (!boreaz::config::read_patch_meta(patch.path, patch.name, patch.instrument, reason))
+                patch.name = file.filename().string(); // a file that will not open still gets a row
+            patch.label = patch.name.empty() ? file.filename().string() : patch.name;
+            patches_.push_back(std::move(patch));
+        }
     }
 }
 
@@ -147,7 +152,9 @@ void ParamsPanel::save_patch() {
         return;
     }
 
-    const std::filesystem::path dir{boreaz::config::patches_dir()};
+    // A save goes to the player's own folder and never to the one the factory patches came from:
+    // overwriting a voice somebody else named is the one thing a preset manager must not do.
+    const std::filesystem::path dir{boreaz::config::user_patches_dir()};
     std::error_code ignored;
     std::filesystem::create_directories(dir, ignored);
     const std::filesystem::path file = dir / (name + ".txt");
@@ -295,8 +302,10 @@ void ParamsPanel::draw(boreaz::engine::Engine& engine, const FrameView& view,
     if (ImGui::Button("Save"))
         save_patch();
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Every parameter, plus the library path above, into patches/<name>.txt.\n"
-                          "The file loads with --params and with this list.");
+        ImGui::SetTooltip(
+            "Every parameter, plus the library path above, into <name>.txt in your own patches "
+            "folder.\nThe file loads with --params and with this list. A patch is never written "
+            "over a voice that shipped with the app.");
     if (patches_stale_)
         scan_patches();
     for (std::size_t row = 0; row < patches_.size(); ++row) {

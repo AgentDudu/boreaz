@@ -36,6 +36,15 @@ std::string defaults_path();
 // on the first save and the name the failure message prints if it cannot.
 std::string patches_dir();
 
+// The directory the player's own patches are written to, and the only one the app ever writes a
+// patch into. The factory patches in `patches_dir()` ship with the app, so a save that could land
+// there is a save that can overwrite a voice somebody else named.
+//
+// `%APPDATA%\Boreaz\patches` on Windows, which is where PLAN puts everything the machine writes.
+// With no APPDATA at all - a service session, or a profile with the variable cleared - the answer
+// is `patches-user` under the working directory, which is the same shape the release zip has.
+std::string user_patches_dir();
+
 // Every key the engine has, in the engine's own order, as one comma separated line. The message
 // that refuses an unknown key promises the player a list, and this is the list - from the table, so
 // it is never a turn behind the parameters that actually exist.

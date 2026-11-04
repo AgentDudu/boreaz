@@ -1,3 +1,10 @@
+// The one place Boreaz asks the environment for a path, and MSVC deprecates `getenv` for it. The
+// deprecation is about a returned buffer being overwritten by the next call, and the value here is
+// copied into a std::string on the line that reads it, so the define is the honest answer rather
+// than a per-platform branch around one call. It has to precede the includes to mean anything.
+#define _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_DEPRECATE
+
 #include "boreaz/config/params_file.h"
 
 #include "boreaz/engine/param_table.h"
@@ -194,6 +201,18 @@ std::string patches_dir() {
     // the name a failure message prints, so the player sees where it was written rather than being
     // told a folder they can see is missing.
     return "patches";
+}
+
+// The player's own patches. Factory patches are read from `patches_dir()` and never written to:
+// a save that could land next to them is a save that can overwrite a voice somebody else named.
+std::string user_patches_dir() {
+    const char* app_data = std::getenv("APPDATA");
+    if (app_data != nullptr && *app_data != '\0')
+        return std::string{app_data} + "/Boreaz/patches";
+    // No APPDATA - a service session, or a profile with the variable cleared. Next to the working
+    // directory beats nowhere, and it is the shape the release zip has, so a portable install keeps
+    // its patches beside the executable.
+    return "patches-user";
 }
 
 std::string known_keys() {
