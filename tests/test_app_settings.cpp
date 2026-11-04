@@ -37,13 +37,14 @@ std::string read_text(const std::filesystem::path& path) {
 } // namespace
 
 TEST_CASE("the setup the app wrote is the setup the app reads") {
-    // Names with spaces, brackets and backslashes in them, because that is what a Windows port and
-    // a sample library are actually called. The value is everything after the first `=`, so none of
-    // it needs quoting - and a setup file that needed quoting would be a file a player cannot fix
-    // with Notepad.
+    // Names with spaces, brackets and backslashes in them, because that is the shape a Windows
+    // port and a sample library have. Not this machine's real port name: PLAN forbids a
+    // machine-specific value in code, and a round-trip test needs the shape, not the device.
+    // The value is everything after the first `=`, so none of it needs quoting - and a setup file
+    // that needed quoting would be a file a player cannot fix with Notepad.
     boreaz::config::AppSettings written;
-    written.audio_device = "CABLE In 16 Ch (VB-Audio Virtual Cable)";
-    written.midi_port = "Auto Input Port (01-Desktop)";
+    written.audio_device = "Cable In 16 Ch (Some Virtual Cable)";
+    written.midi_port = "Auto Input Port (Some Keyboard)";
     written.instrument = "D:\\instruments\\grand upright\\library.txt";
     written.patch.clear();       // nothing remembered, which is a state and not an absence
     written.peak_decay = "22.5"; // a display knob, stored as the machine said it
@@ -76,14 +77,14 @@ TEST_CASE("a setting this version does not know is skipped and said") {
     // with no way out - which is the opposite of the rule a parameter file runs under, on purpose.
     const std::filesystem::path file = scratch("newer.txt");
     write_text(file, "# boreaz app setup 1\n"
-                     "audio_device = Speakers (Realtek)\n"
+                     "audio_device = Speakers (Some Driver)\n"
                      "quantize = 0.5\n"
                      "midi_port = auto\n");
 
     boreaz::config::AppSettings read;
     std::string warning;
     boreaz::config::load_settings(file.string(), read, warning);
-    CHECK(read.audio_device == "Speakers (Realtek)");
+    CHECK(read.audio_device == "Speakers (Some Driver)");
     CHECK(read.midi_port == "auto");
     CHECK(read.instrument.empty());
     MESSAGE(warning);
@@ -226,8 +227,8 @@ TEST_CASE("a release finds its own folder, not the folder that started it") {
         }
     } cleanup{std::filesystem::current_path(), shipped, !already_there};
 
-    // Somewhere the walk up the tree cannot reach: three levels of temp directory, and no repository
-    // above it. A shortcut that starts the app from `Documents` is the same shape.
+    // Somewhere the walk up the tree cannot reach: three levels of temp directory, and no
+    // repository above it. A shortcut that starts the app from `Documents` is the same shape.
     std::filesystem::current_path(std::filesystem::temp_directory_path(), ec);
     REQUIRE_FALSE_MESSAGE(ec, "cannot move the working directory to the temp folder");
     const std::string found = boreaz::config::defaults_path();
