@@ -104,7 +104,8 @@ harness, not the app. `tools/key-in-window.md` says so.
   the audio thread; it is not invisible.
 - The explorer's rows are `Selectable`s in a `BeginChild`, so a listing of 300 rows scrolls; there is
   no type-ahead filter inside the listing — typing a name at the field and pressing Enter is the
-  fast path to the 30 000-file folder.
+  fast path to the 30 000-file folder. **(Superseded: the explorer now has an address bar, drive
+  buttons and a `narrow` field — see `docs/pr-folder-search.md`.)**
 - ImGui's own keyboard navigation is switched off for that window. One Enter press therefore does
   one thing, which was not the case while both this handler and ImGui's focus walker were reacting to
   the same key.
