@@ -46,6 +46,7 @@ TEST_CASE("the setup the app wrote is the setup the app reads") {
     written.midi_port = "Auto Input Port (01-Desktop)";
     written.instrument = "D:\\instruments\\grand upright\\library.txt";
     written.patch.clear(); // nothing remembered, which is a state and not an absence
+    written.peak_decay = "22.5"; // a display knob, stored as the machine said it
 
     std::string error;
     const std::filesystem::path file = scratch("roundtrip.txt");
@@ -59,6 +60,7 @@ TEST_CASE("the setup the app wrote is the setup the app reads") {
     CHECK(read.midi_port == written.midi_port);
     CHECK(read.instrument == written.instrument);
     CHECK(read.patch == written.patch);
+    CHECK(read.peak_decay == "22.5");
 
     // Save it again out of what was read back and the bytes have to be the same. A file that drifts
     // a little on every close is a file whose history nobody asked for, and the same claim the

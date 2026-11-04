@@ -258,7 +258,7 @@ if(WIN32)
     STATIC src/gui/app_window.cpp src/gui/frame_view.cpp src/gui/keyboard_view.cpp
            src/gui/note_trail.cpp src/gui/panel.cpp src/gui/params_panel.cpp
            src/gui/transport_clock.cpp src/gui/viz/transport.cpp
-           src/gui/viz/waterfall.cpp src/gui/waterfall_view.cpp)
+           src/gui/viz/spectrum.cpp src/gui/viz/waterfall.cpp src/gui/waterfall_view.cpp)
   target_include_directories(boreaz_gui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
   target_link_libraries(boreaz_gui PUBLIC imgui boreaz_io boreaz_engine boreaz_dsp)
   target_compile_features(boreaz_gui PUBLIC cxx_std_20)
@@ -332,6 +332,7 @@ if(BOREAZ_BUILD_TESTS)
     tests/test_engine.cpp
     tests/test_engine_events.cpp
     tests/test_fx.cpp
+    tests/test_analyser.cpp
     tests/test_factory_patches.cpp
     tests/test_app_settings.cpp
     tests/test_live_params.cpp

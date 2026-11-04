@@ -13,6 +13,7 @@ namespace boreaz::gui {
 enum class PanelKind : std::uint8_t {
     kTransport = 0,
     kWaterfall, // the same notes, seen as the keys that played them
+    kSpectrum,  // what the air is doing, cut into those same keys
     kCount,     // sentinel: the table has to have exactly this many rows
 };
 

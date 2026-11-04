@@ -309,6 +309,10 @@ void AppWindow::set_song_path(const std::string& path) {
     song_path_ = path;
 }
 
+void AppWindow::set_spectrum(const SpectrumSnapshot& spectrum) {
+    spectrum_ = spectrum;
+}
+
 void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
     const ImVec2 display = ImGui::GetIO().DisplaySize;
     ImGui::SetNextWindowPos(ImVec2{0.0f, 0.0f});
@@ -334,6 +338,9 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
     FrameView view = make_frame_view(engine, std::move(device), std::move(midi));
     view.frames = frames_;
     view.seconds = seconds_elapsed();
+    // Measured on the app's thread, one frame behind the sound it came from, which is the same delay
+    // every other number on this window has: the alternative is the display reaching into the audio path.
+    view.spectrum = spectrum_;
 
     // The transport starts on music and not on the driver: a file the app is playing, or a note
     // sounding right now. A file counts on its own because its first events are often controller

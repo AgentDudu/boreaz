@@ -13,6 +13,7 @@ namespace boreaz::gui {
 namespace viz {
 void transport(const FrameView& view);
 void waterfall(const FrameView& view);
+void spectrum(const FrameView& view);
 } // namespace viz
 
 namespace {
@@ -31,6 +32,14 @@ constexpr PanelEntry kTable[] = {
      "lane "
      "height are this view's own, and F2 moves to the next view.",
      &viz::waterfall},
+    {PanelKind::kSpectrum, "Spectrum",
+     "What the air is doing, cut into the same 88 ranges as the keys below it, so a band sits over "
+     "the key that plays it. The maths is done in the frame loop from a copy of the master bus: the "
+     "audio thread only copies, and if the frame loop falls behind the panel says how much of the "
+     "sound it missed. Two window lengths because one cannot do both jobs - the long one separates "
+     "the low notes, the short one lights a transient now. Level is height, and the line above it is "
+     "the loudest recent note in that band, falling at the decay rate.",
+     &viz::spectrum},
 };
 
 static_assert(std::size(kTable) == static_cast<std::size_t>(PanelKind::kCount),
