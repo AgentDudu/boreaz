@@ -3,7 +3,9 @@
 // here on the next build with no edit below.
 //
 // What the panel does to the engine is one call - `set_params` - and what it does to the app is one
-// call - `Instruments::load`. It never opens a file and never touches a voice pool.
+// call - `Instruments::load`. It reads and writes patch files, which are a few hundred bytes of
+// text and belong on the UI thread; it never opens a sample library, because that is a hundred and
+// fifty megabytes of file I/O and the app owns it, and it never touches a voice pool.
 
 #include "boreaz/gui/params_panel.h"
 
@@ -12,9 +14,11 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <filesystem>
 #include <string>
 #include <string_view>
 
+#include "boreaz/config/params_file.h"
 #include "boreaz/engine/param_table.h"
 #include "boreaz/gui/keyboard_layout.h"
 
@@ -77,6 +81,107 @@ void ParamsPanel::carry_pending(boreaz::engine::Engine& engine, const Instrument
     pending_set_ = false;
     pending_ = nullptr;
     waiting_on_notes_ = false;
+}
+
+bool ParamsPanel::request_instrument(const std::string& path, const Instruments& instruments) {
+    // The field shows what the panel asked for, so the next Save writes the same path back into the
+    // patch's header and the two halves of a preset travel together.
+    std::snprintf(path_, sizeof path_, "%s", path.c_str());
+    std::string reason;
+    const boreaz::engine::Instrument* found = instruments.load(path, reason);
+    if (found != nullptr) {
+        request(found);
+        return true;
+    }
+    if (path.empty()) {
+        request(nullptr); // an empty path means the synthesiser, which is not an error
+        return true;
+    }
+    status_ = reason;
+    return false;
+}
+
+void ParamsPanel::scan_patches() {
+    patches_.clear();
+    patches_stale_ = false;
+
+    std::error_code ignored;
+    const std::filesystem::path dir{boreaz::config::patches_dir()};
+    if (!std::filesystem::is_directory(dir, ignored))
+        return;
+
+    std::vector<std::filesystem::path> files;
+    for (const auto& entry : std::filesystem::directory_iterator(dir, ignored)) {
+        if (entry.is_regular_file(ignored) && entry.path().extension() == ".txt")
+            files.push_back(entry.path());
+    }
+    // Sorted by file name, because the list has to be the same order every time it opens: rows that
+    // move between frames are a thing you cannot click on.
+    std::sort(files.begin(), files.end());
+
+    for (const auto& file : files) {
+        PatchEntry patch;
+        patch.path = file.string();
+        std::string reason;
+        if (!boreaz::config::read_patch_meta(patch.path, patch.name, patch.instrument, reason))
+            patch.name = file.filename().string(); // a file that will not open still gets a row
+        patch.label = patch.name.empty() ? file.filename().string() : patch.name;
+        patches_.push_back(std::move(patch));
+    }
+}
+
+void ParamsPanel::save_patch() {
+    std::string name{patch_name_};
+    const auto not_space = [](char c) { return std::isspace(static_cast<unsigned char>(c)) == 0; };
+    name.erase(name.begin(), std::find_if(name.begin(), name.end(), not_space));
+    name.erase(std::find_if(name.rbegin(), name.rend(), not_space).base(), name.end());
+
+    if (name.empty()) {
+        status_ = "a patch needs a name before it can be saved";
+        return;
+    }
+    // The name becomes a file name, and a name is text somebody typed into a box. A dot or a slash
+    // here is a save that lands outside the patches folder, or one that cannot be read back.
+    if (name.find_first_of("/\\:.") != std::string::npos) {
+        status_ = "a patch name cannot contain a dot, a slash, or a colon";
+        return;
+    }
+
+    const std::filesystem::path dir{boreaz::config::patches_dir()};
+    std::error_code ignored;
+    std::filesystem::create_directories(dir, ignored);
+    const std::filesystem::path file = dir / (name + ".txt");
+    std::string reason;
+    if (boreaz::config::save_params_file(file.string(), params_, name, path_, reason)) {
+        status_ = "wrote " + file.string();
+        patches_stale_ = true; // the row for it appears without a restart
+    } else {
+        status_ = reason;
+    }
+}
+
+void ParamsPanel::adopt_patch(const PatchEntry& patch, boreaz::engine::Engine& engine,
+                              const Instruments& instruments) {
+    // Into a copy of what is playing. The parser refuses a bad key or a bad number for the whole
+    // file, and a panel that had already taken half of it would be playing a sound nobody wrote.
+    boreaz::engine::Params loaded = engine.params();
+    std::string reason;
+    if (!boreaz::config::load_params_file(patch.path, loaded, reason)) {
+        // The decision this panel makes: the file is refused, the reason is printed, and the sound
+        // that was playing keeps playing. A half-loaded patch is worse than one that did not load.
+        status_ = "not loaded - " + reason;
+        return;
+    }
+    params_ = loaded;
+    engine.set_params(params_); // the engine's ramp is what makes a patch change without a click
+
+    // The instrument the patch names comes with it. One that names nothing keeps the library that
+    // is already playing rather than dropping to the synthesiser, and one whose library is missing
+    // says so in the panel's own line - which is a warning, not silence.
+    if (!patch.instrument.empty() && instruments.load != nullptr &&
+        !request_instrument(patch.instrument, instruments))
+        return;
+    status_ = "loaded " + patch.label;
 }
 
 void ParamsPanel::draw(boreaz::engine::Engine& engine, const FrameView& view,
@@ -179,6 +284,41 @@ void ParamsPanel::draw(boreaz::engine::Engine& engine, const FrameView& view,
     if (dirty)
         engine.set_params(params_); // the engine's ramp is what keeps a slider from clicking
 
+    // A patch is this panel written to a file, and the file is the one `--params` reads, so the
+    // browser is a directory listing rather than a second store of settings nobody asked for.
+    ImGui::Separator();
+    ImGui::TextUnformatted("Patch");
+    ImGui::SetNextItemWidth(kPanelWidth - 130.0f);
+    ImGui::InputTextWithHint("##patchname", "name for a new patch", patch_name_,
+                             sizeof patch_name_);
+    ImGui::SameLine();
+    if (ImGui::Button("Save"))
+        save_patch();
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Every parameter, plus the library path above, into patches/<name>.txt.\n"
+                          "The file loads with --params and with this list.");
+    if (patches_stale_)
+        scan_patches();
+    for (std::size_t row = 0; row < patches_.size(); ++row) {
+        ImGui::PushID(static_cast<int>(row));
+        if (ImGui::Button(patches_[row].label.c_str()))
+            adopt_patch(patches_[row], engine, instruments);
+        if (ImGui::IsItemHovered()) {
+            const std::string tip =
+                patches_[row].instrument.empty()
+                    ? patches_[row].path + "\nkeeps the instrument that is playing"
+                    : patches_[row].path + "\n" + patches_[row].instrument;
+            ImGui::SetTooltip("%s", tip.c_str());
+        }
+        ImGui::PopID();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Rescan"))
+        patches_stale_ = true;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip(
+            "Read the patches folder again - a file dropped in from Explorer appears.");
+
     // Where the keyboard is. A transpose of 12 is a number; "middle C plays C5" is the check that
     // the number means what the player meant.
     char from[16];
@@ -192,18 +332,8 @@ void ParamsPanel::draw(boreaz::engine::Engine& engine, const FrameView& view,
     ImGui::InputText("##library", path_, sizeof path_);
     const bool can_load = static_cast<bool>(instruments.load);
     ImGui::SameLine();
-    if (ImGui::Button("Load") && can_load) {
-        std::string reason;
-        const boreaz::engine::Instrument* found =
-            instruments.load(path_, reason); // file I/O, on the UI thread, never the audio one
-        if (found != nullptr) {
-            request(found);
-        } else if (path_[0] == '\0') {
-            request(nullptr); // an empty path means the synthesiser, which is not an error
-        } else {
-            status_ = reason;
-        }
-    }
+    if (ImGui::Button("Load") && can_load)
+        request_instrument(path_, instruments); // file I/O, on the UI thread, never the audio one
     ImGui::SameLine();
     if (ImGui::Button("Synth") && can_load) {
         std::string reason;

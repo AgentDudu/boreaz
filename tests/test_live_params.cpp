@@ -203,6 +203,13 @@ TEST_CASE("a parameter file refuses a number the engine cannot use, and says wha
     CHECK_FALSE(load_params_file(typo.string(), loaded, error));
     CHECK(error.find("master_gian_db") != std::string::npos);
 
+    // The property a patch browser stands on. A file that is refused has to leave the parameters
+    // that were already there exactly where they were, because the alternative is an instrument
+    // playing a half-loaded preset: some of the new one's settings and some of the old one's, which
+    // is a sound nobody wrote and nobody can name.
+    CHECK(loaded.master_gain_db == doctest::Approx(-6.5f));
+    CHECK(loaded.octave_shift == -2);
+
     const auto fraction = dir / "fraction.ini";
     write_file(fraction, "octave_shift = 1.5\n");
     CHECK_FALSE(load_params_file(fraction.string(), loaded, error));

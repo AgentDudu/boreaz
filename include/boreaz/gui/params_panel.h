@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <string>
+#include <vector>
 
 #include "boreaz/engine/engine.h"
 #include "boreaz/engine/instrument.h"
@@ -46,9 +47,37 @@ class ParamsPanel {
     bool visible() const { return visible_; }
 
   private:
+    // A patch the panel can offer: the file, the word to put on its row, and the sampled instrument
+    // its header asks for (empty means the patch says nothing about the instrument, and what is
+    // already playing keeps playing).
+    struct PatchEntry {
+        std::string path;
+        std::string name; // what its own header calls it; empty when the file says nothing
+        std::string label;
+        std::string instrument;
+    };
+
     // A requested instrument the engine has not taken yet, and why it is waiting: switching pools
     // while notes are sounding would cut them off, and the plan says the switch may not click.
     void carry_pending(boreaz::engine::Engine& engine, const Instruments& instruments);
+
+    // Read the patches directory. Done only when the list is stale: the panel draws at frame rate,
+    // and a directory walk at frame rate is file I/O nobody asked for.
+    void scan_patches();
+
+    // Put the library field at `path` and ask for it, the way the Load button does - which is the
+    // one place the app is allowed to open a sample library. False means it did not load, and the
+    // reason is already in `status_`.
+    bool request_instrument(const std::string& path, const Instruments& instruments);
+
+    // Adopt a patch. The parameters go in through the engine's own ramp, and the instrument the
+    // patch names follows it. A file that is refused changes nothing at all, including the sound.
+    void adopt_patch(const PatchEntry& patch, boreaz::engine::Engine& engine,
+                     const Instruments& instruments);
+
+    // Save what the panel is showing, under the name in the field, with the library field written
+    // as the patch's instrument.
+    void save_patch();
 
     bool visible_ = false;
     bool synced_ = false; // the first frame takes the engine's parameters rather than defaults
@@ -56,8 +85,11 @@ class ParamsPanel {
     // Only part of the table is on screen at once now that the matrix is in it, so the panel can be
     // asked for one parameter instead of scrolled through for one.
     char filter_[48] = "";
-    char path_[256] = ""; // the text in the library field
-    std::string status_;  // the last thing the panel has to say about a load
+    char path_[256] = "";             // the text in the library field
+    char patch_name_[96] = "";        // the name a save writes this panel under
+    std::vector<PatchEntry> patches_; // the rows the browser is showing
+    bool patches_stale_ = true;
+    std::string status_; // the last thing the panel has to say about a load
     const boreaz::engine::Instrument* pending_ = nullptr;
     bool pending_set_ = false; // distinguish "the synth is queued" from "nothing is queued"
     bool waiting_on_notes_ = false;
