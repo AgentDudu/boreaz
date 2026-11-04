@@ -1,191 +1,205 @@
 # Boreaz
 
-A lightweight audio/MIDI synthesizer for Windows: **88 keys, A0 to C8** — the full compass
-of a real piano — with an on-screen keyboard, a switchable visualiser (transport strip or
-note waterfall), `.mid` playback, and a sampled concert grand.
-
-C++20, no DAW required. Runs standalone, takes a real MIDI keyboard, and can also render a
-MIDI file to WAV from the command line.
-
-## Status
-
-Phases 0-5 and 7 of 12, plus the sampled-instrument machinery out of phase 6. **There is sound, and
-there is a window.** A 16 voice synth engine plays the
-full A0–C8 compass through a real WASAPI output and takes a MIDI keyboard; `--gui` opens 88
-playable keys under a transport strip that sits still until you play and then rolls; and a `.mid` file
-renders to a `.wav` without any device at all:
+**An 88-key piano for Windows, three commands from sound.** No DAW, no installer, no account, no
+network while it runs. The whole compass of a real piano — **A0 to C8**, all 88 keys — as a
+16-voice synthesiser, as a sampled upright you fetch with one command, and with a note waterfall you
+can watch.
 
 ```bash
-./build/boreaz --gui                            # the window: click keys, or play z s x d c v
-./build/boreaz                                  # default output, wait for a keyboard
-./build/boreaz --device 1 --period 256          # choose the output and the buffer
-./build/boreaz --list-devices                   # this machine's outputs
-./build/boreaz --list-midi                      # this machine's MIDI inputs
-./build/boreaz-render tests/fixtures/midifile/pad-chords.mid build/pad.wav
-./build/boreaz-render --golden tests/fixtures/midifile/glissando-88.mid
-./build/boreaz tests/fixtures/midifile/pad-chords.mid          # play a file, exit when it ends
-./build/boreaz --gui tests/fixtures/midifile/pad-chords.mid    # the same file, in the window
-# One command, once: fetch the CC0 upright piano and decode it to PCM WAV (needs ffmpeg).
-python tools/mkinstrument.py
-./build/boreaz --gui --instrument third_party/instruments/upright-piano-KW/UprightPianoKW-20220221.sfz
-./build/boreaz-render --instrument third_party/instruments/upright-piano-KW/UprightPianoKW-20220221.sfz \
-    tests/fixtures/midifile/pad-chords.mid build/pad.wav       # the same instrument, as a file
-./build/boreaz-sfz-probe third_party/instruments/upright-piano-KW/UprightPianoKW-20220221.sfz
-./build/boreaz-render --gain 0 tests/fixtures/midifile/pad-chords.mid build/pad.wav  # 12 dB hotter
-python tools/listen.py    # six WAVs in build/listen, each one named for the thing to listen for
-python tools/listen.py --gain -12   # ... at the level the app itself comes up with, which is quiet
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+build/boreaz --gui
 ```
 
-The file reader is a library (`boreaz-midifile`), so the offline render, this app and the tests play
-the same bytes through the same parser. A file plays once through and does nothing else: there is no
-seeking, no loop and no open dialog, which are the controls the sequencer (phase 10) is going to
-bring.
+A window opens with 88 playable keys. Click them or type at it. Sound comes out of the system default
+output with nothing configured.
 
-The sampled instrument is the other half of the same sentence. Give it an SFZ mapping and PCM WAVs —
-plain SFZ spellings, both opcode names for everything, `<global>`/`<control>`/`<group>` defaults
-inherited the way SFZ says (a group starts again from `<global>`, not from the group above it) — and
-88 keys play recordings instead of oscillators: resident before the device opens, one read-head per
-voice with pitch shifting, loops, the mapping's own gain and velocity depth, and no file, wave or
-window include anywhere in the audio thread. That last part is a test, not a promise: the WAVs are
-deleted underneath a loaded instrument and it still plays. A key the library never recorded replays
-the nearest recording shifted, and says which. `--no-instrument` declines a library, and one that
-will not load names the file, says it is playing the synthesiser instead, and keeps playing.
+## What you get
 
-What `python tools/mkinstrument.py` fetches is the FreePats **Upright Piano KW** (CC0, recorded by
-Gonzalo and Roberto, `github.com/freepats/upright-piano-KW`): 66 regions, **A0 to C8**, two velocity
-layers that a soft and a hard touch really choose between, the bass looped, **109 MB resident,
-150 ms to load**, and nothing written into the repository — the zip's sha256 is pinned, so the piano
-that played in a test run is the piano the recipe says it was. A live 88-key glissando through it at
-a 1024 frame period finished with **0 late, 0 xruns, 0 dropped, 0 steals**.
+| | |
+|---|---|
+| **88 keys, A0 to C8** | the lowest and the highest note a piano has, not a 49-key demo range |
+| **Two sound engines** | a subtractive synth (16 voices) that is always there, and any **SFZ** mapping with WAVs beside it |
+| **63 parameters** | each one a slider in the window's Mixer and a line in a text file, generated from one table, with a find box that answers `N of 63` |
+| **Three views** | **Transport** (a strip that sits still until you play, then rolls), **Waterfall** (88 columns, time running up), **Spectrum** |
+| **Your MIDI keyboard** | WinMM, hot-unplug safe: a cable pulled mid-song drops those notes and keeps playing |
+| **.mid playback** | play, pause, stop, loop, and a position bar you click to seek; a song also works dragged onto the window |
+| **Offline rendering** | the same song to a WAV with no audio device in sight |
+| **Effects and modulation** | a distortion/drive blend, a stereo delay, a Schroeder room, and an 8-slot modulation router |
+| **A patch browser** | 8 factory patches plus your own saves, each a plain text file you can diff |
 
-What is still missing from a real grand: filters (`fil_type`/`cutoff` are read, ignored, and warned
-about — measured on this instrument's softened layer, a 2.2 kHz 2-pole lowpass moves it 5 % in
-brightness and 0.1 % in level, so the warning is honest and the hole is inaudible), and
-`boreaz-mkinst`, which is the tool that would subset the 394 MB Salamander grand into something
-playable. `trigger=release` is not one of
-them any more: a region that asks to be played when the key goes up is loaded like any other and
-voiced from **a pool of eight of its own, outside the sixteen**, because a hammer noise has to survive
-the note it follows. It is picked, and played, at the velocity the key went *down* with — a
-note-off arrives as velocity zero, so the engine remembers the strike — and the file's own
-`amp_veltrack` still decides how much of that curve a hammer noise keeps, because that opcode is the
-recorder's opinion about hammers: the same release region measured **0.0022 against 0.0293**
-full-scale peak in the 30-100 ms after the key-up at velocity 20 against 110, thirteen times, which is
-the note's own ratio. A library that wants its hammer noise at one level says `amp_veltrack=0`. It is one shot whatever the file says (`smpl loop` and
-`loop_mode` are dropped on a release, since a key being let go happens once), it is looked up in a
-list of its own so a note recording can never be mistaken for one, and the panic button stops it with
-everything else. The starter instrument has no release regions at all, so on it a key-up is still the
-amp release and nothing else. Nobody has heard any of it yet, either: every number above is objective,
-and none of them is an ear.
+Nothing is uploaded and nothing is logged. There is no telemetry to turn off — see
+`docs/PRIVACY.md`.
 
-`PLAN.md` is the contract for what is being built and in which order; phases 0-12 are listed
-there with exit criteria.
+## Playing it with no instrument
 
-Quitting prints the counters every claim about the engine is argued from: callbacks delivered,
-how many were late, how many times the device restarted, events dropped, voices stolen, and how
-far the audio thread has got. Without a keyboard it still opens the output and prints what it
-found, which is the usual first move when sound does not appear.
+The letter rows are a two-octave piano laid out the way most software pianos do it, with the home row
+as the sharps in between.
 
-## Requirements
+| keys | notes |
+|---|---|
+| `z s x d c v g b h n j m` | C up to B |
+| `q 2 w 3 e r 5 t 6 y 7 u` | the octave above |
+| `i 9 o 0 p` | middle C and up |
 
-- Windows 10 or 11
-- CMake 3.25 or newer, and GCC or Clang (this project is built with `ninja`)
-- Internet access on first configure: dependencies are fetched at pinned versions
+**Space** is the sustain pedal — held, not toggled, because that is the only thing a foot knows.
+Typed notes arrive at a firm velocity rather than a maximum one. Everything else is the mouse, a real
+keyboard, or the transpose control (±24 semitones, and it retunes notes that are already held).
 
-## Build
+## The sampled piano, in one command
+
+```bash
+python tools/mkinstrument.py     # fetch and decode the Upright Piano KW (needs ffmpeg)
+build/boreaz --gui --instrument third_party/instruments/upright-piano-KW/UprightPianoKW-20220221.sfz
+```
+
+66 regions covering **A0 to C8**, two velocity layers that a soft and a hard touch really choose
+between, and looped bass. **109 MB resident, 150 ms to load**, all before the audio device opens — and
+it is CC0, public domain. It downloads into `third_party/`, so nothing instrument-sized is ever
+committed to git. A live 88-key glissando through it finished with **0 late callbacks, 0 xruns, 0
+dropped events, 0 stolen voices**.
+
+A key the library never recorded replays the nearest recording it has, shifted, and says which. An SFZ
+that will not load names the file, says it is playing the synthesiser instead, and keeps playing: an
+instrument that fails must never mean silence. `boreaz-sfz-probe FILE.sfz` prints what a mapping says
+before you commit to loading it.
+
+## Shaping the sound
+
+```bash
+cp config/params.example.ini mine.ini    # every key, its range, and the default it starts on
+build/boreaz --config mine.ini           # start from those defaults
+build/boreaz --params patches/piano-mezzo-forte.txt   # or layer a patch on top
+build/boreaz --gain -6                   # "it is too quiet", typed at the prompt
+```
+
+The Mixer panel is generated from the same table the file reader uses, so a new parameter appears in
+the file and on screen by being written down once. Sliders move the sound over about ten milliseconds
+instead of snapping to it, which is what lets a cutoff be thrown open mid-phrase without a click.
+Eight modulation slots route LFO1, LFO2, a mod envelope, velocity, keytrack or the mod wheel to
+cutoff, pitch, an oscillator, the hammer noise or the pan; unwired slots cost nothing measurable. The
+FX bus is a distortion blend, a delay and a room, and it is a per-sample cost rather than a per-voice
+one, which is why a heavy rack cannot blow the budget at high polyphony.
+
+An unknown key, a value that is not a number, or a number outside its range stops the app with the
+line and the reason — a parameter file that quietly did nothing is indistinguishable from one that
+worked.
+
+## Levels that behave
+
+The engine opens at **-12 dB on purpose**: sixteen summed voices need headroom, and the shipped
+default is a decision rather than an accident. `--gain` is therefore the flag for "too quiet" and "it
+is clipping". It is the same knob as the master slider, from the same table, so `--gain 100` answers
+`wants -72 to 12` and exits 2, and it outranks `--config`, which is the right precedence for a knob
+being turned while something is already playing.
+
+On the shipped instrument 0 dB measures **0.697** peak and +12 dB measures **0.998**: past about 0 dB
+you are hearing the limiter, not more piano. At the top of the fader every committed fixture lands on
+exactly the same peak, so the ceiling is a ceiling and not a limiter that occasionally taps. MIDI
+**CC7** is the other hand on the level — per channel, linear (64 is half the amplitude), and a note
+already held hears the move, which is what a volume wheel means.
+
+## MIDI files
+
+```bash
+build/boreaz tests/fixtures/midifile/pad-chords.mid                # play it, exit when it ends
+build/boreaz --gui tests/fixtures/midifile/pad-chords.mid          # the same file, in the window
+build/boreaz-render tests/fixtures/midifile/pad-chords.mid pad.wav # no audio device involved
+build/boreaz-render --golden tests/fixtures/midifile/glissando-88.mid   # measurements, not a file
+```
+
+In the window: drag a `.mid` onto it, or press **F1** (or `Change`) and type a path — a filter finds
+the file in your songs folder or on another drive, and Enter loads it. A path that will not read
+leaves the session exactly as it was and prints why. The file reader is a library
+(`boreaz-midifile`), so the offline render, the window and the tests all play the same bytes through
+the same parser. Notes outside A0–C8 are flagged `EXT` and played, not dropped.
+
+## Numbers rather than promises
+
+* **The CPU is metered by the app itself.** `boreaz.exe` prints the audio callback's own busy time as a
+  fraction of one core. 16 sampled voices cost about **1.1 %**, or **1.4 %** with every effect on; the
+  synthesiser costs **2.3 %**, which it can afford because the oscillators read a 16 KiB sine table
+  built at compile time instead of calling `std::sin` twice per sample per voice.
+* **No file I/O in the audio thread is a test, not a promise**: the WAVs are deleted underneath a
+  loaded instrument and it keeps playing.
+* **`tests/golden/` holds every fixture's rendered output as numbers**, so any change that moves the
+  sound moves a golden and the test says by how much. Two files, because GCC and Clang differ by
+  0.6 dB on one fixture and each compiler is compared against its own.
+* `ctest --test-dir build --output-on-failure` runs several hundred cases and millions of assertions;
+  the suite prints its own counts.
+* `python tools/sanitize.py` builds ASan and UBSan and runs the suite under them, **and refuses to
+  report a pass it did not perform** — which matters, because a Windows GCC without an ASan runtime is
+  common enough that a green result there would be a lie.
+* Quitting prints callbacks delivered, how many were late, how many times the device restarted,
+  events dropped, voices stolen, and how far the audio thread got. With no keyboard it still opens the
+  output and prints what it found, which is the usual first move when sound does not appear.
+* `python tools/release_check.py build/boreaz.exe` asserts the shipped shape: the DLLs it imports, the
+  levels it must not move, and 0 reads and 0 writes in the callback.
+
+## Not built yet
+
+So the gap is not a surprise:
+
+* **SFZ filters.** `fil_type` and `cutoff` are read, ignored, and warned about. Measured on this
+  instrument's softened layer, a 2.2 kHz 2-pole lowpass moves it 5 % in brightness and 0.1 % in level,
+  so the warning is honest and the hole is small.
+* **Waveform selection and band-limited oscillators.** `osc1`/`osc2` are sines and `osc3` is a saw; no
+  patch can ask for a square or a triangle, and the saw is not band-limited.
+* **The window needs an output device.** With no working output at all the app exits rather than
+  drawing a silent panel.
+* **Nobody has heard some of it, and nobody has used the mouse.** Every number above is objective and
+  none of them is an ear: the velocity layers, the room, the limiter and the modulation are measured,
+  not listened to, and no tester who was not the author has clicked Play or dragged a file.
+* **No hosted CI.** The gates are the commands in this file, run by hand.
+
+## One folder is the whole product
+
+```text
+boreaz.exe         3.97 MB, stripped, static compiler runtime
+config/params.ini  2.8 KB of defaults
+patches/           36 KB of factory patches
+```
+
+About 4 MB, and it imports only system DLLs, so nothing has to be installed on a Windows 10 or 11
+machine: no installer, no administrator rights, and nothing written outside `%APPDATA%\Boreaz` — which
+holds four remembered names (audio port, MIDI port, sample library, last patch) and no sound. A
+missing `config/params.ini` stops the app and prints the absolute path it looked for.
+`boreaz --version` and the file's own properties both say which build a machine has.
+
+## Building it
+
+Windows 10 or 11, CMake 3.25 or newer, Ninja, and GCC or Clang. Dependencies are fetched at pinned
+versions on first configure, so that first configure wants internet.
 
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ctest --test-dir build --output-on-failure
-./build/boreaz --help
+build/boreaz --help     # every flag and every parameter key, printed out of the same table
 ```
 
-Sound comes out of the default output with no configuration. If the wrong device answers —
-or a virtual cable is in the list — `--device` picks by index or by part of the name, and
-`--list-devices` shows what is there. Exit status is 0 ok, 1 for anything that stopped the app:
-bad usage, no such audio output, MIDI refused.
-
-## Release
-
-The build is one portable file. `build/boreaz.exe` links the compiler runtime statically and imports
-only system DLLs (`d3d11`, `D3DCOMPILER_47`, `winmm`, the CRT API sets), so nothing has to be
-installed on a Windows 10 or 11 machine. What it does want is its shipped defaults, and it looks for
-them beside the executable as well as in the working directory — so a folder holding three things is
-the whole product:
-
-```bash
-mkdir boreaz-0.1.0
-cp build/boreaz.exe   boreaz-0.1.0/
-cp config/params.ini  boreaz-0.1.0/config/
-cp -r patches         boreaz-0.1.0/
-```
-
-About 4 MB: 3.97 MB of exe (stripped in a Release build), 2.8 KB of defaults, 36 KB of factory
-patches. No installer, no administrator rights, and nothing written outside `%APPDATA%\Boreaz`. A
-missing `config/params.ini` stops the app and prints the absolute path it looked for. `boreaz
---version` and the exe's file properties both say which build a machine has.
-
-## Configuration
-
-Nothing is hardcoded and nothing is uploaded.
-
-Every parameter the engine has is a line in a file and a slider in the window. `boreaz --gui` puts a
-**Mixer** button next to the view switcher: 18 sliders, generated from the same table the file reader
-uses, so the panel and `--config` cannot disagree and a new parameter appears in both by being written
-down once. Sliders move the sound over about ten milliseconds rather than snapping to it, which is
-what lets a cutoff be thrown open mid-phrase without a click, and a transpose retunes the notes that
-are already held instead of only the next one. The instrument selector waits for the notes to stop
-before it swaps a sample library in, because swapping rebuilds the voice pool.
-
-```bash
-cp config/params.example.ini mine.ini   # every key, its range, and the default it starts on
-./build/boreaz --config mine.ini        # the defaults the app starts on
-./build/boreaz --params solo.ini        # ... or one patch layered on top of them
-./build/boreaz --help                   # the list of keys, straight from the table
-```
-
-An unknown key, a value that is not a number, and a number outside its range are errors that stop the
-app with the line and the reason: a parameter file that quietly did nothing is indistinguishable from
-one that worked. `config/params.ini` is the shipped preset and is read when `--config` says nothing.
-
-`--gain DB` is the one key worth reaching for on the command line, because "it is too quiet" is
-discovered in the first ten seconds and not while editing a file. It is the same `master_gain_db` the
-Mixer slider moves, so its range and its refusal come from the same table — `--gain 100` answers
-`wants -72 to 12` and exits 2 — and it wins over `--config`, which is the right precedence for a knob
-being turned while something is playing. The engine's own -12 dB default is a decision rather than an
-accident: sixteen summed voices need headroom. On the shipped instrument 0 dB measures **0.697** peak
-and +12 dB measures **0.998**, so past about 0 dB the clipper is what you are hearing, not more piano.
-
-MIDI **CC7** is the other hand on that level, and it is per channel and linear: 64 is half the
-amplitude, 0 is silence, and a note already held hears the move on the sample it arrives, which is
-what a volume wheel means. It used to be decoded, named and dropped, so a keyboard or a file asking
-for 100/127 played at full level instead; the one committed fixture that asks for a level is 2 dB
-quieter than it was, and `tests/golden/` says so in its own numbers.
-
-Machine-specific values come from the environment, optionally backed by a local `.env` file:
-
-```bash
-cp .env.example .env     # .env is git-ignored; every key in the example is empty
-```
-
-See `docs/PRIVACY.md`.
-
-## License
-
-Boreaz's own source is licensed under the **PolyForm Noncommercial License 1.0.0** — free to
-use, study, change and share for non-commercial purposes; selling it or using it commercially
-needs a separate agreement with the author. See `LICENSE`.
-
-Bundled third-party code and the sampled pianos keep their own terms, listed in `NOTICE`. Neither
-is covered by the non-commercial clause: the Salamander subset `tools/mkinst` cuts is CC-BY-3.0 and
-stays freely reusable under CC-BY, and the Upright Piano KW that `tools/mkinstrument` fetches is
-CC0 — public domain, no terms to keep.
+Exit status: 0 all good, 1 for anything that stopped the app (no such output, MIDI refused), 2 for bad
+usage. Other tools: `listen.py` renders six named WAVs so a change can be heard rather than argued
+about; `mkinst.py` cuts a playable subset out of the 394 MB Salamander grand (CC-BY-3.0);
+`factory_patches.py` regenerates the shipped patches; `midifile_fixtures.py` regenerates the MIDI
+fixtures; `key-in-window.ps1` drives the window's keys from outside, which is how the transport was
+tested at all.
 
 ## Branches
 
-`main` is the shipped tree: source, tools, tests, `README`, `LICENSE`, `NOTICE`, `config`, `patches`
-and `docs/PRIVACY.md`. `develop` is where the work happens, and it also carries the working notes —
-`PLAN.md`, the `HANDOFF*` files and `docs/pr-*.md`. Those are a running record of decisions for
-whoever picks this up next, not documentation for a user, so they are not promoted: `main` is built
-from `develop` by `tools/promote_main.py` and is never a merge of it. Source comments that cite
-`PLAN.md §n` point at `develop`.
+`main` is the shipped tree: source, tools, tests, `config`, `patches`, `README`, `LICENSE`, `NOTICE`,
+`docs/PRIVACY.md`. `develop` is where the work happens, and it additionally carries the working notes
+for whoever picks this up next — a plan, handoffs, PR write-ups — which are not promoted. `main` is
+built from `develop` by `tools/promote_main.py` and is never a merge of it. Comments that cite
+`PLAN.md` point at `develop`.
+
+## License
+
+Boreaz's own source is under the **PolyForm Noncommercial License 1.0.0**: free to use, study, change
+and share for non-commercial purposes; selling it or using it commercially needs a separate agreement
+with the author. See `LICENSE`.
+
+Bundled third-party code and the sampled pianos keep their own terms, listed in `NOTICE`. Neither is
+covered by the non-commercial clause: the Salamander subset `tools/mkinst.py` cuts is CC-BY-3.0 and
+stays freely reusable under CC-BY, and the Upright Piano KW that `tools/mkinstrument.py` fetches is
+CC0 — public domain, no terms to keep.
