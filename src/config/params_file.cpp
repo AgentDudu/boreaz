@@ -2,6 +2,8 @@
 
 #include "boreaz/engine/param_table.h"
 
+#include <cctype>
+#include <charconv>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -16,6 +18,49 @@ namespace {
 bool exists(const std::string& path) {
     std::error_code ignored;
     return std::filesystem::is_regular_file(path, ignored);
+}
+
+// The header line. A number rather than a date so a future reader can tell which fields it may
+// expect; nothing reads it yet, and that is the point of writing it down before anything needs it.
+constexpr const char* kPatchHeader = "# boreaz patch format 1";
+
+// A name or a path with a newline in it would write a second header line and read back as something
+// else, so the newline goes and a space takes its place rather than the two words running together.
+std::string one_line(const std::string& text) {
+    std::string out = text;
+    for (char& c : out) {
+        if (c == '\n' || c == '\r')
+            c = ' ';
+    }
+    return out;
+}
+
+// The shortest text that reads back as the same float. `printf("%g")` gives six digits and loses a
+// slider position a tenth of a decibel away; `%.9g` keeps every bit but writes `0.100000001` for a
+// value the person set to 0.1. `to_chars` with no precision is the shortest round trip in both
+// directions, which is what makes "save, load, save, same bytes" a checkable claim instead of a
+// hope.
+std::string number_text(const boreaz::engine::ParamSpec& spec, float value) {
+    if (boreaz::engine::param_is_integer(spec)) {
+        // The reader refuses `octave_shift = 1.5`, and it would refuse `4.0` too: an integer row is
+        // written as an integer.
+        return std::to_string(static_cast<long long>(value));
+    }
+    char buffer[64];
+    const auto result = std::to_chars(buffer, buffer + sizeof buffer, value);
+    if (result.ec != std::errc{})
+        return "0"; // unreachable for a finite float; the caller refuses a non-finite value first
+    return std::string(buffer, result.ptr);
+}
+
+std::string trim(const std::string& text) {
+    std::size_t begin = 0;
+    std::size_t end = text.size();
+    while (begin < end && std::isspace(static_cast<unsigned char>(text[begin])))
+        ++begin;
+    while (end > begin && std::isspace(static_cast<unsigned char>(text[end - 1])))
+        --end;
+    return text.substr(begin, end - begin);
 }
 
 } // namespace
@@ -158,6 +203,80 @@ bool set_param_from_text(const std::string& flag, const std::string& key, const 
         return false;
     }
     return apply_value(*spec, key, value, params, flag, error);
+}
+
+bool save_params_file(const std::string& path, const Params& params, const std::string& name,
+                      const std::string& instrument, std::string& error) {
+    // Built in memory and written in one go. A patch file that stops half way through its
+    // parameters is a file that loads and is wrong, which is the one failure this format has to
+    // make impossible.
+    std::string body = kPatchHeader;
+    body += '\n';
+    if (!name.empty()) {
+        body += "# name: ";
+        body += one_line(name);
+        body += '\n';
+    }
+    if (!instrument.empty()) {
+        body += "# instrument: ";
+        body += one_line(instrument);
+        body += '\n';
+    }
+    body += '\n';
+
+    std::size_t rows = 0;
+    const boreaz::engine::ParamSpec* table = boreaz::engine::param_table(&rows);
+    for (std::size_t row = 0; row < rows; ++row) {
+        const boreaz::engine::ParamSpec& spec = table[row];
+        const float value = boreaz::engine::param_read(spec, params);
+        if (!std::isfinite(value)) {
+            error = std::string(spec.key) + " is not a number that can be read back";
+            return false;
+        }
+        body += spec.key;
+        body += " = ";
+        body += number_text(spec, value);
+        body += '\n';
+    }
+
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out) {
+        error = "cannot write '" + path + "'";
+        return false;
+    }
+    out << body;
+    out.flush();
+    if (!out) {
+        error = "writing '" + path + "' failed part way through";
+        return false;
+    }
+    return true;
+}
+
+bool read_patch_meta(const std::string& path, std::string& name, std::string& instrument,
+                     std::string& error) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        error = "cannot open '" + path + "'";
+        return false;
+    }
+    name.clear();
+    instrument.clear();
+    std::string line;
+    while (std::getline(in, line)) {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        // The header is the block of comments above the first parameter. Past that point a `#` is a
+        // comment about one parameter, not a field of the patch.
+        if (line.empty() || line[0] != '#')
+            break;
+        const std::string_view text = line;
+        if (text.starts_with("# instrument:"))
+            instrument = trim(line.substr(13));
+        else if (text.starts_with("# name:"))
+            name = trim(line.substr(7));
+    }
+    return true;
 }
 
 } // namespace boreaz::config

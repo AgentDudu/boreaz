@@ -1,4 +1,4 @@
-# HANDOFF — 2026-11-02 (seventh pass)
+# HANDOFF — 2026-11-04 (eighth pass)
 
 State of the session, what was decided, and what to do next. Read PLAN.md alongside this; where the
 two disagree on a number, this file is newer and PLAN is the thing that needs fixing.
@@ -7,13 +7,13 @@ two disagree on a number, this file is newer and PLAN is the thing that needs fi
 
 | | |
 |---|---|
-| develop | **`10f1532`** — PRs **#33** (the limiter, and the golden gate learning to compare), **#32** (the drive stage), **#31** (the CPU, measured), **#30** (the room waits for presets), **#29**, **#28** (the gate runs the app), **#27** (the real-time counters), #26 (the room) |
-| open PR | none. **This repo has no CI at all** — `origin` is GitHub, `gh api …/actions/workflows` is empty, `gh pr checks` says "no checks reported". The gate is `python tools/release_check.py`, run locally, and that is the only thing between a branch and develop |
-| current branch | `feat/the-mod-router` (PR open against `develop`; read the base back, this checkout's default is `main`) |
+| develop | **`5c78fcb`** + the merge of **#38** — PRs **#33** (the limiter, and the golden gate learning to compare), **#32** (the drive stage), **#31** (the CPU, measured), **#30** (the room waits for presets), **#29**, **#28** (the gate runs the app), **#27** (the real-time counters), #26 (the room) |
+| open PR | **#24** (docs, old), and that is all. **This repo has no CI at all** — `origin` is GitHub, `gh api …/actions/workflows` is empty, `gh pr checks` says "no checks reported". The gate is `python tools/release_check.py`, run locally, and that is the only thing between a branch and develop. **Commits reach develop only through a PR now** — direct pushes to `main` are blocked; I merge once the gate is green |
+| current branch | `develop`. Read the base back before a PR: this checkout's default is `main`, every PR here is against `develop` |
 | instrument on disk | `third_party/instruments/salamander/` — 208 WAVs, 147.3 MB, gitignored |
 | gate | `python tools/release_check.py` → `OK: every gate ran` (the app on a real device, and **the goldens compared by value** — hash and peak against constants; until #33 the gate only checked a hash was printed); `ctest --test-dir build` → 1/1, `ctest --test-dir build-asan` → 1/1; **no golden moved** |
 | instruments on disk | also `third_party/instruments/upright-piano-KW/` — 66 regions, 109 MB, the gate's default `--instrument` |
-| tests | **269**, 17 in `tests/test_mod_router.cpp` (the matrix by name, the units, the polarity, two sound claims), 17 in `tests/test_fx.cpp` (7 delay + bus, 5 room, 3 drive, 6 limiter) |
+| tests | **272**, 18 in `tests/test_live_params.cpp` (the one table, the file format, and the patch round trip), 17 in `tests/test_mod_router.cpp` (the matrix by name, the units, the polarity, two sound claims), 17 in `tests/test_fx.cpp` (7 delay + bus, 5 room, 3 drive, 6 limiter) |
 
 **Phase 8, one slice at a time.** In: `dsp::Delay` (ring per ear, 0.5 s, integer tap, feedback ≤
 0.95), `dsp::Reverb` (4 damped combs per ear on one shared mono excitation + 2 all-passes per ear,
@@ -23,7 +23,9 @@ seven table rows (`fx_distortion_mix/drive`, `fx_delay_mix/time_ms/feedback`,
 `fx_reverb_mix/seconds`). **The mod router is in too** — 8 slots, 7 sources × 7 destinations, 38 rows
 (four a slot, `mod1_source` … `mod8_unipolar`, plus the six `mod_env_*`/LFO-rate rows a cable cannot work
 without), which takes the table from 25 knobs to **63**, and 8.4 put the panel's side of it in (the two
-ends of a cable are lists, not sliders). Still out: polyBLEP. Nothing you hear changed either way: every
+ends of a cable are lists, not sliders). **8.5 (the sine table) and 8.6 (`env2_*` -> `mod_env_*`, so the file, the panel, the enum and the voice say one word) are in.** The phase is closed except polyBLEP, which is parked: the sine is what every oscillator here is running, and the aliased saw only reaches you through osc3 at 12 %.
+
+**Phase 9, patch files.** 9.1 is the format and the writer: `save_params_file(path, params, name, instrument, error)` in `config/params_file.cpp`, off the same 63-row table the reader and the panel use. A patch **is** a parameter file — a `# boreaz patch format 1` header with `# name:` and `# instrument:` as comments, then every key. The header is comments because the reader refuses unknown keys on purpose and a patch's name is not a parameter, so `--params mypatch.txt` loads a patch with no new code. The round trip is a test: 63 rows at min / max / default come back bit-exact, and save-load-save gives identical bytes. Nothing you hear changed either way: every
 send ships at silence and every slot ships unwired.
 
 ## What phase 8 costs (measured 2026-11-02, PR #31)
