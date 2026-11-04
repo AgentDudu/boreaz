@@ -14,7 +14,11 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstddef>
 #include <cstdio>
+#include <vector>
+
+#include "boreaz/io/directory.h"
 
 #include <d3d11.h>
 
@@ -90,7 +94,23 @@ struct AppWindow::Impl {
     bool focus_path = false; // the frame the field opens is the frame it takes the keyboard
     char path_field[512] = {0};
     std::string song_note;
+
+    // The folder the player is looking through for a song, and what it holds. Read on the click that
+    // asks for it and kept here, never taken every frame: the thread that pumps this window is the
+    // thread that feeds the audio ring, and a directory walk on that thread is a stutter you hear.
+    bool browsing = false;
+    std::string browse_folder;
+    std::string browse_note; // what a folder said when it refused to be listed
+    std::vector<boreaz::io::FolderEntry> browse_entries;
+    std::size_t browse_more = 0;
+    int browse_pick = -1; // the row the arrow keys are on; -1 is none of them
+    ImVec2 browse_at{0.0f, 0.0f}; // where the Browse button stood when it was pressed
 };
+
+// Rows the explorer draws at most. It is not a claim about what the folder holds - the count past it
+// is printed, and typing the rest of a name reaches the rest of the list. It exists because one
+// folder on a music machine holds 30 000 files and the listing is read on the audio thread's thread.
+constexpr std::size_t kBrowseRows = 300;
 
 namespace {
 void framebuffers_resized(GLFWwindow* window, int width, int height) {
@@ -331,6 +351,48 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
         std::snprintf(impl_->path_field, sizeof impl_->path_field, "%s", song_path_.c_str());
     };
 
+    // The folder listing. One walk per click, and a walk that failed leaves the listing that worked
+    // on screen with the reason under it: a junction the player has no business reading is not a
+    // reason to lose the folder they were standing in.
+    const auto show_folder = [this](const std::string& folder) -> bool {
+        std::string reason;
+        std::vector<boreaz::io::FolderEntry> entries;
+        std::size_t more = 0;
+        if (!boreaz::io::list_folder(folder, entries, kBrowseRows, more, reason)) {
+            impl_->browse_note = reason;
+            return false;
+        }
+        impl_->browse_note.clear();
+        impl_->browse_folder = folder;
+        impl_->browse_entries = std::move(entries);
+        impl_->browse_more = more;
+        impl_->browse_pick = -1;
+        return true;
+    };
+    const auto toggle_browse = [this, &show_folder] {
+        impl_->browsing = !impl_->browsing;
+        if (!impl_->browsing)
+            return;
+        if (!impl_->choosing_path)
+            // F3 with no path field open: the explorer goes where the field's row is, because the
+            // position the Browse button set is from a previous visit, and never set at all it is
+            // (0, 0) and the window lands in the corner of the screen.
+            impl_->browse_at = ImVec2{ImGui::GetWindowPos().x + 24.0f,
+                                      ImGui::GetWindowPos().y + 120.0f};
+        // Open where the song is, or where the name being typed will be. A name that is itself a
+        // folder opens as itself, which is what typing `D:\songs` and pressing Browse means.
+        const std::string seed =
+            impl_->path_field[0] != '\0' ? std::string{impl_->path_field} : song_path_;
+        if (show_folder(seed))
+            return;
+        // A bare name or an empty field means the folder the app is standing in, and it has to be the
+        // absolute one: "." lists that folder but has no parent, so Left answers the same listing
+        // twice and a player who was walking up has found a wall.
+        const std::string parent = boreaz::io::parent_folder(seed);
+        if (!show_folder(parent == "." ? boreaz::io::current_folder() : parent))
+            show_folder(boreaz::io::current_folder());
+    };
+
     DeviceStats device;
     MidiStats midi;
     if (stats)
@@ -438,6 +500,7 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
             song_path_ = path;
             impl_->song_note.clear();
             impl_->choosing_path = false;
+            impl_->browsing = false; // the file the player was looking for is the one that loaded
         } else {
             // The song that was playing keeps playing: a path that will not read is a typo, and a
             // typo has no business silencing a session.
@@ -449,6 +512,19 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
         ask_for_song(impl_->dropped);
         impl_->dropped.clear();
     }
+
+    // One row of the folder listing, from a click or from Enter. A folder is walked into; a file is
+    // put in the field and asked for, which is the same thing the Load button means and the reason
+    // there is one answer to "what does picking a song do" rather than two.
+    const auto pick_folder_entry = [this, &show_folder, &ask_for_song](
+                                       const boreaz::io::FolderEntry& entry) {
+        if (entry.folder) {
+            show_folder(entry.path);
+            return;
+        }
+        std::snprintf(impl_->path_field, sizeof impl_->path_field, "%s", entry.path.c_str());
+        ask_for_song(entry.path);
+    };
 
     if (song_path_.empty())
         ImGui::TextUnformatted("song: none - drop a .mid file on this window");
@@ -470,15 +546,39 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
             ImGui::SetKeyboardFocusHere(0);
             impl_->focus_path = false;
         }
+        // A path that will not read is said where it was typed: the field itself turns red and
+        // the reason goes on the line under it. This app has no console window to read, so a
+        // refusal that only reached stdout is a refusal the player never sees.
+        const bool refused = !impl_->song_note.empty();
+        if (refused) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{1.0f, 0.45f, 0.45f, 1.0f});
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4{0.34f, 0.10f, 0.10f, 1.0f});
+        }
         const bool entered =
             ImGui::InputText("##song_path", impl_->path_field, sizeof impl_->path_field,
                              ImGuiInputTextFlags_EnterReturnsTrue);
+        if (!impl_->song_note.empty())
+            ImGui::PopStyleColor(2);
         ImGui::SameLine();
         const bool pressed = ImGui::Button("Load");
+        ImGui::SameLine();
+        if (ImGui::Button("Browse"))
+            toggle_browse();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Look through the folders for a .mid or .midi file. Up and Down walk "
+                              "the list, Enter picks what is highlighted, Left goes out one folder "
+                              "and Escape closes it: F3 opens this without a mouse.");
+        // Where the explorer goes: under the button that opened it, which is where the eye already is.
+        impl_->browse_at = ImVec2{ImGui::GetItemRectMin().x, ImGui::GetItemRectMax().y + 6.0f};
         if (entered || pressed)
             ask_for_song(impl_->path_field);
+        if (!impl_->song_note.empty())
+            ImGui::TextColored(ImVec4{1.0f, 0.45f, 0.45f, 1.0f}, "%s",
+                               impl_->song_note.c_str());
     }
-    if (!impl_->song_note.empty()) {
+    if (!impl_->choosing_path && !impl_->song_note.empty()) {
+        // No field open to hold the reason: a file dropped on the window, or one a shortcut named,
+        // is refused in the line the player is looking at.
         ImGui::SameLine();
         ImGui::TextColored(ImVec4{1.0f, 0.45f, 0.45f, 1.0f}, "%s", impl_->song_note.c_str());
     }
@@ -576,6 +676,30 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
         // Enter.
         if (stroke.key == GLFW_KEY_F1 && stroke.action == GLFW_PRESS)
             toggle_path_field();
+        if (stroke.key == GLFW_KEY_F3 && stroke.action == GLFW_PRESS)
+            toggle_browse(); // the folders without a mouse, for the same reason F1 is the field
+        if (impl_->browsing && stroke.action == GLFW_PRESS) {
+            // Up and Down walk the listing, Enter picks the highlighted row, Escape shuts the folder.
+            // F-keys and arrows rather than letters because every letter on this keyboard is a pitch,
+            // and a folder reached only by clicking is a folder a hand that is on the keys has never
+            // seen - which is the same argument that put the path field on F1 and the views on F2.
+            const int rows = static_cast<int>(impl_->browse_entries.size());
+            if (stroke.key == GLFW_KEY_UP || stroke.key == GLFW_KEY_DOWN) {
+                const int step = stroke.key == GLFW_KEY_DOWN ? 1 : -1;
+                impl_->browse_pick =
+                    rows == 0 ? -1
+                    : impl_->browse_pick < 0 ? (step > 0 ? 0 : rows - 1)
+                                             : (impl_->browse_pick + step + rows) % rows;
+            } else if (stroke.key == GLFW_KEY_ESCAPE) {
+                impl_->browsing = false;
+            } else if (stroke.key == GLFW_KEY_LEFT) {
+                show_folder(boreaz::io::parent_folder(impl_->browse_folder));
+            } else if ((stroke.key == GLFW_KEY_ENTER || stroke.key == GLFW_KEY_KP_ENTER) &&
+                       impl_->browse_pick >= 0 && impl_->browse_pick < rows) {
+                pick_folder_entry(
+                    impl_->browse_entries[static_cast<std::size_t>(impl_->browse_pick)]);
+            }
+        }
         if (stroke.key == GLFW_KEY_F2 && stroke.action == GLFW_PRESS) {
             // F2 moves to the next view. The switcher is a row of buttons, and a view reachable
             // only by clicking is a view a hand that is on the keys never opens, which is the same
@@ -588,7 +712,8 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
             panel_ = table[next].kind;
         }
         if ((stroke.key == GLFW_KEY_ENTER || stroke.key == GLFW_KEY_KP_ENTER) &&
-            stroke.action == GLFW_PRESS && options_.transport.toggle && !impl_->choosing_path) {
+            stroke.action == GLFW_PRESS && options_.transport.toggle && !impl_->choosing_path &&
+            !impl_->browsing) {
             // Enter is the transport, and it calls the same thing the button calls: what one
             // press means is the transport's answer, not two answers that can disagree. It is
             // Enter rather than Space because Space is the sustain pedal, and it is not a
@@ -612,6 +737,48 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
     was_focused_ = focused;
 
     ImGui::End();
+
+    // The folder explorer, its own window like the mixer's: it is opened to find a file and closed to
+    // play one. There is deliberately no system dialog here - see the comment above ask_for_song, the
+    // one about the modal message loop and the thread that feeds the audio ring. What is here instead
+    // is a listing the app read once, on the click that asked for it.
+    if (impl_->browsing) {
+        ImGui::SetNextWindowPos(impl_->browse_at, ImGuiCond_Appearing);
+        ImGui::SetNextWindowSize(ImVec2{420.0f, 320.0f}, ImGuiCond_Appearing);
+        // NoNavInputs because the arrow keys and Enter in this window belong to the handler above,
+        // which knows what a folder list means, and not to ImGui's own focus walker, which does not:
+        // with both walking, one Enter press activates whatever ImGui had focused and whatever this
+        // handler had highlighted, and a song loads from a row the player never chose.
+        ImGui::Begin("song folders", nullptr,
+                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoNavInputs);
+        ImGui::TextUnformatted(impl_->browse_folder.c_str());
+        if (!impl_->browse_note.empty())
+            ImGui::TextColored(ImVec4{1.0f, 0.45f, 0.45f, 1.0f}, "%s",
+                               impl_->browse_note.c_str());
+        ImGui::Separator();
+        if (ImGui::SmallButton("Up one folder"))
+            show_folder(boreaz::io::parent_folder(impl_->browse_folder));
+        if (ImGui::SmallButton("Close"))
+            impl_->browsing = false;
+        ImGui::BeginChild("##rows", ImVec2{0.0f, 0.0f}, true);
+        for (std::size_t index = 0; index < impl_->browse_entries.size(); ++index) {
+            const boreaz::io::FolderEntry& entry = impl_->browse_entries[index];
+            const std::string label = entry.folder ? entry.name + "/" : entry.name;
+            if (ImGui::Selectable(label.c_str(),
+                                  static_cast<int>(index) == impl_->browse_pick))
+                pick_folder_entry(entry);
+        }
+        if (impl_->browse_more > 0) {
+            char rest[64];
+            std::snprintf(rest, sizeof rest, "...and at least %zu more. Type the rest of the name.",
+                          impl_->browse_more);
+            ImGui::TextUnformatted(rest);
+        }
+        if (impl_->browse_entries.empty() && impl_->browse_note.empty())
+            ImGui::TextUnformatted("no .mid or .midi files here");
+        ImGui::EndChild();
+        ImGui::End();
+    }
 
     // The mixer is a second window, drawn after the main one closes: it floats over the
     // keyboard on purpose, because it is opened to build a sound and closed to play one, and a

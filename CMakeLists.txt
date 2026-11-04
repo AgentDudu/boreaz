@@ -191,7 +191,8 @@ endif()
 # own thin winmm wrapper (see include/boreaz/io/midi_input.h).
 add_library(
   boreaz_io
-  STATIC src/io/midi_parser.cpp src/io/midi_input.cpp src/io/audio_device.cpp)
+  STATIC src/io/midi_parser.cpp src/io/midi_input.cpp src/io/audio_device.cpp
+         src/io/directory.cpp)
 target_include_directories(boreaz_io PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(boreaz_io PUBLIC boreaz_engine miniaudio)
 target_compile_features(boreaz_io PUBLIC cxx_std_20)
@@ -340,6 +341,7 @@ if(BOREAZ_BUILD_TESTS)
     tests/test_keyboard_layout.cpp
     tests/test_midi_parser.cpp
     tests/test_midifile.cpp
+    tests/test_directory.cpp
     tests/test_transport.cpp
     tests/test_io.cpp)
   if(WIN32)

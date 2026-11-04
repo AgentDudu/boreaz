@@ -21,9 +21,15 @@ if ($text -ne '') {
 }
 
 $scan = [int][W.U32]::MapVirtualKey([uint32]$vk, 0)
-$down = [IntPtr](1 -bor ($scan -shl 16))
-$up   = [IntPtr](1 -bor ($scan -shl 16) -bor 0x40000000 -bor 0x80000000)
+# The arrows, Home/End/PageUp/PageDown/Insert/Delete are extended keys: their make code has an 0xE0
+# prefix and GLFW reads that prefix from bit 24 of lParam. MAPVK_VK_TO_VSC_EX does not report the
+# prefix for these on this machine, so the list is spelled out: sent without it VK_DOWN arrives as
+# GLFW_KEY_KP_2 and the app never sees the key that was asked for.
+$extended = @(0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x2D, 0x2E)
+$ext = if ($extended -contains $vk) { 0x01000000 } else { 0 }
+$down = [IntPtr](1 -bor ($scan -shl 16) -bor $ext)
+$up   = [IntPtr]($down -bor 0x40000000 -bor 0x80000000)
 $null = [W.U32]::PostMessage($h, 0x0100, [IntPtr]$vk, $down)
 Start-Sleep -Milliseconds 90
 $null = [W.U32]::PostMessage($h, 0x0101, [IntPtr]$vk, $up)
-Write-Output "posted vk=$vk scan=$scan hwnd=$h"
+Write-Output "posted vk=$vk scan=$scan ext=$ext hwnd=$h"

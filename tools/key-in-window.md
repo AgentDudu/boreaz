@@ -18,7 +18,6 @@ file runs out, and that single line is enough to prove play, pause and resume fr
 `-text` posts `WM_CHAR` instead of a key, because that is the path a character takes to an ImGui text
 field: GLFW hands characters to ImGui itself, and they never reach the app's note queue.
 
-A **modifier cannot be posted this way.** GLFW takes its modifier state from the operating system, not
-from the message queue, so a posted `VK_CONTROL` arrives with `mods = 0` and the app cannot tell the
+A **modifier cannot be posted this way.** GLFW takes its modifier state from the operating system, not, so a posted `VK_CONTROL` arrives with `mods = 0` and the app cannot tell the
 key was typed with it held. Measured, not assumed: posting left-Ctrl then `O` gave the `O` stroke with
 `mods=0`. That is why every shortcut in this app is a bare key — Enter, Backspace, F1.
