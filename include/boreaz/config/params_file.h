@@ -22,11 +22,21 @@ bool load_params_file(const std::string& path, boreaz::engine::Params& params, s
 bool set_param_from_text(const std::string& flag, const std::string& key, const std::string& value,
                          boreaz::engine::Params& params, std::string& error);
 
+// The folder the running program itself sits in, absolute, or empty when the platform will not say.
+//
+// It exists because a release is a folder, not a working directory. The zip is `boreaz.exe` with
+// `config/` and `patches/` beside it, and the person who unzips it can start it from a shortcut or
+// a "Open with" that sets the working directory to `Documents` - which is how an instrument that
+// was tested all afternoon comes up saying it cannot find a file sitting next to it.
+std::string executable_folder();
+
 // The instrument's own defaults, `config/params.ini`, looked for in the working directory and then
-// up to three levels above it. A build tree lives below the repository, and the two ways of running
-// a build are from the repository root or from build/, so this is the difference between coming up
-// with the shipped defaults and coming up with none. When nothing is found the relative path comes
-// back unchanged, which is the name the load error will print.
+// up to three levels above it, and then beside the executable. A build tree lives below the
+// repository, and the two ways of running a build are from the repository root or from build/, so
+// the walk is the difference between coming up with the shipped defaults and coming up with none;
+// the executable's own folder is what makes the same true of a release started from anywhere else.
+// When nothing is found the name that comes back is where a release would put the file, which is
+// the name the load error prints.
 std::string defaults_path();
 
 // A path said the way the filesystem means it: absolute, with `.` and `..` gone, without touching
@@ -39,7 +49,8 @@ std::string defaults_path();
 std::string resolved_path(const std::string& path);
 
 // The directory patches are listed from and written to: `patches/` next to the repository or the
-// release, found by the same walk up the tree that `defaults_path` does, because a build tree sits
+// release, found by the same walk up the tree that `defaults_path` does and then beside the
+// executable, because a build tree sits
 // below the repository and the two ways of running a build are from the root or from `build/`. When
 // there is no such directory yet it answers `patches` anyway, which is the name the caller creates
 // on the first save and the name the failure message prints if it cannot. Absolute either way, so

@@ -19,6 +19,16 @@
 #include <string>
 #include <system_error>
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 namespace boreaz::config {
 namespace {
 
@@ -179,15 +189,49 @@ bool load_params_file(const std::string& path, Params& params, std::string& erro
     return true;
 }
 
+std::string executable_folder() {
+#ifdef _WIN32
+    // The wide API, not the narrow one: a release can live under a folder whose name the active code
+    // page cannot spell, and the narrow form answers in `?` characters that open nothing.
+    std::wstring buffer(1024, L'\0');
+    DWORD length = 0;
+    for (;;) {
+        length = ::GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+        if (length == 0)
+            return {}; // the API refused outright; there is no folder to name
+        // Truncation is reported as "the count reached the buffer size", because the count it
+        // returns excludes the terminator. Growing is cheap and it happens once, if at all.
+        if (length < buffer.size())
+            break;
+        if (buffer.size() >= 32768)
+            return {}; // a path this long is past what the filesystem opens anyway
+        buffer.resize(buffer.size() * 2);
+    }
+    const std::filesystem::path program{std::wstring_view{buffer.data(), length}};
+    return program.parent_path().string();
+#else
+    // Nothing else has a zip to place files beside yet. `/proc/self/exe` is three lines and a second
+    // platform to test, and it belongs with the first non-Windows release, not with this one.
+    return {};
+#endif
+}
+
 std::string defaults_path() {
     for (const char* prefix : {"", "../", "../../", "../../../"}) {
         const std::string candidate = std::string(prefix) + "config/params.ini";
         if (exists(candidate))
             return candidate;
     }
+    // The walk above is a build tree's, where the repository is a known number of folders up from
+    // `build/`. A release has no such relation to the working directory, so the folder the program
+    // stands in is asked last: it is the one that travels with the exe.
+    const std::string beside = executable_folder() + "/config/params.ini";
+    if (exists(beside))
+        return resolved_path(beside); // spelled the way the filesystem means it, like the miss below
     // Nothing to load. The caller's error message names this path, which is how the player finds
-    // out where the program looked instead of being told a file they can see is missing.
-    return "config/params.ini";
+    // out where the program looked instead of being told a file they can see is missing - so when
+    // the exe's own folder is known, the name given is the absolute one to put the file in.
+    return executable_folder().empty() ? "config/params.ini" : resolved_path(beside);
 }
 
 std::string resolved_path(const std::string& path) {
@@ -212,6 +256,14 @@ std::string patches_dir() {
         std::error_code ignored;
         if (std::filesystem::is_directory(candidate, ignored))
             return resolved_path(candidate);
+    }
+    // The same reason `defaults_path` asks the executable's own folder: a zip that ships its factory
+    // patches beside `boreaz.exe` should list them when it is started from a shortcut, not answer
+    // that there are no patches because the shortcut pointed the working directory at `Documents`.
+    if (!executable_folder().empty()) {
+        std::error_code ignored;
+        if (std::filesystem::is_directory(executable_folder() + "/patches", ignored))
+            return resolved_path(executable_folder() + "/patches");
     }
     // No such directory anywhere near. This is the name the caller creates on the first save, and
     // the name a failure message prints, so the player sees where it was written rather than being

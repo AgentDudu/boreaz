@@ -268,12 +268,23 @@ endif()
 
 # ---------------------------------------------------------------- application
 if(WIN32)
-  add_executable(boreaz src/app/main.cpp)
+  # The version the file properties show. Written from `project(boreaz VERSION ...)`, which is the
+  # same number `include/boreaz/version.h` is checked against above, so the exe a player sends a
+  # screenshot of and the header the code asks about cannot disagree.
+  configure_file("${CMAKE_CURRENT_SOURCE_DIR}/cmake/version.rc.in"
+                 "${CMAKE_CURRENT_BINARY_DIR}/boreaz_version.rc" @ONLY)
+  add_executable(boreaz src/app/main.cpp "${CMAKE_CURRENT_BINARY_DIR}/boreaz_version.rc")
   target_include_directories(boreaz PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
   target_link_libraries(boreaz PRIVATE boreaz_gui boreaz_io boreaz_config boreaz_engine boreaz_dsp
                       boreaz_midifile boreaz_samples boreaz_sfz)
   boreaz_set_warnings(boreaz)
   boreaz_link_runtime_staticly(boreaz)
+  if(MINGW AND CMAKE_BUILD_TYPE STREQUAL "Release")
+    # 6 290 036 bytes down to 3 966 990, measured by stripping a copy of this exe: what comes off is
+    # the symbol table, and a Release build has no source lines to keep anyway. Debug builds and the
+    # test and tool binaries keep their symbols, because that is where a stack trace is asked for.
+    target_link_options(boreaz PRIVATE -s)
+  endif()
 else()
   message(
     STATUS

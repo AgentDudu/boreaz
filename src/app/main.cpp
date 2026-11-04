@@ -2,8 +2,8 @@
 // the player says so; the policy of what a note means lives in the engine, and the geometry of a
 // key lives in the layout. What is here is argument parsing and a run loop, which is the smallest
 // honest description of an application shell.
-#include <atomic>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <csignal>
 #include <cstdio>
@@ -23,6 +23,7 @@
 #include "boreaz/midifile/midifile.h"
 #include "boreaz/midifile/transport.h"
 #include "boreaz/samples/sample_store.h"
+#include "boreaz/version.h"
 
 namespace {
 
@@ -38,7 +39,7 @@ void usage() {
 
   boreaz [--gui] [--device NAME] [--period 512] [--midi NAME] [--config params.ini]
              [--params other.ini] [--instrument piano.sfz] [song.mid] [--list-devices]
-             [--list-midi] [--help]
+             [--list-midi] [--version] [--help]
 
   --gui            open the window: 88 playable keys and a readout of what the audio
                    thread is doing. Without it the app runs headless until Ctrl+C,
@@ -62,6 +63,8 @@ void usage() {
                    because an instrument that will not load must not mean silence. Build one
                    with tools/mkinstrument.py; see boreaz-sfz-probe for what a mapping says.
   --no-instrument  the synthesiser, whatever else might have been configured.
+  --version        the version number, one line, and the program stops. The same number Explorer
+                   shows in the file's properties.
 
   The app remembers its own setup: the audio port, the MIDI port, the sample library, and the patch
   that was open when the window last closed. That is four names in %APPDATA%\Boreaz\settings.txt,
@@ -127,6 +130,12 @@ bool parse(int argc, char** argv, Options& options, std::string& error) {
         } else if (argument == "--help" || argument == "-h") {
             usage();
             std::exit(0);
+        } else if (argument == "--version") {
+            // One line, and nothing else started: no device, no window, no settings read. Asked from
+            // a script or a bug report, it is the cheapest way to know which build a machine has -
+            // the file properties say the same number, but not from a command line.
+            std::cout << "boreaz " << boreaz::kVersionString << std::endl;
+            std::exit(0);
         } else if (argument == "--gui") {
             options.gui = true;
         } else if (argument == "--list-devices") {
@@ -189,9 +198,10 @@ bool parse(int argc, char** argv, Options& options, std::string& error) {
 // path's deadline, which is the rule this program is built around (PLAN.md 3).
 void feed_spectrum(boreaz::gui::AppWindow& window, boreaz::dsp::SampleTap& tap,
                    boreaz::dsp::Analyser& wide, boreaz::dsp::Analyser& fast, float* drain) {
-    static_assert(boreaz::dsp::Analyser::band_count() == boreaz::gui::SpectrumSnapshot::kBandCount,
-                  "the analyser and the frame view disagree about how many bands there are, and one "
-                  "of them would read past the other");
+    static_assert(
+        boreaz::dsp::Analyser::band_count() == boreaz::gui::SpectrumSnapshot::kBandCount,
+        "the analyser and the frame view disagree about how many bands there are, and one "
+        "of them would read past the other");
 
     if (window.panel_kind() != boreaz::gui::PanelKind::kSpectrum) {
         // Nobody is looking. The ring is still drained, because letting it fill would count holes
@@ -483,15 +493,13 @@ int main(int argc, char** argv) {
     // transient has to light in the frame after it happens. The rate is the device's, not the one
     // that was asked for - a driver that answers 44100 would otherwise put every band at a pitch a
     // semitone off.
-    boreaz::dsp::Analyser wide_analyser(boreaz::dsp::Analyser::kWideWindow,
-                                        device.sample_rate());
-    boreaz::dsp::Analyser fast_analyser(boreaz::dsp::Analyser::kFastWindow,
-                                        device.sample_rate());
+    boreaz::dsp::Analyser wide_analyser(boreaz::dsp::Analyser::kWideWindow, device.sample_rate());
+    boreaz::dsp::Analyser fast_analyser(boreaz::dsp::Analyser::kFastWindow, device.sample_rate());
 
-    // The one display knob the plan puts in the setup file: how fast the spectrum's hold line falls.
-    // Read here and not in the panel, because the panel may no more read a file than open a device.
-    // A number out of range is a word to print and ignore, the same rule the file's reader gives every
-    // line it cannot use: a setup file is never the reason the instrument cannot start.
+    // The one display knob the plan puts in the setup file: how fast the spectrum's hold line
+    // falls. Read here and not in the panel, because the panel may no more read a file than open a
+    // device. A number out of range is a word to print and ignore, the same rule the file's reader
+    // gives every line it cannot use: a setup file is never the reason the instrument cannot start.
     if (!setup.peak_decay.empty()) {
         char* end = nullptr;
         const double fall = std::strtod(setup.peak_decay.c_str(), &end);
@@ -721,9 +729,10 @@ int main(int argc, char** argv) {
               << " frames, " << (device.cpu_fraction() * 100.0) << "% audio-thread cpu."
               << std::endl;
 
-    // The frame loop's own cost, in the log and not only on the screen. A panel that does maths has to
-    // say what the maths costs, and this is the number phase 11 said it could not measure: printed in
-    // microseconds per transform, from the analyser's own clock, on this machine, in this run.
+    // The frame loop's own cost, in the log and not only on the screen. A panel that does maths has
+    // to say what the maths costs, and this is the number phase 11 said it could not measure:
+    // printed in microseconds per transform, from the analyser's own clock, on this machine, in
+    // this run.
     if (wide_analyser.transform_count() != 0u || fast_analyser.transform_count() != 0u) {
         std::cout << "boreaz: spectrum " << wide_analyser.transform_count() << " long + "
                   << fast_analyser.transform_count() << " short transforms, "
