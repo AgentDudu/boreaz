@@ -46,8 +46,8 @@ FrameView make_frame_view(const boreaz::engine::Engine& engine, DeviceStats devi
         entry.note = static_cast<std::uint8_t>(voice.note());
         entry.key = static_cast<std::uint8_t>(voice.key());
         entry.channel = static_cast<std::uint8_t>(voice.channel());
-        entry.velocity = static_cast<std::uint8_t>(
-            std::clamp(voice.velocity(), 0.0f, 1.0f) * 127.0f);
+        entry.velocity =
+            static_cast<std::uint8_t>(std::clamp(voice.velocity(), 0.0f, 1.0f) * 127.0f);
         // Held means the key is still down. A note the sustain pedal is keeping alive is sounding
         // without being held, and unless the display tells those apart the keyboard lights keys
         // nobody is touching.

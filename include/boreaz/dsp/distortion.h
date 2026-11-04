@@ -1,7 +1,7 @@
 #pragma once
 
-// The third thing on the FX bus, and the only one that is not a send into a space: a driven grand is
-// a real patch and a driven synth is what the phase-2 engine needs, since two sine oscillators
+// The third thing on the FX bus, and the only one that is not a send into a space: a driven grand
+// is a real patch and a driven synth is what the phase-2 engine needs, since two sine oscillators
 // through a lowpass have no harmonics to speak of until something makes them.
 //
 // The curve is `tanh(drive·x) / drive`, which is chosen for two properties rather than for the

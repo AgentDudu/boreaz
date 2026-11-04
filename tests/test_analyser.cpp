@@ -3,8 +3,8 @@
 //
 // Synthetic buffers, on purpose. The plan's criteria for this panel are statements about known
 // frequencies and known levels, and a sine generated here is the only way to know both. What is not
-// here is what only a live window knows - whether the frame loop kept up, and what the analyser costs
-// per frame - and docs/ reports those separately.
+// here is what only a live window knows - whether the frame loop kept up, and what the analyser
+// costs per frame - and docs/ reports those separately.
 
 #include "boreaz/dsp/analyser.h"
 
@@ -28,7 +28,8 @@ double note_hz(int midi_note) {
 }
 
 // One window of a sine, written to both channels, then one transform. `hz` is deliberately not an
-// integer number of cycles per window, because a real note never is and the window has to cope anyway.
+// integer number of cycles per window, because a real note never is and the window has to cope
+// anyway.
 void push_one_window_of_sine(Analyser& analyser, double hz, double amplitude) {
     const int n = analyser.window_size();
     std::vector<float> block(static_cast<std::size_t>(n) * 2, 0.0f);
@@ -52,8 +53,8 @@ int peak_band(const Analyser& analyser) {
 }
 
 // The loudest reading in the three bands a note could plausibly land in: a filter bank that shares
-// bins at the bottom of the range spreads a low note over its neighbours, and the plan's criterion is
-// written as "the correct band and within one band of it" for exactly that reason.
+// bins at the bottom of the range spreads a low note over its neighbours, and the plan's criterion
+// is written as "the correct band and within one band of it" for exactly that reason.
 float level_at_note(const Analyser& analyser, int midi_note) {
     float best = Analyser::kFloorDb;
     for (int note = midi_note - 1; note <= midi_note + 1; ++note) {
@@ -106,8 +107,8 @@ TEST_CASE("a steady offset is not a low note") {
 
 TEST_CASE("two notes a fifth apart leave a valley between them") {
     Analyser analyser(Analyser::kWideWindow, kRate);
-    const double low = note_hz(60);         // C4
-    const double fifth = note_hz(67);       // G4
+    const double low = note_hz(60);   // C4
+    const double fifth = note_hz(67); // G4
     const int n = analyser.window_size();
     std::vector<float> block(static_cast<std::size_t>(n) * 2, 0.0f);
     for (int i = 0; i < n; ++i) {
@@ -140,27 +141,29 @@ TEST_CASE("a window that is not a power of two becomes the one that is") {
     CHECK(analyser.configure(9000, kRate) == Analyser::kMaxWindow);
     CHECK(analyser.configure(100, kRate) == Analyser::kMinWindow);
     CHECK(analyser.configure(8192, kRate) == 8192);
-    // A size asked for in the middle of nowhere is still a transform that exists, and the rate it was
-    // given is the rate the bins are cut at.
+    // A size asked for in the middle of nowhere is still a transform that exists, and the rate it
+    // was given is the rate the bins are cut at.
     CHECK(analyser.sample_rate() == kRate);
     analyser.set_sample_rate(44100.0);
     CHECK(analyser.sample_rate() == 44100.0);
 }
 
-TEST_CASE("a twenty millisecond burst in the top octave lights its band, and only the short window is fast enough to see it") {
+TEST_CASE("a twenty millisecond burst in the top octave lights its band, and only the short window "
+          "is fast enough to see it") {
     const double hz = note_hz(108); // C8
     const int burst_frames = static_cast<int>(0.020 * kRate);
 
     Analyser fast(Analyser::kFastWindow, kRate);
     std::vector<float> block(static_cast<std::size_t>(Analyser::kFastWindow) * 2, 0.0f);
     for (int i = 0; i < burst_frames; ++i) {
-        const float v = static_cast<float>(0.1 * std::sin(2.0 * kPi * hz * (static_cast<double>(i) / kRate)));
+        const float v =
+            static_cast<float>(0.1 * std::sin(2.0 * kPi * hz * (static_cast<double>(i) / kRate)));
         block[static_cast<std::size_t>(i * 2)] = v;
         block[static_cast<std::size_t>(i * 2 + 1)] = v;
     }
     fast.push(block.data(), burst_frames);
-    // One window's worth of silence after the burst: within two transforms the note has to be visible,
-    // which is what "a transient has to light now" means on a screen.
+    // One window's worth of silence after the burst: within two transforms the note has to be
+    // visible, which is what "a transient has to light now" means on a screen.
     fast.push(block.data(), Analyser::kFastWindow - burst_frames);
     REQUIRE(fast.transform());
     INFO("C8 reads " << fast.band_db_at_note(108) << " dB after one window");
@@ -169,7 +172,8 @@ TEST_CASE("a twenty millisecond burst in the top octave lights its band, and onl
 
     Analyser wide(Analyser::kWideWindow, kRate);
     wide.push(block.data(), Analyser::kFastWindow);
-    CHECK_FALSE(wide.transform()); // 2048 samples is not a window's worth at 8192: the long window has not finished listening
+    CHECK_FALSE(wide.transform()); // 2048 samples is not a window's worth at 8192: the long window
+                                   // has not finished listening
     CHECK(wide.transform_count() == 0);
 }
 
@@ -177,7 +181,8 @@ TEST_CASE("the peak holds, then falls at the rate the knob says") {
     Analyser analyser(Analyser::kFastWindow, kRate);
     analyser.set_peak_decay_db_per_second(20.0f);
     CHECK(analyser.peak_decay_db_per_second() == 20.0f);
-    analyser.set_peak_decay_db_per_second(-1.0f); // out of range clamps instead of drawing a rising peak
+    analyser.set_peak_decay_db_per_second(
+        -1.0f); // out of range clamps instead of drawing a rising peak
     CHECK(analyser.peak_decay_db_per_second() == 0.0f);
     analyser.set_peak_decay_db_per_second(20.0f);
 
@@ -187,8 +192,8 @@ TEST_CASE("the peak holds, then falls at the rate the knob says") {
     const float played = analyser.band_db_at_note(69);
     CHECK(analyser.peak_db_at_note(69) == played); // a peak snaps up the instant the note is there
 
-    // The hold line can only fall once the note has actually gone: while the band still reads the tone,
-    // the peak is the tone. So the decay is measured after a window of silence.
+    // The hold line can only fall once the note has actually gone: while the band still reads the
+    // tone, the peak is the tone. So the decay is measured after a window of silence.
     std::vector<float> quiet(static_cast<std::size_t>(Analyser::kFastWindow) * 2, 0.0f);
     analyser.push(quiet.data(), Analyser::kFastWindow);
     REQUIRE(analyser.transform());
@@ -197,13 +202,14 @@ TEST_CASE("the peak holds, then falls at the rate the knob says") {
     analyser.advance(1.0);
     CHECK(analyser.peak_db_at_note(69) == doctest::Approx(played - 20.0f).epsilon(0.02));
 
-    // And it stops falling at the floor rather than running to negative infinity, because the panel draws
-    // the peak as a height and a height below the panel is not a height.
+    // And it stops falling at the floor rather than running to negative infinity, because the panel
+    // draws the peak as a height and a height below the panel is not a height.
     analyser.advance(60.0);
     CHECK(analyser.peak_db_at_note(69) >= Analyser::kFloorDb);
 }
 
-TEST_CASE("a transform needs a window of new sound, and a drainer that is late counts what it missed") {
+TEST_CASE(
+    "a transform needs a window of new sound, and a drainer that is late counts what it missed") {
     Analyser analyser(Analyser::kFastWindow, kRate);
     std::vector<float> block(64 * 2, 0.0f);
     analyser.push(block.data(), 64);
@@ -237,7 +243,8 @@ TEST_CASE("the tap hands over what it still holds, oldest first") {
     REQUIRE(taken == 1024);
     for (int i = 0; i < taken; ++i) {
         const float marker = got[static_cast<std::size_t>(i * 2)];
-        CHECK(marker == static_cast<float>(i)); // everything written is still held: nothing was overtaken
+        CHECK(marker ==
+              static_cast<float>(i)); // everything written is still held: nothing was overtaken
         CHECK(got[static_cast<std::size_t>(i * 2 + 1)] == -marker);
     }
     CHECK(tap.read(got.data(), 1024) == 512);
@@ -255,9 +262,9 @@ TEST_CASE("ten thousand blocks with nobody draining neither block nor grow the r
     CHECK(tap.written_frames() == 10000 * 512);
     CHECK(tap.pending_frames() == SampleTap::kCapacityFrames);
 
-    // What is left is the sound that is happening now, which is the only thing a spectrum is for. The
-    // frames that were thrown away are counted when the reader comes back, because the reader is the one
-    // that can say what it missed.
+    // What is left is the sound that is happening now, which is the only thing a spectrum is for.
+    // The frames that were thrown away are counted when the reader comes back, because the reader
+    // is the one that can say what it missed.
     std::vector<float> got(static_cast<std::size_t>(SampleTap::kCapacityFrames) * 2);
     const int taken = tap.read(got.data(), SampleTap::kCapacityFrames);
     REQUIRE(taken == SampleTap::kCapacityFrames);
@@ -266,14 +273,16 @@ TEST_CASE("ten thousand blocks with nobody draining neither block nor grow the r
 }
 
 TEST_CASE("a hidden panel drains the sound and forgets the picture") {
-    // What the app does on every frame the spectrum is not the panel on screen: keep the ring empty, so
-    // the audio thread's copy never has to throw anything away, and reset the analyser, so switching the
-    // panel back starts from silence instead of from the last frame it happened to draw. A meter frozen
-    // at the level of a minute ago is a meter saying "nothing is playing", and that is not what it knows.
+    // What the app does on every frame the spectrum is not the panel on screen: keep the ring
+    // empty, so the audio thread's copy never has to throw anything away, and reset the analyser,
+    // so switching the panel back starts from silence instead of from the last frame it happened to
+    // draw. A meter frozen at the level of a minute ago is a meter saying "nothing is playing", and
+    // that is not what it knows.
     SampleTap tap;
     Analyser analyser(2048, kRate);
 
-    // Fewer frames than the ring holds, so "nothing was dropped" means the panel was away and not slow.
+    // Fewer frames than the ring holds, so "nothing was dropped" means the panel was away and not
+    // slow.
     std::vector<float> block(512 * 2, 0.25f);
     for (int i = 0; i < 12; ++i)
         tap.write(block.data(), 512);
@@ -300,6 +309,7 @@ TEST_CASE("a hidden panel drains the sound and forgets the picture") {
     push_one_window_of_sine(analyser, note_hz(45), 0.1);
     REQUIRE(analyser.transform());
     CHECK(std::abs(level_at_note(analyser, 45) - -20.0f) <= 1.5f);
-    // The old picture is gone, not merely dimmed: A4 sits far below the A2 that is actually sounding.
+    // The old picture is gone, not merely dimmed: A4 sits far below the A2 that is actually
+    // sounding.
     CHECK(analyser.band_db_at_note(69) < level_at_note(analyser, 45) - 40.0f);
 }

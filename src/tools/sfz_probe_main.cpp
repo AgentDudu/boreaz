@@ -87,13 +87,12 @@ int main(int argc, char** argv) {
         return 1;
     }
     std::cout << "load: " << loaded.files << " files, " << loaded.regions << " regions playable, "
-              << loaded.releases << " release recordings, "
-              << loaded.bytes / (1024u * 1024u) << " MB resident, " << loaded.refused
-              << " refused, " << loaded.load_ms << " ms\n";
+              << loaded.releases << " release recordings, " << loaded.bytes / (1024u * 1024u)
+              << " MB resident, " << loaded.refused << " refused, " << loaded.load_ms << " ms\n";
     // The store hands back the mapping's warnings followed by its own, which is what a caller that
     // only ever asks the store needs. This tool asked both, so the same ignored opcode arrived as a
-    // `reader:` line and a `loader:` line and looked like two problems. Only what the reader did not
-    // already say is worth another line.
+    // `reader:` line and a `loader:` line and looked like two problems. Only what the reader did
+    // not already say is worth another line.
     for (const std::string& warning : loaded.warnings)
         if (std::find(parsed.warnings.begin(), parsed.warnings.end(), warning) ==
             parsed.warnings.end())

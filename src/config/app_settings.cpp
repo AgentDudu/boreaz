@@ -34,10 +34,8 @@ struct Field {
 };
 
 const Field kFields[] = {
-    {"audio_device", &AppSettings::audio_device},
-    {"midi_port", &AppSettings::midi_port},
-    {"instrument", &AppSettings::instrument},
-    {"patch", &AppSettings::patch},
+    {"audio_device", &AppSettings::audio_device}, {"midi_port", &AppSettings::midi_port},
+    {"instrument", &AppSettings::instrument},     {"patch", &AppSettings::patch},
     {"peak_decay", &AppSettings::peak_decay},
 };
 

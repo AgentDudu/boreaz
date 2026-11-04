@@ -1,6 +1,6 @@
 #pragma once
 
-#include <initializer_list>  // for the two-candidate sweep in note_at
+#include <initializer_list> // for the two-candidate sweep in note_at
 
 namespace boreaz::gui {
 
@@ -33,11 +33,11 @@ struct Rect {
 // everything that decides *which* note is here, where it can be tested without a display.
 class KeyboardLayout {
   public:
-    static constexpr int kFirstNote = 21;         // A0
-    static constexpr int kLastNote = 108;         // C8
+    static constexpr int kFirstNote = 21;                        // A0
+    static constexpr int kLastNote = 108;                        // C8
     static constexpr int kKeyCount = kLastNote - kFirstNote + 1; // 88
-    static constexpr int kWhiteCount = 52;        // and 36 black, which is the other 36
-    static constexpr int kMiddleC = 60;           // C4, the one the view labels
+    static constexpr int kWhiteCount = 52; // and 36 black, which is the other 36
+    static constexpr int kMiddleC = 60;    // C4, the one the view labels
     static constexpr float kBlackWidthRatio = 0.6f;
     static constexpr float kBlackHeightRatio = 0.62f;
 
@@ -56,20 +56,18 @@ class KeyboardLayout {
 
     // False once a key is narrower than a pixel, at which point two adjacent keys answer the
     // same click and the view should draw a message instead of a keyboard it cannot play.
-    bool playable() const {
-        return width_ >= static_cast<float>(kKeyCount) && height_ >= 1.0f;
-    }
+    bool playable() const { return width_ >= static_cast<float>(kKeyCount) && height_ >= 1.0f; }
 
     static bool is_black(int note) {
         switch (note % 12) {
-        case 1:  // C#
-        case 3:  // D#
-        case 6:  // F#
-        case 8:  // G#
-        case 10: // A#
-            return true;
-        default:
-            return false;
+            case 1:  // C#
+            case 3:  // D#
+            case 6:  // F#
+            case 8:  // G#
+            case 10: // A#
+                return true;
+            default:
+                return false;
         }
     }
     static bool is_middle_c(int note) { return note == kMiddleC; }
@@ -112,7 +110,8 @@ class KeyboardLayout {
             // A black key straddles one seam, so only its two neighbours can be under the
             // pointer: the black note on this white's left seam and the one on its right.
             for (const int candidate : {white - 1, white + 1}) {
-                if (contains(candidate) && is_black(candidate) && black_rect(candidate).contains(px, py))
+                if (contains(candidate) && is_black(candidate) &&
+                    black_rect(candidate).contains(px, py))
                     return candidate;
             }
         }

@@ -80,8 +80,8 @@ TEST_CASE("message: what the engine cannot use is refused here, once, by everybo
     // 0xA0 polyphonic aftertouch, 0xC0 program change, 0xD0 channel pressure. System messages do
     // not reach a decoder that is asked about channel voices, and do not get an event either.
     const MidiMessage refused[] = {
-        MidiMessage{0xA0, 60, 64}, MidiMessage{0xC9, 89, 0},  MidiMessage{0xDF, 100, 0},
-        MidiMessage{0xF0, 0, 0},   MidiMessage{0xF8, 0, 0},   MidiMessage{0xFE, 0, 0},
+        MidiMessage{0xA0, 60, 64}, MidiMessage{0xC9, 89, 0}, MidiMessage{0xDF, 100, 0},
+        MidiMessage{0xF0, 0, 0},   MidiMessage{0xF8, 0, 0},  MidiMessage{0xFE, 0, 0},
     };
     for (const MidiMessage& message : refused) {
         INFO("status byte " << static_cast<int>(message.status));

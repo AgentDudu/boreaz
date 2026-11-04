@@ -92,15 +92,14 @@ Bytes meta(std::uint32_t delta, std::uint8_t type, const Bytes& payload) {
 }
 
 Bytes note_on(std::uint32_t delta, int channel, int note, int velocity) {
-    return cat(varlen(delta), Bytes{static_cast<std::uint8_t>(0x90 | channel),
-                                    static_cast<std::uint8_t>(note),
-                                    static_cast<std::uint8_t>(velocity)});
+    return cat(varlen(delta),
+               Bytes{static_cast<std::uint8_t>(0x90 | channel), static_cast<std::uint8_t>(note),
+                     static_cast<std::uint8_t>(velocity)});
 }
 
 Bytes note_off(std::uint32_t delta, int channel, int note) {
-    return cat(varlen(delta),
-               Bytes{static_cast<std::uint8_t>(0x80 | channel), static_cast<std::uint8_t>(note),
-                     0x40});
+    return cat(varlen(delta), Bytes{static_cast<std::uint8_t>(0x80 | channel),
+                                    static_cast<std::uint8_t>(note), 0x40});
 }
 
 Bytes bend(std::uint32_t delta, int channel, int value) {
@@ -110,9 +109,9 @@ Bytes bend(std::uint32_t delta, int channel, int value) {
 }
 
 Bytes control(std::uint32_t delta, int channel, int number, int value) {
-    return cat(varlen(delta), Bytes{static_cast<std::uint8_t>(0xB0 | channel),
-                                    static_cast<std::uint8_t>(number),
-                                    static_cast<std::uint8_t>(value)});
+    return cat(varlen(delta),
+               Bytes{static_cast<std::uint8_t>(0xB0 | channel), static_cast<std::uint8_t>(number),
+                     static_cast<std::uint8_t>(value)});
 }
 
 Bytes sysex(std::uint32_t delta, const Bytes& payload) {
@@ -222,7 +221,8 @@ TEST_CASE("midifile: messages become engine events at audio sample positions") {
     CHECK(loaded.song.events[3].bend_normalized() == doctest::Approx(2000.0 / 8192.0));
 }
 
-TEST_CASE("midifile: note on with velocity zero arrives as it was sent, because the engine decides") {
+TEST_CASE(
+    "midifile: note on with velocity zero arrives as it was sent, because the engine decides") {
     // Half of all encoders and every keyboard end a note this way, and phase 3's byte parser made
     // a point of passing it through: the one place that decides what it means is the engine. A file
     // layer that rewrote it would be a second answer to that question, and this file's first one
@@ -258,7 +258,8 @@ TEST_CASE("midifile: real time and system common bytes have no business in a fil
     CHECK(error_of(one_track({0x00, 0xF8})).find("real-time") != std::string::npos);
     CHECK(error_of(one_track({0x00, 0xF2, 0x00, 0x00})).find("system common") != std::string::npos);
     // A 0xF7 that starts an event is a sysex, and the byte after its length is data, not a status.
-    const LoadResult loaded = load(one_track(cat(sysex(0, {0x7E, 0x7F, 0x09, 0x01}), note_on(0, 0, 60, 90))));
+    const LoadResult loaded =
+        load(one_track(cat(sysex(0, {0x7E, 0x7F, 0x09, 0x01}), note_on(0, 0, 60, 90))));
     REQUIRE(loaded.ok);
     REQUIRE(loaded.song.events.size() == 1);
     CHECK(loaded.song.events[0].note == 60);
@@ -315,8 +316,8 @@ TEST_CASE("midifile: a file that promises tracks it does not deliver is refused,
     // Silence is the worst possible outcome of a corrupt file: it looks like success. A header that
     // promises two tracks and supplies one is a broken file, and saying so is the whole point of
     // the exit codes.
-    Bytes body = file_bytes(1, 2, 480, chunk("MTrk", cat(note_on(0, 0, 60, 90),
-                                                             {0x00, 0xFF, 0x2F, 0x00})));
+    Bytes body =
+        file_bytes(1, 2, 480, chunk("MTrk", cat(note_on(0, 0, 60, 90), {0x00, 0xFF, 0x2F, 0x00})));
     const LoadResult loaded = load(body);
     CHECK_FALSE(loaded.ok);
     INFO("said: " << loaded.error);
@@ -325,11 +326,11 @@ TEST_CASE("midifile: a file that promises tracks it does not deliver is refused,
 
 TEST_CASE("midifile: what cannot be played is dropped out loud, not quietly") {
     Bytes events;
-    events = cat(events, meta(0, 0x01, {'p', 'a', 'd'}));       // text: dropped silently, as promised
-    events = cat(events, meta(0, 0x7E, {0x01, 0x02}));          // unknown meta
-    events = cat(events, Bytes{0x00, 0xC0, 0x59});              // program change
-    events = cat(events, Bytes{0x00, 0xA0, 0x3C, 0x40});        // polyphonic aftertouch
-    events = cat(events, Bytes{0x00, 0xD0, 0x40});              // channel pressure
+    events = cat(events, meta(0, 0x01, {'p', 'a', 'd'})); // text: dropped silently, as promised
+    events = cat(events, meta(0, 0x7E, {0x01, 0x02}));    // unknown meta
+    events = cat(events, Bytes{0x00, 0xC0, 0x59});        // program change
+    events = cat(events, Bytes{0x00, 0xA0, 0x3C, 0x40});  // polyphonic aftertouch
+    events = cat(events, Bytes{0x00, 0xD0, 0x40});        // channel pressure
     const LoadResult loaded = load(one_track(events));
     REQUIRE(loaded.ok);
     CHECK(loaded.song.events.empty());
@@ -353,8 +354,8 @@ TEST_CASE("midifile: a broken tempo is refused rather than played at a guess") {
         CHECK(loaded.song.events[0].tick == 22050);
     }
     SUBCASE("a tempo event whose length is not 3 bytes") {
-        const LoadResult loaded = load(one_track(cat(meta(0, 0x51, {0x07, 0xA1}),
-                                                      note_on(480, 0, 60, 90))));
+        const LoadResult loaded =
+            load(one_track(cat(meta(0, 0x51, {0x07, 0xA1}), note_on(480, 0, 60, 90))));
         REQUIRE(loaded.ok);
         CHECK(loaded.song.tempos.empty());
         CHECK(mentions(loaded.warnings, "length is not 3"));
@@ -373,13 +374,13 @@ TEST_CASE("midifile: the tempo map moves time, and a tempo in another track stil
     // Halfway through, the quarter note doubles in length. The tick grid does not move; the sample
     // positions after the change do, which is the whole difference between a tempo map and a scale.
     Bytes conductor;
-    conductor = cat(conductor, meta(0, 0x51, {0x07, 0xA1, 0x20})); // 120 bpm
+    conductor = cat(conductor, meta(0, 0x51, {0x07, 0xA1, 0x20}));   // 120 bpm
     conductor = cat(conductor, meta(480, 0x51, {0x0F, 0x42, 0x40})); // 60 bpm
-    conductor = cat(conductor, meta(0, 0x58, {4, 2, 24, 8}));       // 4/4, reported and unused
+    conductor = cat(conductor, meta(0, 0x58, {4, 2, 24, 8}));        // 4/4, reported and unused
     Bytes notes;
     notes = cat(notes, note_on(0, 0, 60, 90));
-    notes = cat(notes, note_on(480, 0, 62, 90));  // at the tempo change
-    notes = cat(notes, note_on(480, 0, 64, 90));  // one quarter later
+    notes = cat(notes, note_on(480, 0, 62, 90)); // at the tempo change
+    notes = cat(notes, note_on(480, 0, 64, 90)); // one quarter later
 
     Bytes body = chunk("MTrk", cat(conductor, {0x00, 0xFF, 0x2F, 0x00}));
     const Bytes second = chunk("MTrk", cat(notes, {0x00, 0xFF, 0x2F, 0x00}));
@@ -391,25 +392,26 @@ TEST_CASE("midifile: the tempo map moves time, and a tempo in another track stil
     REQUIRE(loaded.song.events.size() == 3);
 
     CHECK(loaded.song.events[0].tick == 0);
-    CHECK(loaded.song.events[1].tick == 22050);  // 0.5 s, at 120 bpm
-    CHECK(loaded.song.events[2].tick == 66150);  // plus 1.0 s, at 60 bpm
+    CHECK(loaded.song.events[1].tick == 22050); // 0.5 s, at 120 bpm
+    CHECK(loaded.song.events[2].tick == 66150); // plus 1.0 s, at 60 bpm
     CHECK(loaded.song.time_signatures.size() == 1);
     INFO("reported as: " << (loaded.song.time_signatures.empty() ? "(nothing)"
-                                                                : loaded.song.time_signatures[0]));
+                                                                 : loaded.song.time_signatures[0]));
     CHECK(loaded.song.time_signatures[0].find("4/4") != std::string::npos);
     // Tick 480, not 0: the meta events share one track, and a delta time is relative to the tempo
     // event that precedes it. That is exactly the trap this format sets for a parser that reads
     // events as if they were absolute.
     CHECK(loaded.song.time_signatures[0].find("tick 480") != std::string::npos);
-    CHECK(loaded.song.time_signatures[0].find("4/2") == std::string::npos); // the byte is an exponent
+    CHECK(loaded.song.time_signatures[0].find("4/2") ==
+          std::string::npos); // the byte is an exponent
 }
 
 TEST_CASE("midifile: tracks merge in sample order and keep their own order inside one sample") {
     const auto two_tracks = [](int first_channel, int second_channel) {
-        Bytes body = chunk("MTrk", cat(note_on(0, first_channel, 60, 90),
-                                       {0x00, 0xFF, 0x2F, 0x00}));
-        const Bytes second = chunk("MTrk", cat(note_on(0, second_channel, 64, 90),
-                                               {0x00, 0xFF, 0x2F, 0x00}));
+        Bytes body =
+            chunk("MTrk", cat(note_on(0, first_channel, 60, 90), {0x00, 0xFF, 0x2F, 0x00}));
+        const Bytes second =
+            chunk("MTrk", cat(note_on(0, second_channel, 64, 90), {0x00, 0xFF, 0x2F, 0x00}));
         body.insert(body.end(), second.begin(), second.end());
         return load(file_bytes(1, 2, 480, body));
     };
@@ -428,7 +430,8 @@ TEST_CASE("midifile: tracks merge in sample order and keep their own order insid
     CHECK(swapped.song.events[1].channel == 0);
 }
 
-TEST_CASE("midifile: tick and sample positions agree, and the tail leaves room for the last release") {
+TEST_CASE(
+    "midifile: tick and sample positions agree, and the tail leaves room for the last release") {
     Bytes conductor;
     conductor = cat(conductor, meta(0, 0x51, {0x07, 0xA1, 0x20}));
     conductor = cat(conductor, meta(960, 0x51, {0x03, 0xD0, 0x90})); // 240 bpm
@@ -455,7 +458,8 @@ TEST_CASE("midifile: the four committed fixtures parse into what their recipe sa
     const std::filesystem::path dir{BOREAZ_FIXTURE_DIR};
 
     SUBCASE("lead-simple: one melody, one tempo, nothing dropped") {
-        const LoadResult loaded = boreaz::midifile::load_file((dir / "lead-simple.mid").string(), kRate);
+        const LoadResult loaded =
+            boreaz::midifile::load_file((dir / "lead-simple.mid").string(), kRate);
         REQUIRE(loaded.ok);
         CHECK(loaded.warnings.empty());
         CHECK(loaded.song.format == 0);
@@ -463,11 +467,13 @@ TEST_CASE("midifile: the four committed fixtures parse into what their recipe sa
         CHECK(loaded.song.tempos.size() == 1);
         REQUIRE(loaded.song.events.size() == 19); // 8 on, 8 off, 1 volume, 2 bend
         // The volume wheel is the first thing at tick 0 because the recipe puts it there, and the
-        // order inside one tick is the order in the file, which is what makes a render reproducible.
+        // order inside one tick is the order in the file, which is what makes a render
+        // reproducible.
         CHECK(loaded.song.events[0].type == EventType::kControlChange);
         CHECK(loaded.song.events[1].type == EventType::kNoteOn);
         CHECK(loaded.song.events[1].note == 60);
-        CHECK(loaded.song.events.back().note == 108 - 12); // the recipe's last note: C8 minus an octave
+        CHECK(loaded.song.events.back().note ==
+              108 - 12); // the recipe's last note: C8 minus an octave
     }
 
     SUBCASE("bass-running-status: dropped status bytes and velocity zero note offs") {
@@ -490,10 +496,12 @@ TEST_CASE("midifile: the four committed fixtures parse into what their recipe sa
     }
 
     SUBCASE("pad-chords: four tracks, a tempo change in another track, and dropped parts named") {
-        const LoadResult loaded = boreaz::midifile::load_file((dir / "pad-chords.mid").string(), kRate);
+        const LoadResult loaded =
+            boreaz::midifile::load_file((dir / "pad-chords.mid").string(), kRate);
         REQUIRE(loaded.ok);
         CHECK(loaded.song.format == 1);
-        REQUIRE(loaded.song.events.size() == 48); // 24 notes want to sound, and 16 of them will steal
+        REQUIRE(loaded.song.events.size() ==
+                48); // 24 notes want to sound, and 16 of them will steal
         CHECK(loaded.song.tempos.size() == 2);
         REQUIRE(loaded.song.time_signatures.size() == 2);
         CHECK(loaded.song.time_signatures[1].find("3/4") != std::string::npos);
@@ -505,7 +513,8 @@ TEST_CASE("midifile: the four committed fixtures parse into what their recipe sa
         for (std::size_t i = 0; i < loaded.song.events.size(); ++i)
             if (loaded.song.events[i].channel == 1) {
                 first_channel_one = i;
-                break; // the first one: without this the loop reports the last, and 35 looks plausible
+                break; // the first one: without this the loop reports the last, and 35 looks
+                       // plausible
             }
         CHECK(first_channel_one == 6);
         CHECK(loaded.song.events[0].tick == loaded.song.events[6].tick);
@@ -539,14 +548,16 @@ TEST_CASE("midifile: the four committed fixtures parse into what their recipe sa
             previous_sample = event.tick;
         }
         CHECK(notes == 88);
-        CHECK(seen[21]);   // A0
-        CHECK(seen[108]);  // C8
+        CHECK(seen[21]);  // A0
+        CHECK(seen[108]); // C8
         CHECK(previous_velocity == 120);
     }
 }
 
-TEST_CASE("midifile: the same file renders identically twice, which is what a golden is allowed to mean") {
-    const std::string path = (std::filesystem::path{BOREAZ_FIXTURE_DIR} / "glissando-88.mid").string();
+TEST_CASE("midifile: the same file renders identically twice, which is what a golden is allowed to "
+          "mean") {
+    const std::string path =
+        (std::filesystem::path{BOREAZ_FIXTURE_DIR} / "glissando-88.mid").string();
     const LoadResult first = boreaz::midifile::load_file(path, kRate);
     const LoadResult second = boreaz::midifile::load_file(path, kRate);
     REQUIRE(first.ok);
@@ -567,8 +578,8 @@ TEST_CASE("midifile: the same file renders identically twice, which is what a go
         std::vector<float> block(2 * 256, 0.0f);
         std::size_t cursor = 0;
         for (std::int64_t done = 0; done < song.end_sample; done += 256) {
-            const int frames = static_cast<int>(
-                std::min<std::int64_t>(256, song.end_sample - done));
+            const int frames =
+                static_cast<int>(std::min<std::int64_t>(256, song.end_sample - done));
             cursor = boreaz::midifile::feed_and_render(engine, song, cursor, block.data(), frames)
                          .cursor;
             out.insert(out.end(), block.begin(), block.begin() + frames * 2);
@@ -605,7 +616,9 @@ std::string trim(std::string text) {
 // line is wrapped in a pair of its own. Without that wrapper every path here is quoted and nothing
 // runs - and std::system reports that as 1, the same code a real failure returns, which is how a
 // test for a renderer can spend an afternoon blaming the renderer.
-std::string shell(const std::string& command) { return "\"" + command + "\""; }
+std::string shell(const std::string& command) {
+    return "\"" + command + "\"";
+}
 
 int run_tool(const std::string& arguments) {
     return std::system(shell(quote(BOREAZ_RENDER_TOOL) + " " + arguments + " >nul 2>&1").c_str());
@@ -614,7 +627,7 @@ int run_tool(const std::string& arguments) {
 int run_tool_captured(const std::string& arguments, const std::filesystem::path& capture) {
     return std::system(shell(quote(BOREAZ_RENDER_TOOL) + " " + arguments + " >" +
                              quote(capture.string()) + " 2>&1")
-                            .c_str());
+                           .c_str());
 }
 
 std::vector<char> read_binary(const std::filesystem::path& path) {
@@ -655,7 +668,8 @@ double wav_peak(const std::vector<char>& bytes) {
     double loudest = 0.0;
     for (std::size_t i = 0; i < samples; ++i) {
         const std::int16_t sample = static_cast<std::int16_t>(le16(bytes, 44 + i * 2));
-        loudest = std::max(loudest, static_cast<double>(std::abs(static_cast<int>(sample))) / 32768.0);
+        loudest =
+            std::max(loudest, static_cast<double>(std::abs(static_cast<int>(sample))) / 32768.0);
     }
     return loudest;
 }
@@ -689,12 +703,12 @@ TEST_CASE("boreaz-render: a MIDI file in, a WAV file out, and twice is the same 
     CHECK(four_cc(wav, 0, "RIFF"));
     CHECK(four_cc(wav, 8, "WAVE"));
     CHECK(four_cc(wav, 12, "fmt "));
-    CHECK(le16(wav, 20) == 1);                // PCM, not a codec
-    CHECK(le16(wav, 22) == 2);                // stereo, because the engine is
+    CHECK(le16(wav, 20) == 1); // PCM, not a codec
+    CHECK(le16(wav, 22) == 2); // stereo, because the engine is
     CHECK(le32(wav, 24) == 44100);
     CHECK(le16(wav, 34) == 16);
     CHECK(four_cc(wav, 36, "data"));
-    CHECK(le32(wav, 40) == wav.size() - 44);  // the sizes were patched, not left as placeholders
+    CHECK(le32(wav, 40) == wav.size() - 44); // the sizes were patched, not left as placeholders
     CHECK(le32(wav, 4) == wav.size() - 8);
 
     // Same command, same bytes. This is the criterion the plan calls CI-comparable: a machine
@@ -761,8 +775,8 @@ TEST_CASE("boreaz-render: the committed goldens still match a render") {
 #else
     constexpr const char* kGoldenFile = "midifile.txt";
 #endif
-    const std::filesystem::path golden_path{
-        std::string{BOREAZ_SOURCE_DIR} + "/tests/golden/" + kGoldenFile};
+    const std::filesystem::path golden_path{std::string{BOREAZ_SOURCE_DIR} + "/tests/golden/" +
+                                            kGoldenFile};
     REQUIRE(std::filesystem::exists(golden_path));
 
     const auto dir = std::filesystem::temp_directory_path() / "boreaz_golden_tests";
@@ -782,16 +796,16 @@ TEST_CASE("boreaz-render: the committed goldens still match a render") {
         const std::string name = expected.substr(equals + 5, space - 5);
 
         REQUIRE(run_tool_captured("--golden " + fixture(name), capture) == 0);
-        // The tool says out loud what it dropped, on stderr, and the capture merges the two streams.
-        // The golden is the measurement, so take that line and nothing else: a fixture gaining a
-        // warning is worth knowing about, but it is not audio drift.
+        // The tool says out loud what it dropped, on stderr, and the capture merges the two
+        // streams. The golden is the measurement, so take that line and nothing else: a fixture
+        // gaining a warning is worth knowing about, but it is not audio drift.
         const std::string captured = read_text(capture);
         const std::size_t start = captured.find("name=");
         INFO("the tool printed no measurement line at all: " << captured);
         REQUIRE(start != std::string::npos);
         const std::string actual = trim(captured.substr(start, captured.find('\n', start) - start));
-        INFO("golden drift for " << name << "\n  committed: " << expected << "\n  rendered:  "
-                                << actual);
+        INFO("golden drift for " << name << "\n  committed: " << expected
+                                 << "\n  rendered:  " << actual);
         // If this fails on purpose - a new oscillator, a different limiter - regenerate the file
         // with the command in --help and say why in the commit message. A golden that is quietly
         // refreshed has stopped protecting anything.

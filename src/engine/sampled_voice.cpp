@@ -37,9 +37,8 @@ double clamp_increment(double value) {
 // release from being a click is not a reason to stretch an attack that was chosen at 2 ms, and the
 // two ramps are not the same decision.
 std::int64_t ramp_frames(double seconds, float sample_rate) {
-    const double frames =
-        std::clamp(seconds, 0.0, static_cast<double>(kMaxReleaseSeconds)) *
-        static_cast<double>(sample_rate);
+    const double frames = std::clamp(seconds, 0.0, static_cast<double>(kMaxReleaseSeconds)) *
+                          static_cast<double>(sample_rate);
     return static_cast<std::int64_t>(frames + 0.5);
 }
 
@@ -86,8 +85,7 @@ void SampledVoice::start(const NoteRequest& request, const Params& params, doubl
     ending_ = false;
     key_pan(key_, params.pan_spread, pan_left_, pan_right_);
 
-    const int midi_velocity =
-        std::clamp(static_cast<int>(velocity_ * 127.0f + 0.5f), 1, 127);
+    const int midi_velocity = std::clamp(static_cast<int>(velocity_ * 127.0f + 0.5f), 1, 127);
     // A release voice asks the other question of the same instrument, and gets nullptr when the
     // library has no release recordings - which lands in the silence path below, so a library of
     // attacks alone costs one extra call per note-off and nothing else.
@@ -121,9 +119,9 @@ void SampledVoice::start(const NoteRequest& request, const Params& params, doubl
 
     // `amp_veltrack` says how much of the file's own dynamics to keep: at 0 the recording plays at
     // the same level however hard the key was hit, at 100 it follows the velocity curve exactly.
-    peak_gain_ = std::clamp(sample_->gain * (1.0f - sample_->velocity_tracking *
-                                                             (1.0f - velocity_gain(velocity_))),
-                            0.0f, 4.0f);
+    peak_gain_ = std::clamp(
+        sample_->gain * (1.0f - sample_->velocity_tracking * (1.0f - velocity_gain(velocity_))),
+        0.0f, 4.0f);
     ramp_to(peak_gain_, ramp_frames(static_cast<double>(kAttackSeconds), sample_rate_));
     state_ = State::kDown;
 }
@@ -133,13 +131,14 @@ void SampledVoice::release(const Params& params, std::int64_t tick) {
         return;
     state_ = State::kReleased;
     release_tick_ = tick;
-    // The key letting go is the end of the note. The loop only decides whether the recording *would*
-    // have carried on, and holding a looping voice open forever is how a 16-voice pool turns into
-    // one that never steals: `off` stops it, and the release time the user set says how politely.
+    // The key letting go is the end of the note. The loop only decides whether the recording
+    // *would* have carried on, and holding a looping voice open forever is how a 16-voice pool
+    // turns into one that never steals: `off` stops it, and the release time the user set says how
+    // politely.
     ending_ = true;
     ramp_to(0.0f, ramp_frames(std::max(static_cast<double>(params.amp_release_s),
-                                            static_cast<double>(kMinRampSeconds)),
-                            sample_rate_));
+                                       static_cast<double>(kMinRampSeconds)),
+                              sample_rate_));
 }
 
 void SampledVoice::silence(std::int64_t tick) {
@@ -170,8 +169,8 @@ void SampledVoice::set_frequency(float hertz, const Params& params) {
     // The engine sends the new target pitch for the same note, so the ratio between the two *is*
     // the bend. Applied to the read-head, which is what a sample's pitch actually is; the head
     // position survives, so it glides instead of starting the recording again.
-    increment_ = clamp_increment(increment_ * (static_cast<double>(hertz) /
-                                               static_cast<double>(frequency_)));
+    increment_ = clamp_increment(increment_ *
+                                 (static_cast<double>(hertz) / static_cast<double>(frequency_)));
     frequency_ = hertz;
 }
 
@@ -182,10 +181,9 @@ void SampledVoice::retune(int semitones, const Params& params) {
     // ringing through the change instead of restarting. This is what makes a transposed piano sound
     // like a piano being transposed and not a tape stop.
     note_ = std::clamp(note_ + semitones, 0, 127);
-    set_frequency(clamp_pitch(frequency_ *
-                                  static_cast<float>(
-                                      std::exp2(static_cast<double>(semitones) / 12.0)),
-                                  sample_rate_),
+    set_frequency(clamp_pitch(frequency_ * static_cast<float>(
+                                               std::exp2(static_cast<double>(semitones) / 12.0)),
+                              sample_rate_),
                   params);
 }
 

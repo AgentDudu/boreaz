@@ -36,7 +36,9 @@ std::string describe(MMRESULT result) {
 bool contains(const std::string& haystack, const std::string& needle) {
     if (needle.empty())
         return true;
-    const auto ci = [](char c) { return static_cast<char>(std::tolower(static_cast<unsigned char>(c))); };
+    const auto ci = [](char c) {
+        return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    };
     return std::search(haystack.begin(), haystack.end(), needle.begin(), needle.end(),
                        [&](char a, char b) { return ci(a) == ci(b); }) != haystack.end();
 }
@@ -97,9 +99,9 @@ bool MidiInput::open_port(const Port& port, engine::Engine& engine, std::string&
     name_ = port.name;
 
     HMIDIIN handle = nullptr;
-    MMRESULT result = midiInOpen(&handle, port.index,
-                                 reinterpret_cast<DWORD_PTR>(&on_winmm_message),
-                                 reinterpret_cast<DWORD_PTR>(this), CALLBACK_FUNCTION);
+    MMRESULT result =
+        midiInOpen(&handle, port.index, reinterpret_cast<DWORD_PTR>(&on_winmm_message),
+                   reinterpret_cast<DWORD_PTR>(this), CALLBACK_FUNCTION);
     if (result != MMSYSERR_NOERROR) {
         engine_ = nullptr;
         name_.clear();
@@ -201,6 +203,5 @@ void MidiInput::on_message(std::uint32_t packed) {
     if (event && engine != nullptr)
         engine->push_event(*event);
 }
-
 
 } // namespace boreaz::io

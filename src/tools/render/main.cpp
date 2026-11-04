@@ -152,16 +152,17 @@ void usage() {
         column += static_cast<int>(item.size());
     }
     std::printf("\n");
-    std::printf("  --rate N    output sample rate in Hz (default 44100)\n"
-                "  --gain DB   master output level in dB, -72 to +12, instead of the PARAMS file's "
-                "master_gain_db\n"
-                "  --instrument FILE  play a recorded instrument instead of the synthesiser, so a\n"
-                "              rendered WAV is the audio the app would have made\n"
-                "  --counters  report page faults and file reads around the engine call: the load,\n"
-                "              the first 32 blocks, and every block after them. Zero reads and zero\n"
-                "              faults in the last line is the real-time promise, measured\n"
-                "\n"
-                "Exit status: 0 ok, 2 bad usage, 3 input unreadable, 4 output unwritable.\n");
+    std::printf(
+        "  --rate N    output sample rate in Hz (default 44100)\n"
+        "  --gain DB   master output level in dB, -72 to +12, instead of the PARAMS file's "
+        "master_gain_db\n"
+        "  --instrument FILE  play a recorded instrument instead of the synthesiser, so a\n"
+        "              rendered WAV is the audio the app would have made\n"
+        "  --counters  report page faults and file reads around the engine call: the load,\n"
+        "              the first 32 blocks, and every block after them. Zero reads and zero\n"
+        "              faults in the last line is the real-time promise, measured\n"
+        "\n"
+        "Exit status: 0 ok, 2 bad usage, 3 input unreadable, 4 output unwritable.\n");
 }
 
 bool parse_arguments(int argc, char** argv, Options& options, std::string& error) {
@@ -420,10 +421,10 @@ int main(int argc, char** argv) {
         const auto tick = std::chrono::steady_clock::now();
         const boreaz::midifile::FeedResult fed = boreaz::midifile::feed_and_render(
             engine, song, cursor, block.data(), static_cast<int>(want));
-        engine_ns += static_cast<std::uint64_t>(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() -
-                                                                 tick)
-                .count());
+        engine_ns +=
+            static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                           std::chrono::steady_clock::now() - tick)
+                                           .count());
         if (options.counters) {
             const Counters cost = counters_now() - before;
             (block_index++ < kWarmBlocks ? warm : steady) += cost;
@@ -450,7 +451,8 @@ int main(int argc, char** argv) {
             std::printf("  counters         not measured on this platform\n");
         } else {
             const auto u = [](std::uint64_t v) { return static_cast<unsigned long long>(v); };
-            std::printf("  counters         page faults / file reads / file writes around the engine\n");
+            std::printf(
+                "  counters         page faults / file reads / file writes around the engine\n");
             std::printf("    loading          %llu / %llu / %llu\n", u(load_cost.faults),
                         u(load_cost.reads), u(load_cost.writes));
             std::printf("    first %d blocks  %llu / %llu / %llu\n", kWarmBlocks, u(warm.faults),

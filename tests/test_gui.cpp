@@ -26,9 +26,9 @@ using boreaz::gui::DeviceStats;
 using boreaz::gui::FrameView;
 using boreaz::gui::KeyboardLayout;
 using boreaz::gui::MidiStats;
-using boreaz::gui::PanelKind;
 using boreaz::gui::panel;
 using boreaz::gui::panel_table;
+using boreaz::gui::PanelKind;
 using fixture::kRate;
 using fixture::render;
 
@@ -155,8 +155,9 @@ TEST_CASE("the frame carries the device and port numbers the strip reads") {
 }
 
 TEST_CASE("one key with two voices keeps both envelopes apart") {
-    INFO("A retrigger during a release is normal. The frame lists voices, not keys, because folding "
-         "them is the view's one job and a frame that lost the difference could not show it.");
+    INFO(
+        "A retrigger during a release is normal. The frame lists voices, not keys, because folding "
+        "them is the view's one job and a frame that lost the difference could not show it.");
     Params params;
     boreaz::engine::Engine engine(params);
     engine.prepare(kRate);
@@ -184,11 +185,13 @@ TEST_CASE("one key with two voices keeps both envelopes apart") {
 TEST_SUITE_END();
 
 TEST_CASE("a frame the audio thread built has no transport") {
-    INFO("The transport's position is a song's position, not the uptime of the driver: the audio "
-         "thread counts samples from the moment the device opens, so a panel that reads that number "
-         "shows a stopwatch on an empty screen. The frame carries the transport separately, and a "
-         "frame built straight off a running engine - device open, position advancing, nothing played "
-         "- carries one that has not started.");
+    INFO(
+        "The transport's position is a song's position, not the uptime of the driver: the audio "
+        "thread counts samples from the moment the device opens, so a panel that reads that number "
+        "shows a stopwatch on an empty screen. The frame carries the transport separately, and a "
+        "frame built straight off a running engine - device open, position advancing, nothing "
+        "played "
+        "- carries one that has not started.");
     FrameView empty;
     empty.device.sample_rate = 48000.0;
     empty.sample_position = 48000;
@@ -208,7 +211,8 @@ TEST_CASE("a frame the audio thread built has no transport") {
 TEST_CASE("a sounding voice says how long it has been sounding") {
     INFO("A transport that trails a note has to know where the note started, and the voice already "
          "knows: age() is the difference between the position it started on and the position the "
-         "frame was taken at. Carrying that across is what lets a strip draw a note's length instead "
+         "frame was taken at. Carrying that across is what lets a strip draw a note's length "
+         "instead "
          "of a light that says only that something is happening. It is samples, because the sample "
          "rate belongs to a device and a frame can be built without one.");
     constexpr int kFrames = 4800; // a tenth of a second at the fixture rate
@@ -230,62 +234,68 @@ TEST_CASE("a sounding voice says how long it has been sounding") {
 
 TEST_SUITE("computer keyboard") {
 
-TEST_CASE("the letter rows play two octaves, and every one of them has a key") {
-    INFO("The mouse and a MIDI cable both need hardware this test does not have, so the desk layout "
-         "is the one playing path that can be pinned down without a screen: a key that mapped to a "
-         "note off the strip, or to a neighbour of the note its label promises, would only show up "
-         "as someone hunting for a note that should be under their finger.");
-    // The rows in order, so a slip in the table shows up as the wrong interval rather than as a
-    // number someone retyped to match the code.
-    const char* const rows = "zsxdcvgbhnjm,l.q2we3r5t6y7ui9p0";
-    int previous = -100;
-    for (const char* at = rows; *at != 0; ++at) {
-        const int note = boreaz::gui::note_for_computer_key(*at);
-        INFO("key '" << *at << "'");
-        REQUIRE(note >= 0);
-        CHECK(KeyboardLayout::contains(note));
-        CHECK(note >= previous - 2); // ascending within a row, so a scale cannot stutter
-        previous = note;
+    TEST_CASE("the letter rows play two octaves, and every one of them has a key") {
+        INFO("The mouse and a MIDI cable both need hardware this test does not have, so the desk "
+             "layout "
+             "is the one playing path that can be pinned down without a screen: a key that mapped "
+             "to a "
+             "note off the strip, or to a neighbour of the note its label promises, would only "
+             "show up "
+             "as someone hunting for a note that should be under their finger.");
+        // The rows in order, so a slip in the table shows up as the wrong interval rather than as a
+        // number someone retyped to match the code.
+        const char* const rows = "zsxdcvgbhnjm,l.q2we3r5t6y7ui9p0";
+        int previous = -100;
+        for (const char* at = rows; *at != 0; ++at) {
+            const int note = boreaz::gui::note_for_computer_key(*at);
+            INFO("key '" << *at << "'");
+            REQUIRE(note >= 0);
+            CHECK(KeyboardLayout::contains(note));
+            CHECK(note >= previous - 2); // ascending within a row, so a scale cannot stutter
+            previous = note;
+        }
+        CHECK(boreaz::gui::note_for_computer_key('q') == 60); // middle C, the note the layout is on
+        CHECK(boreaz::gui::note_for_computer_key('z') == 48); // an octave below it
+        CHECK(boreaz::gui::note_for_computer_key('p') == 76); // and the top of the upper row
     }
-    CHECK(boreaz::gui::note_for_computer_key('q') == 60); // middle C, the note the layout is on
-    CHECK(boreaz::gui::note_for_computer_key('z') == 48); // an octave below it
-    CHECK(boreaz::gui::note_for_computer_key('p') == 76); // and the top of the upper row
-}
 
-TEST_CASE("keys the program has not promised anything about do nothing") {
-    INFO("An unmapped key has to be distinguishable from note 0, which is a real note: -1 is what "
-         "tells the app to drop the keystroke instead of putting a C-1 into the engine.");
-    // Letters outside the two rows, punctuation the rows do not use, and the control codes a window
-    // manager owns (tab, return, escape, F10).
-    const char outside[] = {'a', 'f', 'k', ';', '/', '\t', '\n', '\r'};
-    for (const char key : outside) {
-        INFO("key " << static_cast<int>(key));
-        CHECK(boreaz::gui::note_for_computer_key(key) == -1);
+    TEST_CASE("keys the program has not promised anything about do nothing") {
+        INFO("An unmapped key has to be distinguishable from note 0, which is a real note: -1 is "
+             "what "
+             "tells the app to drop the keystroke instead of putting a C-1 into the engine.");
+        // Letters outside the two rows, punctuation the rows do not use, and the control codes a
+        // window manager owns (tab, return, escape, F10).
+        const char outside[] = {'a', 'f', 'k', ';', '/', '\t', '\n', '\r'};
+        for (const char key : outside) {
+            INFO("key " << static_cast<int>(key));
+            CHECK(boreaz::gui::note_for_computer_key(key) == -1);
+        }
+        CHECK(boreaz::gui::note_for_computer_key(27) == -1);  // escape
+        CHECK(boreaz::gui::note_for_computer_key(291) == -1); // f10, which has no ASCII meaning
     }
-    CHECK(boreaz::gui::note_for_computer_key(27) == -1);  // escape
-    CHECK(boreaz::gui::note_for_computer_key(291) == -1); // f10, which has no ASCII meaning
-}
 
-TEST_CASE("Enter is the transport, and a key that commands cannot also be a note") {
-    // The row of controls under the views has a keyboard shortcut, and which key it is comes down to
-    // this: every letter, digit and mark on the three rows is a note, so a shortcut in letters would
-    // sound as well as command. Enter commands and sounds nothing, and the two codes (the main row
-    // and the numeric keypad) are the same key to a player.
-    CHECK(boreaz::gui::note_for_computer_key(257) == -1); // enter
-    CHECK(boreaz::gui::note_for_computer_key(335) == -1); // keypad enter
-    CHECK_FALSE(boreaz::gui::key_is_sustain_pedal(257));
-    // Space, backspace and the arrows keep the meanings they had: the pedal, the strip's clock,
-    // nothing.
-    CHECK(boreaz::gui::note_for_computer_key(259) == -1); // backspace
-    CHECK(boreaz::gui::note_for_computer_key(265) == -1); // up
-}
+    TEST_CASE("Enter is the transport, and a key that commands cannot also be a note") {
+        // The row of controls under the views has a keyboard shortcut, and which key it is comes
+        // down to this: every letter, digit and mark on the three rows is a note, so a shortcut in
+        // letters would sound as well as command. Enter commands and sounds nothing, and the two
+        // codes (the main row and the numeric keypad) are the same key to a player.
+        CHECK(boreaz::gui::note_for_computer_key(257) == -1); // enter
+        CHECK(boreaz::gui::note_for_computer_key(335) == -1); // keypad enter
+        CHECK_FALSE(boreaz::gui::key_is_sustain_pedal(257));
+        // Space, backspace and the arrows keep the meanings they had: the pedal, the strip's clock,
+        // nothing.
+        CHECK(boreaz::gui::note_for_computer_key(259) == -1); // backspace
+        CHECK(boreaz::gui::note_for_computer_key(265) == -1); // up
+    }
 
-TEST_CASE("space is the pedal, held rather than toggled") {
-    INFO("The engine already treats CC 64 as a pedal with notes to hand over; the only decision "
-         "here is whether the keyboard reports a press or a state, and a foot only knows the state.");
-    CHECK(boreaz::gui::key_is_sustain_pedal(' '));
-    CHECK_FALSE(boreaz::gui::key_is_sustain_pedal('z'));
-    CHECK(boreaz::gui::note_for_computer_key(' ') == -1); // so it cannot be a note and a pedal
-}
+    TEST_CASE("space is the pedal, held rather than toggled") {
+        INFO(
+            "The engine already treats CC 64 as a pedal with notes to hand over; the only decision "
+            "here is whether the keyboard reports a press or a state, and a foot only knows the "
+            "state.");
+        CHECK(boreaz::gui::key_is_sustain_pedal(' '));
+        CHECK_FALSE(boreaz::gui::key_is_sustain_pedal('z'));
+        CHECK(boreaz::gui::note_for_computer_key(' ') == -1); // so it cannot be a note and a pedal
+    }
 
 } // TEST_SUITE

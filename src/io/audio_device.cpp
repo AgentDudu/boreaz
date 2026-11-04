@@ -40,7 +40,8 @@ std::int64_t now_ticks() {
 }
 
 // miniaudio's own thread. Everything it does is in AudioDevice::render.
-void CALLBACK render_through_engine(ma_device* device, void* output, const void*, ma_uint32 frames) {
+void CALLBACK render_through_engine(ma_device* device, void* output, const void*,
+                                    ma_uint32 frames) {
     auto* self = static_cast<AudioDevice*>(device->pUserData);
     if (self != nullptr)
         self->render(static_cast<float*>(output), static_cast<int>(frames));
@@ -57,8 +58,8 @@ bool contains(const std::string& haystack, const std::string& needle) {
 }
 
 std::string describe(ma_result result) {
-    return std::string(ma_result_description(result)) + " (" + std::to_string(static_cast<int>(result)) +
-           ")";
+    return std::string(ma_result_description(result)) + " (" +
+           std::to_string(static_cast<int>(result)) + ")";
 }
 
 struct Selection {
@@ -79,9 +80,9 @@ Selection select_port(ma_context* context, const std::string& which) {
         return selection;
 
     std::uint32_t wanted_index = 0;
-    bool by_index = !which.empty() &&
-                    std::all_of(which.begin(), which.end(),
-                                [](char c) { return std::isdigit(static_cast<unsigned char>(c)) != 0; });
+    bool by_index = !which.empty() && std::all_of(which.begin(), which.end(), [](char c) {
+        return std::isdigit(static_cast<unsigned char>(c)) != 0;
+    });
     if (by_index)
         wanted_index = static_cast<std::uint32_t>(std::stoul(which));
 
@@ -261,10 +262,11 @@ void AudioDevice::render(float* output, int frames) {
     callback_frames_.store(frames, std::memory_order_relaxed);
     engine_.process(output, frames);
 
-    // The spectrum panel's feed: a copy of the block the speakers are about to get, into a ring that is
-    // never waited on. A tap that blocked when the display fell behind would put the window's frame rate
-    // inside the audio path's timing, which is the rule this whole program is built around; so the cost of
-    // a slow frame loop is a hole in the picture, counted, and nothing to the sound.
+    // The spectrum panel's feed: a copy of the block the speakers are about to get, into a ring
+    // that is never waited on. A tap that blocked when the display fell behind would put the
+    // window's frame rate inside the audio path's timing, which is the rule this whole program is
+    // built around; so the cost of a slow frame loop is a hole in the picture, counted, and nothing
+    // to the sound.
     if (tap_ != nullptr) {
         tap_->write(output, frames);
     }

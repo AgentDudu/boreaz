@@ -102,9 +102,9 @@ std::string strip_comments(std::string_view text) {
         if (c == '/' && at + 1 < out.size() && out[at + 1] == '*') {
             // Both /** ... **/ and /* ... */ are in the wild; the long form terminates with two
             // asterisks, so looking for the short one inside it ends the comment early.
-            const std::string_view stop =
-                (at + 2 < out.size() && out[at + 2] == '*') ? std::string_view("**/")
-                                                            : std::string_view("*/");
+            const std::string_view stop = (at + 2 < out.size() && out[at + 2] == '*')
+                                              ? std::string_view("**/")
+                                              : std::string_view("*/");
             std::size_t end = out.find(stop, at + 2);
             if (end == std::string::npos)
                 end = out.size();
@@ -155,12 +155,12 @@ struct Parser {
     // group's `hivel` fall through to the next read that instrument as lovel 81 above hivel 80 and
     // refused the whole piano, which is how this rule was found rather than chosen.
     Scope global_;
-    Scope defaults;    // the values in force, reset from `global_` at each `<group>`
+    Scope defaults; // the values in force, reset from `global_` at each `<group>`
     Scope region_scope;
     bool in_region = false;
     bool mirror_global = false; // this section's opcodes also belong to the baseline
     bool seen_group = false;    // a `<control>` after the first group is a group's, not the file's
-    bool ignoring = false; // an unknown section: its opcodes go to a bit bucket, not to global
+    bool ignoring = false;      // an unknown section: its opcodes go to a bit bucket, not to global
     int order = 0;
 
     void warn(const std::string& message) { warnings.push_back(message); }
@@ -226,13 +226,14 @@ struct Parser {
                 // The claim stays: the *file* may carry the loop points in its `smpl` chunk, and
                 // only the store, which has read the file, can tell "plays once" from "loops where
                 // the recording says". Downgrading it here would lose that.
-                warn("region " + region.sample + " asks to loop and gives no loop points of its own");
+                warn("region " + region.sample +
+                     " asks to loop and gives no loop points of its own");
             }
             region.loop_start = region.loop_end = -1.0;
         }
         if (!region_scope.centre_given)
             region.key_center = region.lo_key; // SFZ says "the key", and the lowest key of the
-                                              // region is the only one both of us can name
+                                               // region is the only one both of us can name
 
         instrument.low_key = std::min(instrument.low_key, region.lo_key);
         instrument.high_key = std::max(instrument.high_key, region.hi_key);
@@ -402,7 +403,8 @@ struct Parser {
             if (mode == "sustain") {
                 // Loops until the key goes up and then runs out. There is no voice state for "the
                 // key went up but keep playing" yet, so it behaves as a one-shot.
-                warn_once(name, "`sustain` behaves as one_shot until a release-following voice exists");
+                warn_once(name,
+                          "`sustain` behaves as one_shot until a release-following voice exists");
                 out.loop = Loop::kSustain;
                 return true;
             }
@@ -445,7 +447,8 @@ struct Parser {
             {"effect", "no FX sends yet (phase 8)"},
             {"send", "no FX sends yet (phase 8)"},
             {"filt", "modulated filter cutoff is a synth feature (phase 8)"},
-            {"offtime", "a key being let go is timed by the hand, not by the file, so the delay is dropped"},
+            {"offtime",
+             "a key being let go is timed by the hand, not by the file, so the delay is dropped"},
             {"delay", "no start delay"},
             {"count", "no sample repetition counting"},
             {"seq_", "no sample sequencing"},
@@ -547,8 +550,8 @@ const Region* Instrument::find(int key, int velocity) const {
 LoadResult parse(std::string_view text) {
     LoadResult result;
     if (text.size() > kMaxFileBytes) {
-        result.error = "mapping is " + std::to_string(text.size()) +
-                       " bytes, over the " + std::to_string(kMaxFileBytes) + " byte limit";
+        result.error = "mapping is " + std::to_string(text.size()) + " bytes, over the " +
+                       std::to_string(kMaxFileBytes) + " byte limit";
         return result;
     }
 
@@ -580,7 +583,8 @@ LoadResult parse(std::string_view text) {
         if (c == '#') {
             const std::size_t end = body.find('\n', at);
             const std::size_t stop = (end == std::string::npos) ? body.size() : end;
-            parser.error = "line " + std::to_string(line) + ": `" + trim(body.substr(at, stop - at)) +
+            parser.error = "line " + std::to_string(line) + ": `" +
+                           trim(body.substr(at, stop - at)) +
                            "` is preprocessing, which mkinst resolves before a file reaches here";
             at = stop;
             break;
@@ -661,8 +665,8 @@ LoadResult load_file(const std::string& path) {
         return result;
     }
     if (static_cast<std::size_t>(size) > kMaxFileBytes) {
-        result.error = path + " is " + std::to_string(size) +
-                       " bytes, over the " + std::to_string(kMaxFileBytes) + " byte limit";
+        result.error = path + " is " + std::to_string(size) + " bytes, over the " +
+                       std::to_string(kMaxFileBytes) + " byte limit";
         return result;
     }
     std::string text(static_cast<std::size_t>(size), '\0');

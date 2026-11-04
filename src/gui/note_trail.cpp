@@ -42,10 +42,9 @@ void NoteTrail::update(FrameView& view) {
     // the last frame and this one; an entry the snapshot does not mention stopped.
     for (int slot = 0; slot < view.sounding_count; ++slot) {
         const Sounding& voice = view.sounding[static_cast<std::size_t>(slot)];
-        const double onset =
-            (rate > 0.0 && voice.age_samples > 0)
-                ? now - static_cast<double>(voice.age_samples) / rate
-                : now;  // no device, so no rate and no age: the honest onset is now
+        const double onset = (rate > 0.0 && voice.age_samples > 0)
+                                 ? now - static_cast<double>(voice.age_samples) / rate
+                                 : now; // no device, so no rate and no age: the honest onset is now
 
         // The same key can be sounding twice - with the pedal down, a note struck again while the
         // first is still ringing is two voices on one key, one already released - and they arrive
@@ -93,14 +92,14 @@ void NoteTrail::update(FrameView& view) {
         entry.note.velocity = voice.velocity;
         entry.note.level = voice.level;
         entry.note.onset_seconds = onset;
-        entry.note.end_seconds = -1.0;  // sounding, until a frame says otherwise
+        entry.note.end_seconds = -1.0; // sounding, until a frame says otherwise
         entry.seen = true;
     }
 
     for (int index = 0; index < count_; ++index) {
         Entry& entry = entries_[static_cast<std::size_t>(index)];
         if (!entry.seen && entry.note.sounding())
-            entry.note.end_seconds = now;  // stopped between the last frame and this one
+            entry.note.end_seconds = now; // stopped between the last frame and this one
     }
 
     for (int index = 0; index < count_; ++index)

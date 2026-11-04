@@ -85,8 +85,9 @@ std::string lower(std::string s) {
 // service starts under are not identity, and looking for them would flag ordinary prose.
 bool generic_account(const std::string& account) {
     static const std::vector<std::string> kGeneric = {
-        "runner", "containeradministrator", "administrator", "admin", "root", "git",
-        "networkservice", "localservice", "system", "ci", "docker", "vsts", "nt authority",
+        "runner",         "containeradministrator", "administrator", "admin", "root",   "git",
+        "networkservice", "localservice",           "system",        "ci",    "docker", "vsts",
+        "nt authority",
     };
     return std::find(kGeneric.begin(), kGeneric.end(), lower(account)) != kGeneric.end();
 }
@@ -109,7 +110,8 @@ std::string account_name() {
 // The account name this file is not allowed to contain, or empty when the body is clean.
 std::string identity_offender(const std::string& body) {
     const std::string name = account_name();
-    return (!name.empty() && lower(body).find(lower(name)) != std::string::npos) ? name : std::string{};
+    return (!name.empty() && lower(body).find(lower(name)) != std::string::npos) ? name
+                                                                                 : std::string{};
 }
 
 struct Rule {
@@ -167,8 +169,8 @@ TEST_CASE("no tracked file contains a machine path or a credential") {
             }
         }
         if (const std::string who = identity_offender(body); !who.empty()) {
-            offenders += "\n  " + rel_path(it->path()) + ": this machine's own account name -> \"" + who +
-                         "\"";
+            offenders += "\n  " + rel_path(it->path()) + ": this machine's own account name -> \"" +
+                         who + "\"";
         }
     }
 
@@ -306,13 +308,13 @@ TEST_CASE("the io and midifile layers print nothing and wait for nothing") {
     // that callback, and a library that prints to a console the GUI application does not have is
     // a report that goes nowhere while the notes keep vanishing.
     static const std::vector<std::regex> kForbidden = {
-        std::regex{R"(\bprintf\s*\()"}, std::regex{R"(\bputs\s*\()"},
-        std::regex{R"(\bcout\s*<<)"},   std::regex{R"(\bcerr\s*<<)"},
+        std::regex{R"(\bprintf\s*\()"},  std::regex{R"(\bputs\s*\()"},
+        std::regex{R"(\bcout\s*<<)"},    std::regex{R"(\bcerr\s*<<)"},
         std::regex{R"(std::exit\s*\()"}, std::regex{R"(std::abort\s*\()"},
         std::regex{R"(sleep_for\s*\()"}, std::regex{R"(\bSleep\s*\()"},
     };
-    static const std::vector<std::string> kDirs = {
-        "include/boreaz/io", "src/io", "include/boreaz/midifile", "src/midifile"};
+    static const std::vector<std::string> kDirs = {"include/boreaz/io", "src/io",
+                                                   "include/boreaz/midifile", "src/midifile"};
 
     std::string offenders;
     int files = 0;

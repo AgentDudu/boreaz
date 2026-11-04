@@ -157,4 +157,3 @@ TEST_CASE("midi parser: the high byte of a packed message is a timestamp, not da
     CHECK(parser.bytes_in() == 2);
     CHECK(parser.bad_bytes() == 0);
 }
-

@@ -27,8 +27,8 @@ class KeyboardView {
     // outside their own frame - losing focus, dragging off the edge - and a note left sounding
     // because the pointer escaped is the kind of bug that gets blamed on the synth. The app calls
     // this when the window stops being focused, and pushes what comes back.
-    std::size_t force_release(std::int64_t tick, std::uint8_t channel,
-                            boreaz::engine::Event* out, std::size_t capacity);
+    std::size_t force_release(std::int64_t tick, std::uint8_t channel, boreaz::engine::Event* out,
+                              std::size_t capacity);
 
     int pressed_note() const { return pressed_note_; }
     // What the last click was aimed at, for the readout under the strip.

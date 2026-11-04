@@ -72,8 +72,8 @@ float to_float(const std::uint8_t* at, std::uint16_t bits, std::uint16_t format)
         }
         case 24: {
             std::int32_t value = static_cast<std::int32_t>(at[0]) |
-                                (static_cast<std::int32_t>(at[1]) << 8) |
-                                (static_cast<std::int32_t>(at[2]) << 16);
+                                 (static_cast<std::int32_t>(at[1]) << 8) |
+                                 (static_cast<std::int32_t>(at[2]) << 16);
             if (value & 0x800000)
                 value |= ~0x7FFFFF; // sign extend the missing byte
             return static_cast<float>(value) / 8388608.0f;
@@ -132,12 +132,12 @@ bool decode_wav(const std::uint8_t* bytes, std::size_t size, Pcm& out, std::stri
             // A WAV written by a streaming encoder says 0 or 0xFFFFFFFF for the data size, and the
             // rest of the file *is* the data. `available` is already capped by the file's length,
             // so a declared size nobody honoured cannot read past the buffer.
-            data_size =
-                (chunk == 0u || chunk == 0xFFFFFFFFu) ? (size - body) : available;
+            data_size = (chunk == 0u || chunk == 0xFFFFFFFFu) ? (size - body) : available;
         } else if (id == "smpl" && available >= 44) {
             // The first sampler loop, which is where a file says where its own loop is. The loops
             // live after the header and after however many cue points the file has, so the offset
-            // is arithmetic and not a constant - assuming 44 is what breaks a file with a cue in it.
+            // is arithmetic and not a constant - assuming 44 is what breaks a file with a cue in
+            // it.
             const std::uint32_t loops = le32(bytes + body + 28);
             const std::uint32_t cues = le32(bytes + body + 40);
             const std::size_t record = body + 44 + static_cast<std::size_t>(cues) * 24u;
@@ -195,9 +195,8 @@ bool decode_wav(const std::uint8_t* bytes, std::size_t size, Pcm& out, std::stri
     for (std::size_t frame = 0; frame < frames; ++frame) {
         const std::uint8_t* at_sample = data + frame * align;
         for (int channel = 0; channel < channels; ++channel) {
-            out.data[frame * channels + static_cast<std::size_t>(channel)] =
-                to_float(at_sample + static_cast<std::size_t>(channel) * bytes_per_sample, bits,
-                         format);
+            out.data[frame * channels + static_cast<std::size_t>(channel)] = to_float(
+                at_sample + static_cast<std::size_t>(channel) * bytes_per_sample, bits, format);
         }
     }
     return true;
@@ -330,10 +329,11 @@ LoadResult SampleStore::load(const boreaz::sfz::Instrument& mapping, const std::
     };
     std::array<Coverage, 128> covered;
     for (const boreaz::sfz::Region& region : mapping_.regions) {
-        // A `trigger=release` region is decoded and held exactly like a note region; what differs is
-        // which list it lands in, and that it does not claim velocity coverage. It is not a place to
-        // start a note, so `find()` cannot answer with it and `find_release()` cannot answer with a
-        // note - the two lookups are separate precisely because the recordings are different things.
+        // A `trigger=release` region is decoded and held exactly like a note region; what differs
+        // is which list it lands in, and that it does not claim velocity coverage. It is not a
+        // place to start a note, so `find()` cannot answer with it and `find_release()` cannot
+        // answer with a note - the two lookups are separate precisely because the recordings are
+        // different things.
         const bool release = region.release_trigger;
 
         const std::string path = join(root_dir, region.sample);
@@ -400,11 +400,13 @@ LoadResult SampleStore::load(const boreaz::sfz::Instrument& mapping, const std::
             loop_start = static_cast<std::int64_t>(region.loop_start * scale);
             loop_end = static_cast<std::int64_t>(region.loop_end * scale);
             if (loop_end <= loop_start) {
-                result.warnings.push_back("region " + region.sample +
-                                          " has loop points the wrong way round and is played once");
+                result.warnings.push_back(
+                    "region " + region.sample +
+                    " has loop points the wrong way round and is played once");
                 loop_start = loop_end = -1;
             }
-        } else if (region.loop == boreaz::sfz::Loop::kContinuous && pcm.smpl_loop_end > pcm.smpl_loop_start) {
+        } else if (region.loop == boreaz::sfz::Loop::kContinuous &&
+                   pcm.smpl_loop_end > pcm.smpl_loop_start) {
             loop_start = pcm.smpl_loop_start; // the file says where its own loop is
             loop_end = pcm.smpl_loop_end;
         }
@@ -442,13 +444,13 @@ LoadResult SampleStore::load(const boreaz::sfz::Instrument& mapping, const std::
         if (!key.empty() && !key.whole_range())
             ++gapped;
     if (gapped != 0) {
-        // The recordings are all loaded; what is missing is a choice, and a velocity no layer covers
-        // plays whichever recording the mapping's own precedence put last. That is a missing feature
-        // that would otherwise arrive as a bad piano.
-        result.warnings.push_back(
-            std::to_string(gapped) +
-            " keys have a velocity layer that does not cover the whole range; a velocity outside it "
-            "plays whichever recording the mapping put last");
+        // The recordings are all loaded; what is missing is a choice, and a velocity no layer
+        // covers plays whichever recording the mapping's own precedence put last. That is a missing
+        // feature that would otherwise arrive as a bad piano.
+        result.warnings.push_back(std::to_string(gapped) +
+                                  " keys have a velocity layer that does not cover the whole "
+                                  "range; a velocity outside it "
+                                  "plays whichever recording the mapping put last");
     }
 
     if (entries_.empty())
@@ -457,9 +459,9 @@ LoadResult SampleStore::load(const boreaz::sfz::Instrument& mapping, const std::
     result.ok = true;
     result.refused = refused_;
     result.bytes = bytes_;
-    result.load_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() -
-                                                               started)
-                        .count();
+    result.load_ms =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started)
+            .count();
     return result;
 }
 
@@ -479,8 +481,8 @@ const boreaz::engine::VoiceSample* SampleStore::lookup(const std::deque<Entry>& 
         }
     }
     // Nothing in this velocity band. The key's own recording, at whatever velocity the mapping
-    // happens to hold, is a better answer than silence: a piano with no soft layer is still a piano,
-    // and a piano that only plays at velocity 100 is not.
+    // happens to hold, is a better answer than silence: a piano with no soft layer is still a
+    // piano, and a piano that only plays at velocity 100 is not.
     for (std::size_t i = list.size(); i > 0; --i) {
         const Entry& entry = list[i - 1];
         if (clamped >= entry.lo_key && clamped <= entry.hi_key)
@@ -493,9 +495,9 @@ const boreaz::engine::VoiceSample* SampleStore::lookup(const std::deque<Entry>& 
     const Entry* nearest = nullptr;
     int best = 0;
     for (const Entry& entry : list) {
-        const int distance = key < entry.lo_key      ? entry.lo_key - key
-                             : key > entry.hi_key    ? key - entry.hi_key
-                                                     : 0;
+        const int distance = key < entry.lo_key   ? entry.lo_key - key
+                             : key > entry.hi_key ? key - entry.hi_key
+                                                  : 0;
         // Ties go to the later region, which is the precedence rule the mapping itself follows.
         if (nearest == nullptr || distance <= best) {
             nearest = &entry;

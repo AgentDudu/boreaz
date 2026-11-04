@@ -35,8 +35,8 @@ TEST_CASE("an engine built with parameters keeps playing them, not falling back 
     // configured and every block after at defaults, which is how boreaz-render produced byte
     // identical audio for master_gain_db = -40 and -12 and reported success both times.
     // One note at a moderate velocity, on purpose: a four note chord overloads the soft clipper,
-    // whose output is not proportional to its input, and a test that measures a saturated sum cannot
-    // say anything about a gain 28 dB apart.
+    // whose output is not proportional to its input, and a test that measures a saturated sum
+    // cannot say anything about a gain 28 dB apart.
     auto peak_with = [](float master_gain_db) {
         Params params;
         params.master_gain_db = master_gain_db;
@@ -209,8 +209,7 @@ TEST_CASE("CC7 is a channel fader: linear, per channel, and heard by a note alre
         Engine engine;
         engine.prepare(fixture::kRate);
         REQUIRE(engine.push_event(Event::note_on(0, 0, byte(60), byte(96))));
-        REQUIRE(engine.push_event(
-            Event::control(0, 0, Engine::kCcChannelVolume, byte(fader))));
+        REQUIRE(engine.push_event(Event::control(0, 0, Engine::kCcChannelVolume, byte(fader))));
         return fixture::render(engine, 2205).peak;
     };
     const float full = peak_at(127);
@@ -230,8 +229,8 @@ TEST_CASE("CC7 is a channel fader: linear, per channel, and heard by a note alre
         engine.prepare(fixture::kRate);
         REQUIRE(engine.push_event(Event::note_on(0, 0, byte(60), byte(96))));
         REQUIRE(engine.push_event(Event::note_on(0, 1, byte(64), byte(96))));
-        REQUIRE(engine.push_event(
-            Event::control(0, byte(quiet_channel), Engine::kCcChannelVolume, 0)));
+        REQUIRE(
+            engine.push_event(Event::control(0, byte(quiet_channel), Engine::kCcChannelVolume, 0)));
         return fixture::render(engine, 2205).peak;
     };
     const float left_down = peak_with_one_fader_down(0);
@@ -250,8 +249,8 @@ TEST_CASE("CC7 is a channel fader: linear, per channel, and heard by a note alre
     REQUIRE(muted.push_event(Event::control(0, 1, Engine::kCcChannelVolume, 0)));
     CHECK(fixture::render(muted, 2205).peak <= fixture::kSilence);
 
-    // And the reason it is a controller rather than a parameter: a move is heard by the note that is
-    // already sounding. A parameter would only reach the next note.
+    // And the reason it is a controller rather than a parameter: a move is heard by the note that
+    // is already sounding. A parameter would only reach the next note.
     Engine engine;
     engine.prepare(fixture::kRate);
     REQUIRE(engine.push_event(Event::note_on(0, 0, byte(60), byte(96))));

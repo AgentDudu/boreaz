@@ -64,7 +64,9 @@ class MidiInput {
     std::uint64_t events() const { return events_.load(std::memory_order_relaxed); }
     std::uint64_t bad_bytes() const { return bad_bytes_.load(std::memory_order_relaxed); }
     // Messages a driver delivered that did not start with a status byte.
-    std::uint64_t dropped_messages() const { return dropped_messages_.load(std::memory_order_relaxed); }
+    std::uint64_t dropped_messages() const {
+        return dropped_messages_.load(std::memory_order_relaxed);
+    }
     std::uint64_t sysex_bytes() const { return sysex_bytes_.load(std::memory_order_relaxed); }
     std::uint64_t losses() const { return losses_.load(std::memory_order_relaxed); }
     // Reopen attempts, successful or not: a port that comes back with a driver problem should

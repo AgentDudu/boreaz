@@ -2,8 +2,8 @@
 
 #include <cstdint>
 
-#include "boreaz/engine/note.h"
 #include "boreaz/engine/instrument.h"
+#include "boreaz/engine/note.h"
 #include "boreaz/engine/params.h"
 
 namespace boreaz::engine {

@@ -227,14 +227,15 @@ void Engine::render_chunk(float* output, int frames, const Params& params) {
     //
     // What that buys, measured on the 88-key glissando: at the top of the master row (+12 dB) the
     // old chain wrote 66303 samples pinned at exactly +-32767 of 1565550, and the render after this
-    // stage lands at 0.964020 as written to int16 (0.964028 as a float peak) with none pinned, because the gain reduction spreads over the
-    // neighbourhood of a peak instead of cutting its top off. At the shipping -12 dB master it buys
-    // nothing at all, which is the point: 0.6479 is the loudest the synthesiser asks for there, the
-    // gain never leaves 1.0, and the engine test renders the same file with and without this stage
-    // and counts the samples that moved. Zero is the only number that keeps a golden honest.
+    // stage lands at 0.964020 as written to int16 (0.964028 as a float peak) with none pinned,
+    // because the gain reduction spreads over the neighbourhood of a peak instead of cutting its
+    // top off. At the shipping -12 dB master it buys nothing at all, which is the point: 0.6479 is
+    // the loudest the synthesiser asks for there, the gain never leaves 1.0, and the engine test
+    // renders the same file with and without this stage and counts the samples that moved. Zero is
+    // the only number that keeps a golden honest.
     //
-    // With the stage bypassed the meter still has to read something, or the bypass would quietly take
-    // the clip light with it: the same peak, computed the slow way, with no gain applied.
+    // With the stage bypassed the meter still has to read something, or the bypass would quietly
+    // take the clip light with it: the same peak, computed the slow way, with no gain applied.
     float ceiling_demand = 0.0f;
     if (limiter_bypassed_) {
         for (int i = 0; i < frames; ++i) {
@@ -249,17 +250,19 @@ void Engine::render_chunk(float* output, int frames, const Params& params) {
         ceiling_demand = limiter_.process_block(scratch_l_, scratch_r_, frames);
     }
     // tanh first: sixteen voices summed past full scale should saturate, not turn into a square
-    // wave. The clamp after it is the promise that nothing leaves this block above full scale, which
-    // the limiter in front now owns as its whole job; this clamp stays as the promise for a chain the
-    // limiter is not in front of, namely a master tanh whose drive somebody eventually makes a knob.
-    // Measured: drive 1.0 costs 0.13 dB on the flagship's loudest transient at the default -12 dB
-    // master and 1.8 dB at 0 dB, so the curve is deliberately left where the ear cannot count it.
+    // wave. The clamp after it is the promise that nothing leaves this block above full scale,
+    // which the limiter in front now owns as its whole job; this clamp stays as the promise for a
+    // chain the limiter is not in front of, namely a master tanh whose drive somebody eventually
+    // makes a knob. Measured: drive 1.0 costs 0.13 dB on the flagship's loudest transient at the
+    // default -12 dB master and 1.8 dB at 0 dB, so the curve is deliberately left where the ear
+    // cannot count it.
     const float drive_l = clip_.process_block(scratch_l_, frames);
     const float drive_r = clip_.process_block(scratch_r_, frames);
     const float drive = drive_l > drive_r ? drive_l : drive_r;
-    // The meter reads what reached the ceiling, not what came out of it: after the limiter the first
-    // number is 1.0 by construction and says nothing, while the one before says how far over the mix
-    // really was. One relaxed store per block - a meter two blocks old is still a working meter.
+    // The meter reads what reached the ceiling, not what came out of it: after the limiter the
+    // first number is 1.0 by construction and says nothing, while the one before says how far over
+    // the mix really was. One relaxed store per block - a meter two blocks old is still a working
+    // meter.
     const float meter = ceiling_demand > drive ? ceiling_demand : drive;
     drive_peak_.store(meter, std::memory_order_relaxed);
     for (int i = 0; i < frames; ++i) {
@@ -352,7 +355,8 @@ void Engine::start_release(int key, std::uint8_t channel, const Params& params) 
     request.note = note_for_key(key, params);
     // The level and the recording come from the strike, so a pianissimo lets go quietly and a
     // fortissimo lets go with the hammer noise in it - which is the whole reason the opcode exists.
-    request.velocity = static_cast<float>(strike_[static_cast<std::size_t>(index)]) * (1.0f / 127.0f);
+    request.velocity =
+        static_cast<float>(strike_[static_cast<std::size_t>(index)]) * (1.0f / 127.0f);
     request.bend_semitones = bend_[channel % kMidiChannels];
     request.frequency = tuning_.frequency(request.note) * bend_factor(request.bend_semitones);
 

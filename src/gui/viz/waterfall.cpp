@@ -85,11 +85,11 @@ void waterfall(const FrameView& view) {
     std::snprintf(span, sizeof span, "%.1f s on screen", area.visible_seconds());
 
     ImGui::SetCursorScreenPos(origin);
-    // Scroll speed as a bar, not a number dragged sideways. A DragFloat shows digits that change and
-    // nothing else, so the setting being made has no shape: this fills from the left in proportion to
-    // how fast the past moves up, which is what an eye adjusting it is looking for. Click and drag is
-    // the same, and a hand on the keys can also click it and use the arrows, which a DragFloat has no
-    // way to do.
+    // Scroll speed as a bar, not a number dragged sideways. A DragFloat shows digits that change
+    // and nothing else, so the setting being made has no shape: this fills from the left in
+    // proportion to how fast the past moves up, which is what an eye adjusting it is looking for.
+    // Click and drag is the same, and a hand on the keys can also click it and use the arrows,
+    // which a DragFloat has no way to do.
     ImGui::SetNextItemWidth(kScrollBarWidth);
     ImGui::SliderFloat("Scroll", &scroll, WaterfallView::kMinScroll, WaterfallView::kMaxScroll,
                        "%.0f px/s");
@@ -136,9 +136,9 @@ void waterfall(const FrameView& view) {
 
     int outside = 0;
     if (view.transport_running) {
-        // The band is the top `fade_band` pixels of the plot: alpha 0 at the area's edge and full at
-        // the band's lower edge, so a bar is undimmed until its oldest end reaches the band and gone
-        // exactly where the area ends.
+        // The band is the top `fade_band` pixels of the plot: alpha 0 at the area's edge and full
+        // at the band's lower edge, so a bar is undimmed until its oldest end reaches the band and
+        // gone exactly where the area ends.
         const float fade_band = std::min(kFadePixels, plot_height * 0.5f);
         const float band_bottom = plot_top + fade_band;
         for (int index = 0; index < view.trail_count; ++index) {
@@ -151,8 +151,8 @@ void waterfall(const FrameView& view) {
                     ++outside;
                 continue;
             }
-            // A note that has decayed is dimmer than a fresh one (the level term), and a note on its
-            // way out is dissolving into the edge rather than blinking at it.
+            // A note that has decayed is dimmer than a fresh one (the level term), and a note on
+            // its way out is dissolving into the edge rather than blinking at it.
             const ImVec4& hue = kChannelColour[bar.channel & 15u];
             const float base = 0.68f + 0.32f * bar.level;
             if (base <= 0.002f)
@@ -167,17 +167,17 @@ void waterfall(const FrameView& view) {
             }
             // Part of the bar is inside the band. That part is a gradient to nothing at the area's
             // edge and the part below the band keeps its brightness - not one alpha for the whole
-            // bar, which is what used to switch a long note's tail off the moment its head reached the
-            // band and made the waterfall look as though it stopped short of the top.
+            // bar, which is what used to switch a long note's tail off the moment its head reached
+            // the band and made the waterfall look as though it stopped short of the top.
             const float grad_bottom = std::min(bar.rect.bottom(), band_bottom);
             const float at_edge =
                 base * std::clamp((grad_bottom - plot_top) / fade_band, 0.0f, 1.0f);
-            draw->AddRectFilledMultiColor(
-                ImVec2(bar.rect.x, bar.rect.y), ImVec2(bar.rect.right(), grad_bottom),
-                ImGui::GetColorU32(ImVec4(hue.x, hue.y, hue.z, 0.0f)),
-                ImGui::GetColorU32(ImVec4(hue.x, hue.y, hue.z, 0.0f)),
-                ImGui::GetColorU32(ImVec4(hue.x, hue.y, hue.z, at_edge)),
-                ImGui::GetColorU32(ImVec4(hue.x, hue.y, hue.z, at_edge)));
+            draw->AddRectFilledMultiColor(ImVec2(bar.rect.x, bar.rect.y),
+                                          ImVec2(bar.rect.right(), grad_bottom),
+                                          ImGui::GetColorU32(ImVec4(hue.x, hue.y, hue.z, 0.0f)),
+                                          ImGui::GetColorU32(ImVec4(hue.x, hue.y, hue.z, 0.0f)),
+                                          ImGui::GetColorU32(ImVec4(hue.x, hue.y, hue.z, at_edge)),
+                                          ImGui::GetColorU32(ImVec4(hue.x, hue.y, hue.z, at_edge)));
             if (bar.rect.bottom() > band_bottom)
                 draw->AddRectFilled(ImVec2(bar.rect.x, band_bottom),
                                     ImVec2(bar.rect.right(), bar.rect.bottom()),

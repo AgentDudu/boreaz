@@ -29,8 +29,8 @@ FrameView frame_at(double seconds) {
     return view;
 }
 
-// One sounding voice in the frame. `age_samples` is what the engine says the voice has been running,
-// which is the only reason a note has an onset the display did not have to guess.
+// One sounding voice in the frame. `age_samples` is what the engine says the voice has been
+// running, which is the only reason a note has an onset the display did not have to guess.
 void sound(FrameView& view, std::uint8_t key, std::uint8_t channel, std::int64_t age_samples) {
     REQUIRE(view.sounding_count < FrameView::kMaxVoices);
     boreaz::gui::Sounding& voice = view.sounding[static_cast<std::size_t>(view.sounding_count++)];
@@ -91,9 +91,9 @@ TEST_CASE("a note keeps its bar after the voice that made it is gone") {
 }
 
 TEST_CASE("a key struck twice while the first is ringing is two notes") {
-    // With the pedal down, the same key and channel can be sounding twice at once, the first already
-    // released. Key and channel cannot tell them apart; the age each voice reports can, and the
-    // order they arrive in the snapshot must not decide what gets drawn.
+    // With the pedal down, the same key and channel can be sounding twice at once, the first
+    // already released. Key and channel cannot tell them apart; the age each voice reports can, and
+    // the order they arrive in the snapshot must not decide what gets drawn.
     NoteTrail trail;
 
     FrameView view = frame_at(1.0);

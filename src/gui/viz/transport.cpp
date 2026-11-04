@@ -20,8 +20,8 @@
 #include <cstdio>
 #include <string>
 
-#include "boreaz/gui/panel.h"
 #include "boreaz/gui/keyboard_layout.h"
+#include "boreaz/gui/panel.h"
 
 namespace boreaz::gui {
 namespace {
@@ -73,15 +73,14 @@ void transport(const FrameView& view) {
     // period, and what is on the cable. The counters that used to sit under it (late callbacks,
     // restarts, steals, dropped events, MIDI losses) are still published every frame and still
     // printed in full when the app exits, which is where a number that reads zero belongs.
-    std::string status = view.device.open
-                             ? view.device.name + "  \xc2\xb7  " +
-                                   std::to_string(static_cast<int>(view.device.sample_rate)) + " Hz" +
-                                   "  \xc2\xb7  " + std::to_string(view.device.callback_frames) + " fr"
-                             : "no output";
-    status += view.midi.open
-                  ? "  \xc2\xb7  " + view.midi.name + ", " + std::to_string(view.midi.events) +
-                        " messages"
-                  : "  \xc2\xb7  no keyboard";
+    std::string status =
+        view.device.open ? view.device.name + "  \xc2\xb7  " +
+                               std::to_string(static_cast<int>(view.device.sample_rate)) + " Hz" +
+                               "  \xc2\xb7  " + std::to_string(view.device.callback_frames) + " fr"
+                         : "no output";
+    status += view.midi.open ? "  \xc2\xb7  " + view.midi.name + ", " +
+                                   std::to_string(view.midi.events) + " messages"
+                             : "  \xc2\xb7  no keyboard";
 
     const float row = ImGui::GetTextLineHeightWithSpacing();
     ImGui::SetCursorScreenPos(origin);
@@ -97,11 +96,10 @@ void transport(const FrameView& view) {
     if (rolling) {
         char elapsed[32];
         clock_text(elapsed, sizeof(elapsed), view.transport_seconds);
-        // Drawn rather than printed: it is the one number the player reads from across the room, and
-        // a draw-list call with an explicit font size stays that size at any content scale.
+        // Drawn rather than printed: it is the one number the player reads from across the room,
+        // and a draw-list call with an explicit font size stays that size at any content scale.
         const float width = ImGui::CalcTextSize(elapsed).x;
-        draw->AddText(ImGui::GetFont(), kClockHeight,
-                      ImVec2(origin.x + area.x - width, origin.y),
+        draw->AddText(ImGui::GetFont(), kClockHeight, ImVec2(origin.x + area.x - width, origin.y),
                       ImGui::GetColorU32(ImVec4(0.95f, 0.96f, 0.95f, 1.0f)), elapsed);
     }
 
@@ -123,8 +121,9 @@ void transport(const FrameView& view) {
 
         // The window the strip is showing. While it rolls the window ends at now, so the past
         // scrolls leftwards under a playhead pinned to the right edge. At rest the window runs
-        // forward from zero and nothing moves: the same frame, the same gridlines, a playhead at the
-        // left where a song would start, and no motion to misread as a transport that is running.
+        // forward from zero and nothing moves: the same frame, the same gridlines, a playhead at
+        // the left where a song would start, and no motion to misread as a transport that is
+        // running.
         const double now = rolling ? view.transport_seconds : 0.0;
         const double first = rolling ? now - kWindowSeconds : 0.0;
         const double last = rolling ? now : kWindowSeconds;
@@ -148,20 +147,20 @@ void transport(const FrameView& view) {
         const float head = rolling ? origin.x + lane_width - 1.0f : origin.x;
         const ImU32 accent = ImGui::GetColorU32(ImVec4(0.45f, 0.86f, 0.72f, 1.0f));
 
-        // What has been played, and when: one bar per note, at its own pitch height, from the sample
-        // it started on to the sample it stopped on - the playhead, while it still sounds. That is the
-        // difference between a clock ticking to itself and an answer to what the hands are doing.
-        // Height follows pitch, low at the bottom, so the strip and the keys under it read in the same
-        // order; the fill is opaque - the bar *is* the note, and a bar faint enough to miss is a bar
-        // that was never drawn as far as a player is concerned - brightening with the note's own
-        // level, so a note that has decayed dims on screen the way it does in the room without
-        // vanishing while it is still sounding.
+        // What has been played, and when: one bar per note, at its own pitch height, from the
+        // sample it started on to the sample it stopped on - the playhead, while it still sounds.
+        // That is the difference between a clock ticking to itself and an answer to what the hands
+        // are doing. Height follows pitch, low at the bottom, so the strip and the keys under it
+        // read in the same order; the fill is opaque - the bar *is* the note, and a bar faint
+        // enough to miss is a bar that was never drawn as far as a player is concerned -
+        // brightening with the note's own level, so a note that has decayed dims on screen the way
+        // it does in the room without vanishing while it is still sounding.
         //
         // A note that stops keeps travelling left and leaves slowly. It becomes a bar of its final
-        // length, and dropping it at its release would make the strip flicker at the exact moment the
-        // ear is still hearing it; instead it scrolls out of the left edge, fading over the last
-        // stretch of the strip. That is the waterfall's motion turned through ninety degrees, for the
-        // same reason: a thing leaving sight should be leaving gradually.
+        // length, and dropping it at its release would make the strip flicker at the exact moment
+        // the ear is still hearing it; instead it scrolls out of the left edge, fading over the
+        // last stretch of the strip. That is the waterfall's motion turned through ninety degrees,
+        // for the same reason: a thing leaving sight should be leaving gradually.
         if (rolling) {
             const float height =
                 std::max(2.0f, lane_height / static_cast<float>(KeyboardLayout::kKeyCount));
@@ -173,13 +172,12 @@ void transport(const FrameView& view) {
                 const TrailNote& note = view.trail[static_cast<std::size_t>(index)];
                 const float start =
                     head - static_cast<float>(now - note.onset_seconds) * pixels_per_second;
-                const float stop = note.sounding()
-                                       ? head
-                                       : head -
-                                             static_cast<float>(now - note.end_seconds) *
-                                                 pixels_per_second;
+                const float stop =
+                    note.sounding()
+                        ? head
+                        : head - static_cast<float>(now - note.end_seconds) * pixels_per_second;
                 if (stop <= origin.x || start >= head)
-                    continue;  // off the strip at one end or the other
+                    continue; // off the strip at one end or the other
                 const float left = std::max(start, origin.x);
                 const float right = std::min(stop, head);
 
@@ -189,14 +187,15 @@ void transport(const FrameView& view) {
                 float leave = 1.0f;
                 if (across < kFadeFraction) {
                     const float t = across / kFadeFraction;
-                    leave = t * t * (3.0f - 2.0f * t);  // smoothstep: the fade has no corner
+                    leave = t * t * (3.0f - 2.0f * t); // smoothstep: the fade has no corner
                 }
                 if (leave <= 0.002f)
                     continue;
 
                 const float rank = std::clamp(static_cast<float>(note.note) -
                                                   static_cast<float>(KeyboardLayout::kFirstNote),
-                                              0.0f, span) / span;
+                                              0.0f, span) /
+                                   span;
                 const float y = lane_bottom - 1.0f - rank * (lane_height - height);
                 const float alpha = (0.68f + 0.32f * note.level) * leave;
                 draw->AddRectFilled(ImVec2(left, y),
@@ -205,17 +204,18 @@ void transport(const FrameView& view) {
             }
         }
 
-        draw->AddLine(ImVec2(head, lane_top - 3.0f), ImVec2(head, lane_bottom + 3.0f), accent, 2.0f);
+        draw->AddLine(ImVec2(head, lane_top - 3.0f), ImVec2(head, lane_bottom + 3.0f), accent,
+                      2.0f);
 
         if (!rolling) {
             // Why nothing is moving, in the one place the eye goes looking for motion.
             const char* waiting = "no song  ·  play a key to start the clock";
             const float size = ImGui::GetFontSize();
             const float width = ImGui::GetFont()->CalcTextSizeA(size, FLT_MAX, 0.0f, waiting).x;
-            draw->AddText(ImGui::GetFont(), size,
-                          ImVec2(origin.x + (area.x - width) * 0.5f,
-                                 lane_top + (lane_height - size) * 0.5f),
-                          ImGui::GetColorU32(dim), waiting);
+            draw->AddText(
+                ImGui::GetFont(), size,
+                ImVec2(origin.x + (area.x - width) * 0.5f, lane_top + (lane_height - size) * 0.5f),
+                ImGui::GetColorU32(dim), waiting);
         }
     }
 
@@ -229,8 +229,8 @@ void transport(const FrameView& view) {
     meter(draw, origin.x + half + 8.0f, meter_y, half, view.drive_peak,
           ImVec4(0.95f, 0.62f, 0.12f, 1.0f));
 
-    // The panel consumed its region. Without this the child window sizes itself to the text line and
-    // clips the strip on a short frame.
+    // The panel consumed its region. Without this the child window sizes itself to the text line
+    // and clips the strip on a short frame.
     ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + area.y));
     ImGui::Dummy(ImVec2(1.0f, 1.0f));
 }

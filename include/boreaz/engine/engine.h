@@ -88,16 +88,16 @@ class Engine {
     int steal_count() const { return steal_count_.load(std::memory_order_relaxed); }
     std::int64_t sample_position() const { return position_; }
     // The loudest sample of the last block, before the limiter bent it. 2.0 is the ceiling, so this
-    // is the clip meter: 0.7 is a mix with room, 3.0 is a mix being held down by a dB and a half and
-    // nobody said so. Per block, not per sample, which is what a light needs - and it reads the
+    // is the clip meter: 0.7 is a mix with room, 3.0 is a mix being held down by a dB and a half
+    // and nobody said so. Per block, not per sample, which is what a light needs - and it reads the
     // *demand*, because after the limiter the output peak is a constant this stage guarantees and a
     // meter on top of a guarantee reports nothing.
     float drive_peak() const { return drive_peak_.load(std::memory_order_relaxed); }
 
-    // Take the limiter out of the master chain. Not a parameter and not a sound: it exists so a test
-    // can render the same file twice and require the two to be bit-identical at the shipping level,
-    // which is the only way to show a committed golden was not refreshed to cover a change. Setup
-    // path only, like everything else that is not the callback.
+    // Take the limiter out of the master chain. Not a parameter and not a sound: it exists so a
+    // test can render the same file twice and require the two to be bit-identical at the shipping
+    // level, which is the only way to show a committed golden was not refreshed to cover a change.
+    // Setup path only, like everything else that is not the callback.
     void bypass_limiter(bool bypass = true) { limiter_bypassed_ = bypass; }
     std::size_t dropped_events() const { return queue_.dropped(); }
     bool sustain_pedal_down() const { return pedal_down_; }
@@ -178,8 +178,8 @@ class Engine {
     // `trigger=release`, in its own eight slots (PLAN.md 6's answer to "release samples fight
     // note-off voice reuse"). They are the same voice reading the other half of the library; they
     // are never stolen from, never counted in `active_voices`, and never the reason a held note is
-    // still sounding. Eight is the size of a fast glissando's worth of overlapping hammer noise, and
-    // fixed because a pool that grows is a pool that mallocs.
+    // still sounding. Eight is the size of a fast glissando's worth of overlapping hammer noise,
+    // and fixed because a pool that grows is a pool that mallocs.
     static constexpr int kMaxReleaseVoices = 8;
     std::array<SampledVoice, kMaxReleaseVoices> releases_;
     const Instrument* instrument_ = nullptr;

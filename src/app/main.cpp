@@ -131,9 +131,9 @@ bool parse(int argc, char** argv, Options& options, std::string& error) {
             usage();
             std::exit(0);
         } else if (argument == "--version") {
-            // One line, and nothing else started: no device, no window, no settings read. Asked from
-            // a script or a bug report, it is the cheapest way to know which build a machine has -
-            // the file properties say the same number, but not from a command line.
+            // One line, and nothing else started: no device, no window, no settings read. Asked
+            // from a script or a bug report, it is the cheapest way to know which build a machine
+            // has - the file properties say the same number, but not from a command line.
             std::cout << "boreaz " << boreaz::kVersionString << std::endl;
             std::exit(0);
         } else if (argument == "--gui") {

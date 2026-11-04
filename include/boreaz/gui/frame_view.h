@@ -12,7 +12,7 @@ namespace boreaz::gui {
 // One sounding note, as the display sees it.
 struct Sounding {
     std::uint8_t note = 0;
-    std::uint8_t key = 0;     // the key that produced it, before transpose
+    std::uint8_t key = 0; // the key that produced it, before transpose
     std::uint8_t channel = 0;
     std::uint8_t velocity = 0; // 0-127, as it arrived
     bool held = false;         // the key is still up: false when only the pedal is holding it
@@ -30,13 +30,13 @@ struct Sounding {
 // travelling left: the engine forgets a voice when it is freed, so "it stopped" has to be a fact
 // the display keeps.
 struct TrailNote {
-    std::uint8_t note = 0;    // the note as it sounds - where the strip draws it
-    std::uint8_t key = 0;     // the key it came in on: how two frames know this is the same note
+    std::uint8_t note = 0; // the note as it sounds - where the strip draws it
+    std::uint8_t key = 0;  // the key it came in on: how two frames know this is the same note
     std::uint8_t channel = 0;
-    std::uint8_t velocity = 0;  // the touch it started on, which never changes again
-    float level = 0.0f;         // the last level reported while it sounded
+    std::uint8_t velocity = 0; // the touch it started on, which never changes again
+    float level = 0.0f;        // the last level reported while it sounded
     double onset_seconds = 0.0;
-    double end_seconds = -1.0;  // negative while sounding
+    double end_seconds = -1.0; // negative while sounding
 
     bool sounding() const { return end_seconds < 0.0; }
 };
@@ -64,20 +64,21 @@ struct MidiStats {
 };
 
 // What the spectrum panel draws: the master bus cut into the instrument's 88 key ranges, at two
-// window lengths. One window cannot do both jobs - 8192 samples where the bins have to be narrow enough
-// to tell A0 from A#0, 2048 where a transient has to light now - so the frame loop runs both and the view
-// decides which to show. Levels are dB relative to full scale, floor at -120, and `*_peak` is the hold
-// line above each bar: the loudest the band has been recently, falling at the panel's decay rate.
+// window lengths. One window cannot do both jobs - 8192 samples where the bins have to be narrow
+// enough to tell A0 from A#0, 2048 where a transient has to light now - so the frame loop runs both
+// and the view decides which to show. Levels are dB relative to full scale, floor at -120, and
+// `*_peak` is the hold line above each bar: the loudest the band has been recently, falling at the
+// panel's decay rate.
 //
-// Fixed size and plain data, like the rest of the frame view: a panel gets a copy per frame and never
-// reaches into the analyser, which belongs to the thread that runs the maths.
+// Fixed size and plain data, like the rest of the frame view: a panel gets a copy per frame and
+// never reaches into the analyser, which belongs to the thread that runs the maths.
 struct SpectrumSnapshot {
     static constexpr int kBandCount = 88;
     static constexpr float kFloorDb = -120.0f;
 
     // A frame that has not been measured yet reads as silence, not as full scale: a default of zero
-    // dB would draw an empty panel as if the master bus were clipping, which is the one wrong answer a
-    // meter is not allowed to give.
+    // dB would draw an empty panel as if the master bus were clipping, which is the one wrong
+    // answer a meter is not allowed to give.
     SpectrumSnapshot() {
         wide_db.fill(kFloorDb);
         wide_peak.fill(kFloorDb);
@@ -90,18 +91,19 @@ struct SpectrumSnapshot {
     std::array<float, kBandCount> fast_db{};
     std::array<float, kBandCount> fast_peak{};
 
-    // What each analyser is actually listening with, and what the transform cost. The panel prints the
-    // cost because it is the frame loop's own work, and a panel that cannot say what it costs is a panel
-    // nobody can tell is too slow.
+    // What each analyser is actually listening with, and what the transform cost. The panel prints
+    // the cost because it is the frame loop's own work, and a panel that cannot say what it costs
+    // is a panel nobody can tell is too slow.
     int wide_size = 0;
     int fast_size = 0;
     double wide_microseconds = 0.0;
     double fast_microseconds = 0.0;
 
-    // Frames of master output that were thrown away because nobody was draining the tap. The panel prints
-    // this when it is not zero: a spectrum with a hole in it has to say so.
+    // Frames of master output that were thrown away because nobody was draining the tap. The panel
+    // prints this when it is not zero: a spectrum with a hole in it has to say so.
     std::uint64_t dropped_frames = 0;
-    // Frames of sound the analyser was handed but never transformed, for the same reason on its side.
+    // Frames of sound the analyser was handed but never transformed, for the same reason on its
+    // side.
     std::uint64_t unanalysed_frames = 0;
 };
 
@@ -132,11 +134,11 @@ struct FrameView {
     std::size_t dropped_events = 0;
     bool sustain = false;
 
-    // The transport, not the audio clock. The audio thread counts samples from the moment the device
-    // opens, which is not when music starts, so a panel that prints that number shows a stopwatch
-    // where a player expects a song position. Both fields come from TransportClock: not running and
-    // zero seconds until a song is loaded or a note is played, and parked at the last value when the
-    // song ends.
+    // The transport, not the audio clock. The audio thread counts samples from the moment the
+    // device opens, which is not when music starts, so a panel that prints that number shows a
+    // stopwatch where a player expects a song position. Both fields come from TransportClock: not
+    // running and zero seconds until a song is loaded or a note is played, and parked at the last
+    // value when the song ends.
     bool transport_running = false;
     double transport_seconds = 0.0;
 
@@ -169,7 +171,6 @@ struct FrameView {
 };
 
 // Copy the telemetry out. Runs on the UI thread, reads only what the engine says the UI may read.
-FrameView make_frame_view(const boreaz::engine::Engine& engine, DeviceStats device,
-                          MidiStats midi);
+FrameView make_frame_view(const boreaz::engine::Engine& engine, DeviceStats device, MidiStats midi);
 
 } // namespace boreaz::gui

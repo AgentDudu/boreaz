@@ -187,7 +187,8 @@ bool Parser::run(Reader& in, std::string& error) {
     // its tracks still has the tracks it promised, and treating every chunk as a track would lose
     // the ones that matter. Running out of bytes early is an error rather than a warning, because
     // the alternative is to play a file that is missing its ending and call that a success.
-    constexpr int kMaxChunks = 8192; // junk chunks do not count as tracks, so they need their own bound
+    constexpr int kMaxChunks =
+        8192; // junk chunks do not count as tracks, so they need their own bound
     int tracks_read = 0;
     for (int chunks = 0; tracks_read < track_count; ++chunks) {
         if (chunks >= kMaxChunks) {
@@ -200,7 +201,8 @@ bool Parser::run(Reader& in, std::string& error) {
         const std::size_t offset = in.position();
         if (!in.take(4, id) || !in.u32(length)) {
             fail_at("the file ends after " + std::to_string(tracks_read) + " of the " +
-                        std::to_string(track_count) + " track chunks it promised", 0, offset);
+                        std::to_string(track_count) + " track chunks it promised",
+                    0, offset);
             // The copy is not ceremony: error_ is the parser's and error is the caller's, and a
             // failure that forgets it exits with a code and no message to show anyone.
             error = error_;
@@ -254,8 +256,7 @@ bool Parser::run(Reader& in, std::string& error) {
         song_.events.push_back(event);
     }
 
-    const std::int64_t tail =
-        static_cast<std::int64_t>(kReleaseTailSeconds * song_.sample_rate);
+    const std::int64_t tail = static_cast<std::int64_t>(kReleaseTailSeconds * song_.sample_rate);
     song_.end_sample = song_.events.empty()
                            ? tail
                            : song_.events.back().tick + tail; // ascending, so the last is the last
@@ -322,8 +323,9 @@ bool Parser::track(Reader& in, int index, std::int64_t length) {
         std::uint8_t status = byte;
 
         // With running status the byte just read is not a status at all: it is the message's first
-        // data byte, and has to be handed on rather than read twice. Getting that wrong shifts every
-        // later event by a byte, which is how one running status note can corrupt a whole track.
+        // data byte, and has to be handed on rather than read twice. Getting that wrong shifts
+        // every later event by a byte, which is how one running status note can corrupt a whole
+        // track.
         std::int32_t inherited = -1;
         if (status & 0x80u) {
             // 0xF8-0xFE are the real-time messages of a live cable - clock, sensing, machine stop -
@@ -345,7 +347,8 @@ bool Parser::track(Reader& in, int index, std::int64_t length) {
                     "truncate a file mid-message; this one did",
                     index, offset);
             status = running; // running status: the encoder left the status out, not the message
-            inherited = static_cast<std::int32_t>(byte); // ...and this byte is the message's first data byte
+            inherited = static_cast<std::int32_t>(
+                byte); // ...and this byte is the message's first data byte
         }
 
         if (status == kMeta) {
@@ -406,12 +409,12 @@ bool Parser::meta(Reader& in, int index, std::int64_t tick, std::size_t offset,
     if (!in.skip(length))
         return fail_at("the file ends inside a meta event", index, offset);
     if (!is_text_meta(type))
-        warn_once("meta" + std::to_string(type),
-                  "ignored meta event 0x" + [&] {
-                      char text[8];
-                      std::snprintf(text, sizeof(text), "%02X", static_cast<unsigned>(type));
-                      return std::string(text);
-                  }() + " at tick " + std::to_string(tick));
+        warn_once(
+            "meta" + std::to_string(type), "ignored meta event 0x" + [&] {
+                char text[8];
+                std::snprintf(text, sizeof(text), "%02X", static_cast<unsigned>(type));
+                return std::string(text);
+            }() + " at tick " + std::to_string(tick));
     return true;
 }
 
@@ -459,14 +462,14 @@ bool Parser::time_signature(Reader& in, int index, std::int64_t tick, std::size_
     // signature that quietly changed how notes sound would be the worst kind of surprise.
     if (song_.time_signatures.size() < 32)
         song_.time_signatures.push_back(std::to_string(static_cast<unsigned>(bytes[0])) + "/" +
-                                        (denominator != 0u ? std::to_string(denominator)
-                                                           : "?") +
+                                        (denominator != 0u ? std::to_string(denominator) : "?") +
                                         " at tick " + std::to_string(tick));
     else
         warn_once("time_sig_many", "many time signature changes: only the first 32 are reported");
     if (denominator == 0u)
-        warn_once("time_sig_denominator",
-                  "a time signature denominator byte above 15 cannot be a note value; reported as ?");
+        warn_once(
+            "time_sig_denominator",
+            "a time signature denominator byte above 15 cannot be a note value; reported as ?");
     return true;
 }
 
@@ -503,10 +506,10 @@ bool Parser::channel_event(Reader& in, int index, std::int64_t tick, std::size_t
     // Decoded by the same function a live keyboard's bytes go through, so a file and a keyboard
     // cannot drift apart on what a message means. This layer's own first attempt is the proof: it
     // tested the note number where the velocity belongs, so the velocity zero note off that half of
-    // all encoders write never happened, and every one of those notes hung until the allocator stole
-    // it from a note that was still wanted.
-    const std::optional<boreaz::engine::Event> event = boreaz::engine::decode_message(
-        boreaz::engine::MidiMessage{status, first, second}, tick);
+    // all encoders write never happened, and every one of those notes hung until the allocator
+    // stole it from a note that was still wanted.
+    const std::optional<boreaz::engine::Event> event =
+        boreaz::engine::decode_message(boreaz::engine::MidiMessage{status, first, second}, tick);
     if (!event)
         return true; // read for length, then dropped, because the engine has no use for it
 
@@ -545,8 +548,7 @@ std::int64_t Song::sample_to_tick(std::int64_t sample) const {
     std::int64_t base_tick = 0;
     double base_sample = 0.0;
     for (const TempoPoint& tempo : tempos) {
-        const double next =
-            base_sample + static_cast<double>(tempo.tick - base_tick) * per_tick;
+        const double next = base_sample + static_cast<double>(tempo.tick - base_tick) * per_tick;
         if (static_cast<double>(sample) < next)
             break;
         base_sample = next;
@@ -636,6 +638,8 @@ FeedResult feed_and_render(boreaz::engine::Engine& engine, const Song& song, std
     return result;
 }
 
-std::int64_t render_length(const Song& song) { return song.end_sample; }
+std::int64_t render_length(const Song& song) {
+    return song.end_sample;
+}
 
 } // namespace boreaz::midifile

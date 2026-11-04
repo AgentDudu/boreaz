@@ -10,7 +10,7 @@ using boreaz::gui::KeyboardLayout;
 using boreaz::gui::Rect;
 
 namespace {
-constexpr float kWidth = 1408.0f;  // 16 px per white key, a window nobody has to maximise for
+constexpr float kWidth = 1408.0f; // 16 px per white key, a window nobody has to maximise for
 constexpr float kHeight = 220.0f;
 KeyboardLayout strip() {
     return KeyboardLayout{0.0f, 0.0f, kWidth, kHeight};
@@ -23,7 +23,8 @@ TEST_CASE("keyboard layout: the strip is 88 keys, and each is counted exactly on
     CHECK(KeyboardLayout::kWhiteCount == 52);
     CHECK(layout.white_index_of(KeyboardLayout::kFirstNote) == 0);
     CHECK(layout.white_index_of(KeyboardLayout::kLastNote) == KeyboardLayout::kWhiteCount - 1);
-    CHECK(layout.white_index_of(60) == 23); // C4 is the 24th white key of this compass, A0 is the first
+    CHECK(layout.white_index_of(60) ==
+          23); // C4 is the 24th white key of this compass, A0 is the first
 
     int whites = 0;
     int blacks = 0;
@@ -171,10 +172,9 @@ TEST_CASE("keyboard layout: a click is the same event a cable sends") {
     const int velocity = layout.velocity_at(kHeight * 0.25f);
     REQUIRE(velocity > 0);
 
-    CHECK(engine.push_event(
-        boreaz::engine::Event::note_on(engine.sample_position(), 0,
-                                       static_cast<std::uint8_t>(note),
-                                       static_cast<std::uint8_t>(velocity))));
+    CHECK(engine.push_event(boreaz::engine::Event::note_on(engine.sample_position(), 0,
+                                                           static_cast<std::uint8_t>(note),
+                                                           static_cast<std::uint8_t>(velocity))));
     std::vector<float> block(512 * 2, 0.0f);
     engine.process(block.data(), 512);
     CHECK(engine.active_voices() == 1);
@@ -203,6 +203,5 @@ TEST_CASE("keyboard layout: middle C is marked and the compass outside it is not
     // The engine and the view agree about which notes this keyboard cannot show, because there is
     // one rule and both ask it.
     for (int note = 0; note < 128; ++note)
-        CHECK(KeyboardLayout::contains(note) ==
-              !boreaz::engine::Engine::is_extended_key(note));
+        CHECK(KeyboardLayout::contains(note) == !boreaz::engine::Engine::is_extended_key(note));
 }

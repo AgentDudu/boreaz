@@ -6,9 +6,9 @@ namespace boreaz::gui {
 
 void TransportClock::update(double position_seconds, bool input_present) {
     if (halted_ && input_present) {
-        // Music again after a park - a new file, or the player sitting down when the last one ended.
-        // The parked number was that song's length, which is the one thing nobody wants to read
-        // while playing, and the new song's zero is now.
+        // Music again after a park - a new file, or the player sitting down when the last one
+        // ended. The parked number was that song's length, which is the one thing nobody wants to
+        // read while playing, and the new song's zero is now.
         halted_ = false;
         started_at_ = position_seconds;
         seconds_ = 0.0;
@@ -23,13 +23,15 @@ void TransportClock::update(double position_seconds, bool input_present) {
         return; // parked where the song ended
     if (position_seconds < started_at_)
         // The audio position went backwards, which happens when the device is reopened: a new
-        // stream, a new zero. Without this the transport would read negative and a panel would spend
-        // the rest of the session drawing a playhead off the left of its own window.
+        // stream, a new zero. Without this the transport would read negative and a panel would
+        // spend the rest of the session drawing a playhead off the left of its own window.
         started_at_ = position_seconds;
     seconds_ = position_seconds - started_at_;
 }
 
-void TransportClock::halt() { halted_ = true; }
+void TransportClock::halt() {
+    halted_ = true;
+}
 
 void TransportClock::reset(double position_seconds) {
     started_at_ = position_seconds;
