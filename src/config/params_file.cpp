@@ -183,6 +183,19 @@ std::string defaults_path() {
     return "config/params.ini";
 }
 
+std::string patches_dir() {
+    for (const char* prefix : {"", "./", "../", "../../", "../../../"}) {
+        const std::string candidate = std::string(prefix) + "patches";
+        std::error_code ignored;
+        if (std::filesystem::is_directory(candidate, ignored))
+            return candidate;
+    }
+    // No such directory anywhere near. This is the name the caller creates on the first save, and
+    // the name a failure message prints, so the player sees where it was written rather than being
+    // told a folder they can see is missing.
+    return "patches";
+}
+
 std::string known_keys() {
     std::string out;
     std::size_t rows = 0;

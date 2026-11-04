@@ -29,6 +29,13 @@ bool set_param_from_text(const std::string& flag, const std::string& key, const 
 // back unchanged, which is the name the load error will print.
 std::string defaults_path();
 
+// The directory patches are listed from and written to: `patches/` next to the repository or the
+// release, found by the same walk up the tree that `defaults_path` does, because a build tree sits
+// below the repository and the two ways of running a build are from the root or from `build/`. When
+// there is no such directory yet it answers `patches` anyway, which is the name the caller creates
+// on the first save and the name the failure message prints if it cannot.
+std::string patches_dir();
+
 // Every key the engine has, in the engine's own order, as one comma separated line. The message
 // that refuses an unknown key promises the player a list, and this is the list - from the table, so
 // it is never a turn behind the parameters that actually exist.
