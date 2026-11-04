@@ -92,7 +92,10 @@ the device, so the literals are now `Cable In 16 Ch (Some Virtual Cable)`,
 `test_gui.cpp` already used. Unchanged: 327 cases, 8 877 508 assertions, `ctest` 1/1 — the same
 numbers as before the literals moved, which is the proof that nothing but the strings changed.
 
-**Left in code on purpose:** the comments in `src/io/audio_device.cpp` and `tools/release_check.py`
-that name the Realtek driver while explaining a measurement (*"a 512 frame period is late 0 at 1024
-and 256 of 1665 at 512, which is the Realtek, not this code"*). That is the same provenance the
-markdown keeps by decision, and removing it would make those measurements unattributable.
+**Left in code on purpose:** one comment, in `tools/release_check.py`, naming the driver behind a
+number it deliberately refuses to assert on: *"this driver was measured at 21 late of 141 at a 512
+frame period and 0 at 1024, which is the Realtek, not this code, and an assertion that fails when a
+laptop changes power state is a gate nobody trusts"*. Production code names no device at all — a
+`git grep` for the vendor across `src/` and `include/` is empty, which is the PLAN rule holding
+from the other side. That is the same provenance the markdown keeps by decision, and removing it
+would leave the measurement unattributable.
