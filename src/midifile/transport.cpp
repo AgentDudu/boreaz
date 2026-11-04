@@ -91,7 +91,7 @@ FeedResult Transport::feed(boreaz::engine::Engine& engine, std::int64_t engine_p
         return out;
     }
 
-    const std::int64_t up_to = position_ + kLookaheadSamples;
+    const std::int64_t up_to = position_ + lookahead_;
     while (cursor_ < song_->events.size() && song_->events[cursor_].tick <= up_to) {
         boreaz::engine::Event event = song_->events[cursor_];
         // The song's own timeline to the engine's: an event keeps its distance from the position,
