@@ -61,3 +61,38 @@ enforces it) · MIDI port names · any real path to the song library · anything
   app's filter). That output goes to the console and to untracked scratch logs, not into the tree.
 - The decision to keep the device names is a decision, not a fact: it publishes what hardware and
   what virtual cable are installed on this machine.
+
+## The code, scanned the same way
+
+The same question asked of the 130 tracked non-markdown files (64 `.cpp`, 47 `.h`, 11 `.txt`, 6
+`.py`, 4 `.mid`, 2 `.ps1`, 2 `.ini`, and the dot-files).
+
+| Looked for | Result |
+|---|---|
+| e-mail addresses, a URL carrying credentials | none |
+| credential shapes: `ghp_`/`gho_`/`ghs_`/`github_pat_`, `xox*`, `AKIA…`, `-----BEGIN`, a JWT `eyJ…`, `sk_live`, `api_key`/`token`/`secret`/`password` with a value next to it | none — every hit was `AllPass`/`bypass` in the reverb and `for (int pass = 0…)` |
+| product keys, account ids, phone numbers, an SSN shape | none |
+| hostname, account name, personal names | none outside `NOTICE` |
+| GUID, SID, loopback endpoint, MAC address | none |
+| machine-absolute path, `/home/…` | none. The paths in code and tests are invented: `C:/songs`, `D:\instruments\grand upright\library.txt` |
+| URLs | public upstream only: the four `FetchContent` pins, the FreePats release, `api.github.com` and `raw.githubusercontent.com` in `tools/mkinst.py` — no auth header, no token, no private host |
+| long base64/hex runs | the two `sha256` release pins in `tools/mkinstrument.py`: integrity pins for files anyone can download |
+| what is inside the committed `.mid` fixtures | `strings` answers `MThd`, `MTrk`, and the file's own name as the track name. Nothing else is in them |
+| `.env.example`, `patches/*.txt`, `config/params.ini` | every `.env` value empty (a test keeps it that way); no path, device name or user name in any shipped patch or preset value |
+| whatever the machine writes — `%APPDATA%\Boreaz\settings.txt`, `imgui.ini`, `.env`, `build/`, `third_party/`, rendered WAVs | git-ignored, and none of it is in the tree |
+
+**One thing found, and fixed.** `tests/test_app_settings.cpp` used this machine's **real audio
+endpoint** as a payload: `CABLE In 16 Ch (VB-Audio Virtual Cable)` is device 0 of
+`boreaz --list-devices` on this box, and `Speakers (Realtek` is the start of the real default. The
+rule being broken is PLAN's, in its own words: *"No secret and no machine-specific value is ever
+written in code"*, with audio/MIDI device names named as the example. A round-trip test needs the
+**shape** — spaces, brackets, backslashes, a value that is everything after the first `=` — and not
+the device, so the literals are now `Cable In 16 Ch (Some Virtual Cable)`,
+`Auto Input Port (Some Keyboard)` and `Speakers (Some Driver)`, the last being the name
+`test_gui.cpp` already used. Unchanged: 327 cases, 8 877 508 assertions, `ctest` 1/1 — the same
+numbers as before the literals moved, which is the proof that nothing but the strings changed.
+
+**Left in code on purpose:** the comments in `src/io/audio_device.cpp` and `tools/release_check.py`
+that name the Realtek driver while explaining a measurement (*"a 512 frame period is late 0 at 1024
+and 256 of 1665 at 512, which is the Realtek, not this code"*). That is the same provenance the
+markdown keeps by decision, and removing it would make those measurements unattributable.
