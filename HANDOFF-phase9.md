@@ -44,7 +44,7 @@ Commits reach develop **only through a PR** (direct pushes to `main` are blocked
 |---|---|---|
 | the file format and the writer | #38 | merged |
 | save / load / browser in the mixer | #39 | merged |
-| factory patches (5 registers + 3 dynamics) + the two-patch-folder rule | #40 | open, gate green, base `develop` |
+| factory patches (5 registers + 3 dynamics) + the two-patch-folder rule | #40 | merged |
 | app setup file (audio port, MIDI port, library, last patch) and autosave on exit | #41 | merged |
 
 
@@ -90,6 +90,12 @@ bool read_patch_meta(path, name, instrument, error);
 ```
 
 ### The panel (`src/gui/params_panel.cpp`, block starts after the `Defaults` button)
+
+`adopt_patch` and `status()` are public. A browser row calls `adopt_patch`; the suite cannot click, and
+the promise PLAN's row 9 makes — a patch carries its voice kind, and a library that has gone away gets
+a line rather than a silence — is decided inside that method. `status()` is the panel's own line, and a
+test that cannot read it cannot tell a warning from silence.
+
 
 `Patch`: a name field, `Save`, then **two folders** — `Factory patches` and `Your patches` — each
 listed as one button per `.txt` (labelled from its own header; an unreadable file still gets a row
@@ -206,20 +212,28 @@ is higher only because of the room (+0.10 points on four voices, +0.21 on sixtee
 
 ## What is left, in the order to take it
 
-1. **The hole in the exit criterion.** It demands the round trip cover `voice-kind`, and **no such
-   parameter exists** (`voice_kind`: 0 hits in the tree — the voice kind is implied by whether a
-   library is loaded). Ask the operator: add a `voice_kind` row to the table, or accept that
-   `instrument` already carries it and mark the criterion met. Do not invent a parameter for it
-   without asking.
+1. **Closed, and the answer was "no".** The criterion asked the round trip to cover `voice-kind`.
+   There is no `voice_kind` row and there will not be one: the kind is *which library is playing*, and
+   it already travels as a name in two places — the instrument field of a patch's header, which the
+   panel puts in front of the Load queue the moment a patch is adopted, and the `instrument` line of the
+   app's setup file, which is what the next start opens. A stored kind would be a value that can be
+   true about a sound that is not happening: `voice_kind = sampled` with the samples gone describes a
+   library nobody can load, and this phase's own rule is a warning plus the synthesiser, never a
+   contradiction. `tests/test_params_panel.cpp` now asserts the three cases (names a library / names
+   nothing / library has gone away). PLAN §7 has the decision row.
 2. **The shipped master default, noticed and not acted on.** `master_gain_db = -4` with
    `fx_limiter_threshold_db = -4`: a unison saw held across all 16 voices peaks at **-3.35 dBFS**,
    8 dB above the limiter's threshold. No factory patch is near that (the loudest is 0.511). Worth an
    operator decision about the limiter ceiling, not a change in a patch PR.
 3. **A human at the mixer, once, on purpose.** Nobody has clicked the two patch folders, saved a patch
-   under a name, watched the library field follow a patch that names one, or listened to the eight
-   voices. None of that is hard to do and none of it is possible from here.
-4. **Then phase 9 is closed and phase 10 starts.** With #38 to #41 every deliverable in PLAN's row 9
-   has landed; what is left of the row is the `voice-kind` half of its completion test, which is item 1.
+   under a name, or listened to the eight voices. The library following a patch that names one is now
+   asserted by a test that calls the method a row calls — which is the same code, reached the way a
+   keyboard cannot reach it; the click itself is still unproven, and it is the last thing between this
+   phase and its exit. None of it is hard to do and none of it is possible from here.
+4. **Then phase 9 is closed and phase 10 starts.** With #38 to #42 every deliverable and every name
+   in PLAN's row 9 has landed, including the criterion's five: `transpose_semitones`, `octave_shift`
+   and `tuning_reference_hz` as rows of the patch file, and the instrument name twice over — the patch
+   header and the setup file. What closes the phase is a human at the mixer (item 3), not code.
    Phase 10 is the transport controls on top of the `.mid` loading and the transport clock, and both of
    those are already in.
 
