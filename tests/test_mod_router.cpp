@@ -191,11 +191,11 @@ TEST_CASE("a source is normalised, and the destination decides what depth means"
     CHECK(keytrack_value(127) == doctest::Approx(1.0f));
     CHECK(keytrack_value(0) == doctest::Approx(-1.0f));
 
-    // The resting sources — velocity, Env2, the wheel — start at nothing, so unshaped they add
+    // The resting sources — velocity, Mod env, the wheel — start at nothing, so unshaped they add
     // nothing. The LFOs and the keyboard swing.
     CHECK(source_is_unipolar(ModSource::kVelocity));
     CHECK(source_is_unipolar(ModSource::kWheel));
-    CHECK(source_is_unipolar(ModSource::kEnv2));
+    CHECK(source_is_unipolar(ModSource::kModEnv));
     CHECK_FALSE(source_is_unipolar(ModSource::kLfo1));
     CHECK_FALSE(source_is_unipolar(ModSource::kLfo2));
     CHECK_FALSE(source_is_unipolar(ModSource::kKeyTrack));
@@ -210,7 +210,7 @@ TEST_CASE("a source is normalised, and the destination decides what depth means"
     CHECK(shape_source_value(ModSource::kLfo1, 0.0f, true) == doctest::Approx(0.5f));
     CHECK(shape_source_value(ModSource::kLfo1, -1.0f, true) == doctest::Approx(0.0f));
     CHECK(shape_source_value(ModSource::kLfo1, 1.0f, false) == doctest::Approx(1.0f));
-    CHECK(shape_source_value(ModSource::kEnv2, 0.75f, true) == doctest::Approx(0.75f));
+    CHECK(shape_source_value(ModSource::kModEnv, 0.75f, true) == doctest::Approx(0.75f));
     // Staying bipolar means staying bipolar: the negative half of a swing has to survive, or an
     // LFO only pulls one way and a keytrack is a ramp instead of a centre.
     CHECK(shape_source_value(ModSource::kLfo1, -1.0f, false) == doctest::Approx(-1.0f));
@@ -424,8 +424,8 @@ TEST_CASE("an LFO routed to pitch wobbles by its depth, at its own rate") {
 TEST_CASE("the level destinations take the modulation and are floored at zero") {
     // A level is a balance, so a modulated level is added and then not allowed to go negative:
     // inverting an oscillator's phase to make it quieter changes the timbre instead of the mix.
-    // The wheel is the source here rather than Env2 because a wheel holds whatever the test set it
-    // to, and an envelope's value at a given block is a question about timing.
+    // The wheel is the source here rather than Mod env because a wheel holds whatever the test set
+    // it to, and an envelope's value at a given block is a question about timing.
     Params params = patch();
     params.osc2_level = 0.25f;
     route(params, 0, ModSource::kWheel, ModDest::kOsc2Level, 0.5f, false); // bipolar: -1 at rest
@@ -532,14 +532,15 @@ TEST_CASE("a depth that is not a number cannot make the voice not a number") {
     CHECK(voice.pitch_hz() == doctest::Approx(kA4).epsilon(1.0e-6)); // skipped, not spoiled
 }
 
-TEST_CASE("Env2 routed to the cutoff opens the filter at the strike and lets it close") {
+TEST_CASE("Mod env routed to the cutoff opens the filter at the strike and lets it close") {
     Params params = patch();
     params.filter_cutoff_ratio = 2.0f; // 880 Hz on A4, so +-3 octaves stays between 110 Hz and
                                        // 7 kHz and neither end leans on the filter's clamping
-    params.env2_attack_s = 0.002f;
-    params.env2_decay_s = 0.6f;
-    params.env2_sustain = 0.0f;
-    route(params, 0, ModSource::kEnv2, ModDest::kCutoff, 1.0f, false); // bipolar: 1 opens, 0 closes
+    params.mod_env_attack_s = 0.002f;
+    params.mod_env_decay_s = 0.6f;
+    params.mod_env_sustain = 0.0f;
+    route(params, 0, ModSource::kModEnv, ModDest::kCutoff, 1.0f,
+          false); // bipolar: 1 opens, 0 closes
 
     const std::vector<float> sound = play(params, 1.6f);
     // The whole point of routing a filter is that nothing in it may stop being a number.
@@ -708,7 +709,7 @@ TEST_CASE("the words a cable is drawn with are the numbers a patch file writes")
     // engine test would ever notice.
     using S = ModSource;
     CHECK(std::string_view(kModSourceNames[std::size_t(S::kOff)]) == "Off");
-    CHECK(std::string_view(kModSourceNames[std::size_t(S::kEnv2)]) == "Mod env");
+    CHECK(std::string_view(kModSourceNames[std::size_t(S::kModEnv)]) == "Mod env");
     CHECK(std::string_view(kModSourceNames[std::size_t(S::kLfo1)]) == "LFO 1");
     CHECK(std::string_view(kModSourceNames[std::size_t(S::kLfo2)]) == "LFO 2");
     CHECK(std::string_view(kModSourceNames[std::size_t(S::kVelocity)]) == "Velocity");
@@ -777,8 +778,8 @@ TEST_CASE("the words a cable is drawn with are the numbers a patch file writes")
 
     // The naming decision, written down where it can break: the modulation envelope is "Mod env"
     // next to the cable that names it, and the amp envelope keeps the bare word a player reads.
-    CHECK(std::string_view(param_spec("env2_attack_s")->label) == "Mod env attack");
-    CHECK(std::string_view(param_spec("env2_release_s")->label) == "Mod env release");
+    CHECK(std::string_view(param_spec("mod_env_attack_s")->label) == "Mod env attack");
+    CHECK(std::string_view(param_spec("mod_env_release_s")->label) == "Mod env release");
     CHECK(std::string_view(param_spec("amp_attack_s")->label) == "Attack");
     CHECK(std::string_view(param_spec("mod1_source")->label) == "M1 source");
     CHECK(std::string_view(param_spec("mod8_unipolar")->label) == "M8 unipolar");

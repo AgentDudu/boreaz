@@ -19,7 +19,7 @@ namespace boreaz::engine {
 enum class ModSource : std::uint8_t {
     kOff = 0,  // nothing routed; a slot with no source is skipped, which is how the defaults cost
                // nothing
-    kEnv2,     // the second envelope, 0..1, struck with the note
+    kModEnv,   // the second envelope, 0..1, struck with the note
     kLfo1,     // -1..1
     kLfo2,     // -1..1, slower by default so that two of them are not one with a cable
     kVelocity, // 0..1, the strike this note arrived with
@@ -81,15 +81,15 @@ inline float keytrack_value(int key) noexcept {
     return std::clamp(scaled, -1.0f, 1.0f);
 }
 
-// The two families of source. Velocity, Env2 and the wheel are levels that start at nothing — all
-// three are controllers that rest at zero, and a source resting at zero has to add nothing, or
+// The two families of source. Velocity, Mod env and the wheel are levels that start at nothing —
+// all three are controllers that rest at zero, and a source resting at zero has to add nothing, or
 // every patch would start with a pedal pushed down. The LFOs and the keyboard are centres that
 // swing both ways. The slot's unipolar flag converts between the families, and knowing which one a
 // source belongs to is what makes that conversion meaningful rather than a matter of convention:
 // centring a resting source is what turns "vibrato" into "the note is flat until you move the
 // wheel".
 inline bool source_is_unipolar(ModSource source) noexcept {
-    return source == ModSource::kVelocity || source == ModSource::kEnv2 ||
+    return source == ModSource::kVelocity || source == ModSource::kModEnv ||
            source == ModSource::kWheel;
 }
 

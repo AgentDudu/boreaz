@@ -7,9 +7,9 @@
 #include "boreaz/dsp/oscillator.h"
 #include "boreaz/dsp/svf.h"
 #include "boreaz/engine/note.h"
-#include "boreaz/engine/voice_common.h"
-#include "boreaz/engine/voice.h"
 #include "boreaz/engine/params.h"
+#include "boreaz/engine/voice.h"
+#include "boreaz/engine/voice_common.h"
 
 namespace boreaz::engine {
 
@@ -51,7 +51,9 @@ class SynthVoice final : public Voice {
     float pitch_hz() const noexcept { return osc1_.frequency(); }
     float osc2_level() const noexcept { return mixed_level(applied_.osc2_level, mod_.osc2_level); }
     float osc3_level() const noexcept { return mixed_level(applied_.osc3_level, mod_.osc3_level); }
-    float noise_level() const noexcept { return mixed_level(applied_.noise_level, mod_.noise_level); }
+    float noise_level() const noexcept {
+        return mixed_level(applied_.noise_level, mod_.noise_level);
+    }
 
     // A modulated level is added and then floored at zero: a negative level is a legal gain
     // inversion on an oscillator, but "move this level down" that ends up inverting the wave
@@ -60,8 +62,8 @@ class SynthVoice final : public Voice {
         return std::max(0.0f, base + modulation);
     }
 
-    // Transpose or octave shift moved the keyboard under this note: move the note number, the pitch,
-    // and the cutoff that follows the note. See `Voice::retune`.
+    // Transpose or octave shift moved the keyboard under this note: move the note number, the
+    // pitch, and the cutoff that follows the note. See `Voice::retune`.
     void retune(int semitones, const Params& params) override;
 
     // Adds into `left`/`right`; the caller owns the buffer and the mix.
@@ -83,7 +85,6 @@ class SynthVoice final : public Voice {
     std::int64_t start_tick() const override { return start_tick_; }
 
     std::int64_t release_tick() const override { return release_tick_; }
-
 
     // Where the amplitude envelope is, for the display tap later. Reading it does not advance
     // anything.
@@ -142,15 +143,15 @@ class SynthVoice final : public Voice {
     boreaz::dsp::Svf filter_;
     boreaz::dsp::Adsr amp_;
 
-    // The router's own state. Env2 is a second ADSR struck with the note, and the two LFOs are free
-    // oscillators whose phase runs from the voice's start; all three are evaluated once per block,
-    // which is the rate the real-time rules set for LFOs and filter coefficients.
-    boreaz::dsp::Adsr env2_;
+    // The router's own state. Mod env is a second ADSR struck with the note, and the two LFOs are
+    // free oscillators whose phase runs from the voice's start; all three are evaluated once per
+    // block, which is the rate the real-time rules set for LFOs and filter coefficients.
+    boreaz::dsp::Adsr mod_env_;
     boreaz::dsp::Oscillator lfo1_{boreaz::dsp::Waveform::Sine};
     boreaz::dsp::Oscillator lfo2_{boreaz::dsp::Waveform::Sine};
 
     // One bit per source and one per destination, so the block does not test eight slots.
-    bool mod_used_env2_ = false;
+    bool mod_used_env_ = false;
     bool mod_used_lfo1_ = false;
     bool mod_used_lfo2_ = false;
     bool mod_moves_cutoff_ = false;
