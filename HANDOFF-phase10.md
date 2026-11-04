@@ -155,4 +155,20 @@ drained while typing, so closing a field does not release a queue of letters as 
 Also deduplicated: `Transport` had both `looped()` and `looping()`; the pre-existing `looping()` is the
 one that stays.
 
-Still open in the phase: **the open-a-file dialog** (everything else 10 named), and the mouse.
+**10.4, a song chosen while the app runs, is in** (`feature/open-a-song`). No modal dialog: its message
+loop would run on the thread that feeds the event ring, and a picker open past the lookahead stutters
+the song. Two routes instead — drop the file on the window (GLFW's drop callback copies one name into
+`Impl`; the drawing frame acts on it), or `F1` / `Change` to open a path field that takes the keyboard
+the frame it opens and loads on `Enter`. The app does the reading: `Options::Songs::load(path, reason)`
+parses into a temporary and only then stops the transport, moves the `Song` and reloads, so **a path
+that will not read leaves the session alone**. `song_path` in `main.cpp` is the one name for the loaded
+file (startup print, runtime print, `finished`), and `set_song_path` tells the window what to display.
+
+Live recipe, in order: `-vk 112`, `-text "C:/…/pad-chords.mid"`, `-vk 13`. An app started with **no file**
+printed `48 events, 6.5 seconds` and then `finished`. An app started with a real file and handed
+`C:/songs/does-not-exist.mid` printed the loader's reason and changed nothing. The tool's `-ctrl` flag is
+gone because posted modifiers do not reach GLFW's modifier state — `mods=0` measured — which is also why
+`F1` is the shortcut and every shortcut in this app is a bare key.
+
+Still open in the phase: **the mouse** (nobody has clicked Play, Loop, the bar, `Change` or `Load`) and
+**the OLE drop itself** (wired, same code path as the typed field, never driven by a real drag).
