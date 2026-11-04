@@ -45,7 +45,7 @@ TEST_CASE("the setup the app wrote is the setup the app reads") {
     written.audio_device = "CABLE In 16 Ch (VB-Audio Virtual Cable)";
     written.midi_port = "Auto Input Port (01-Desktop)";
     written.instrument = "D:\\instruments\\grand upright\\library.txt";
-    written.patch.clear(); // nothing remembered, which is a state and not an absence
+    written.patch.clear();       // nothing remembered, which is a state and not an absence
     written.peak_decay = "22.5"; // a display knob, stored as the machine said it
 
     std::string error;
@@ -186,4 +186,68 @@ TEST_CASE("a remembered path is remembered where the next start can find it") {
     // it becomes the working directory, and the next start would be told to load a folder as a
     // piano.
     CHECK(boreaz::config::resolved_path("").empty());
+}
+
+TEST_CASE("a release finds its own folder, not the folder that started it") {
+    // A shipped `boreaz.exe` is a folder: the exe, `config/params.ini`, `patches/`. What a person
+    // double-clicking it sets as the working directory is the shortcut's business, and every path
+    // here that only knows the working directory is a file the release appears to be missing.
+    const std::string here = boreaz::config::executable_folder();
+#ifdef _WIN32
+    REQUIRE_MESSAGE(!here.empty(), "the running test binary has no folder of its own to name");
+    std::error_code ec;
+    CHECK(std::filesystem::path(here).is_absolute());
+    CHECK(std::filesystem::is_directory(here, ec));
+    CHECK(std::filesystem::exists(std::filesystem::path(here) / "boreaz_tests.exe", ec));
+
+    // The shipped layout, end to end: the file beside the executable, the process started somewhere
+    // else, and the defaults that load are the ones beside the program. Written beside the test
+    // binary for the length of this case and removed afterwards, because that is the only folder a
+    // release's layout puts them in.
+    const std::filesystem::path folder = std::filesystem::path(here) / "config";
+    const std::filesystem::path shipped = folder / "params.ini";
+    const bool already_there = std::filesystem::exists(shipped, ec);
+    if (!already_there) {
+        std::filesystem::create_directories(folder, ec);
+        write_text(shipped, "master_gain_db = -3\n");
+    }
+
+    struct Cleanup {
+        std::filesystem::path cwd;
+        std::filesystem::path file;
+        bool made_it;
+        ~Cleanup() {
+            std::error_code ignored;
+            std::filesystem::current_path(cwd, ignored);
+            if (made_it) {
+                std::filesystem::remove(file, ignored);
+                std::filesystem::remove(file.parent_path(), ignored);
+            }
+        }
+    } cleanup{std::filesystem::current_path(), shipped, !already_there};
+
+    // Somewhere the walk up the tree cannot reach: three levels of temp directory, and no repository
+    // above it. A shortcut that starts the app from `Documents` is the same shape.
+    std::filesystem::current_path(std::filesystem::temp_directory_path(), ec);
+    REQUIRE_FALSE_MESSAGE(ec, "cannot move the working directory to the temp folder");
+    const std::string found = boreaz::config::defaults_path();
+    CHECK_MESSAGE(found == shipped.string(), found << " is not " << shipped.string());
+    CHECK(std::filesystem::path(found).is_absolute());
+
+    boreaz::engine::Params params;
+    std::string error;
+    REQUIRE_MESSAGE(boreaz::config::load_params_file(found, params, error), error);
+    // The number the file beside the program says. The built-in default is -12, so a value that
+    // looks like the default would pass even if nothing beside the exe had been read.
+    CHECK(params.master_gain_db == -3.0f);
+
+    // And a release with no file at all says where it looked: the folder the exe is in, named
+    // absolutely, rather than a relative name that points at a directory nobody was ever in.
+    std::filesystem::remove(shipped, ec);
+    const std::string missing = boreaz::config::defaults_path();
+    CHECK_MESSAGE(missing == shipped.string(), missing << " is not " << shipped.string());
+    CHECK(!std::filesystem::exists(missing, ec));
+#else
+    CHECK(here.empty()); // nothing else has a zip to place files beside yet
+#endif
 }

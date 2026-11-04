@@ -1,0 +1,36 @@
+// What Explorer, "Apps & features", and a crash report say the program is. Without this block a
+// shipped boreaz.exe has no version and no name anywhere outside its own filename, so a player who
+// is asked "which build are you running?" cannot answer it.
+//
+// Generated from this file by CMake, from the same `project(boreaz VERSION ...)` that
+// `include/boreaz/version.h` is checked against - one place states the number, twice.
+
+#include <winver.h>
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+PRODUCTVERSION  @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+FILEFLAGS       0
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_APP
+FILESUBTYPE     VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "FileDescription", "boreaz - a polyphonic subtractive software synthesizer"
+            VALUE "FileVersion",     "@PROJECT_VERSION@"
+            VALUE "InternalName",    "boreaz"
+            VALUE "LegalCopyright",  "MIT"
+            VALUE "OriginalFilename","boreaz.exe"
+            VALUE "ProductName",     "boreaz"
+            VALUE "ProductVersion",  "@PROJECT_VERSION@"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END

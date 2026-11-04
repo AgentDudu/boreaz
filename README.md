@@ -105,6 +105,26 @@ or a virtual cable is in the list — `--device` picks by index or by part of th
 `--list-devices` shows what is there. Exit status is 0 ok, 1 for anything that stopped the app:
 bad usage, no such audio output, MIDI refused.
 
+## Release
+
+The build is one portable file. `build/boreaz.exe` links the compiler runtime statically and imports
+only system DLLs (`d3d11`, `D3DCOMPILER_47`, `winmm`, the CRT API sets), so nothing has to be
+installed on a Windows 10 or 11 machine. What it does want is its shipped defaults, and it looks for
+them beside the executable as well as in the working directory — so a folder holding three things is
+the whole product:
+
+```bash
+mkdir boreaz-0.1.0
+cp build/boreaz.exe   boreaz-0.1.0/
+cp config/params.ini  boreaz-0.1.0/config/
+cp -r patches         boreaz-0.1.0/
+```
+
+About 4 MB: 3.97 MB of exe (stripped in a Release build), 2.8 KB of defaults, 36 KB of factory
+patches. No installer, no administrator rights, and nothing written outside `%APPDATA%\Boreaz`. A
+missing `config/params.ini` stops the app and prints the absolute path it looked for. `boreaz
+--version` and the exe's file properties both say which build a machine has.
+
 ## Configuration
 
 Nothing is hardcoded and nothing is uploaded.
