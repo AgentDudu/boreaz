@@ -5,7 +5,7 @@ patch + instrument path, autosave on exit". It is in, and it is smaller than it
 sounds: **four names in one file**, `%APPDATA%\Boreaz\settings.txt`, read at every
 start and written at the end of a session that had a window.
 
-```
+```ini
 # boreaz app setup 1
 audio_device = Speakers (Realtek High Definition Audio)
 midi_port = auto

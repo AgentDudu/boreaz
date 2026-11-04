@@ -51,7 +51,10 @@ class ParamsPanel {
     void toggle() { visible_ = !visible_; }
     bool visible() const { return visible_; }
 
-  private:
+    // The last thing the panel had to say about a load. It is the browser's own line, and the only
+    // way to tell a warning from silence - which is a promise, not a detail.
+    const std::string& status() const { return status_; }
+
     // A patch the panel can offer: the file, the word to put on its row, and the sampled instrument
     // its header asks for (empty means the patch says nothing about the instrument, and what is
     // already playing keeps playing).
@@ -62,6 +65,14 @@ class ParamsPanel {
         std::string instrument;
     };
 
+    // Adopt a patch. The parameters go in through the engine's own ramp, and the instrument the
+    // patch names follows it. A file that is refused changes nothing at all, including the sound.
+    // A browser row calls this; it is public because this suite cannot click, and the thing the
+    // criterion asks about - a patch carrying its voice kind - is decided here.
+    void adopt_patch(const PatchEntry& patch, boreaz::engine::Engine& engine,
+                     const Instruments& instruments);
+
+  private:
     // A requested instrument the engine has not taken yet, and why it is waiting: switching pools
     // while notes are sounding would cut them off, and the plan says the switch may not click.
     void carry_pending(boreaz::engine::Engine& engine, const Instruments& instruments);
@@ -74,11 +85,6 @@ class ParamsPanel {
     // one place the app is allowed to open a sample library. False means it did not load, and the
     // reason is already in `status_`.
     bool request_instrument(const std::string& path, const Instruments& instruments);
-
-    // Adopt a patch. The parameters go in through the engine's own ramp, and the instrument the
-    // patch names follows it. A file that is refused changes nothing at all, including the sound.
-    void adopt_patch(const PatchEntry& patch, boreaz::engine::Engine& engine,
-                     const Instruments& instruments);
 
     // Save what the panel is showing, under the name in the field, with the library field written
     // as the patch's instrument.

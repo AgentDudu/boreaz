@@ -5,16 +5,21 @@
 // table in test_live_params.cpp - the panel reads that same table, so a parameter in the table is a
 // parameter the panel reaches. What is tested here is the queue in front of
 // `Engine::set_instrument`, because that call rebuilds the voice pool: allocations, deletes, and
-// the end of every note that was still ringing.
+// the end of every note that was still ringing. Two things stand in front of it: the Load button,
+// in the next case, and a patch row, which asks for the library the patch's header names.
 
+#include <filesystem>
 #include <string>
+#include <vector>
 
 #include <doctest/doctest.h>
 
 #include <imgui.h>
 
+#include "boreaz/config/params_file.h"
 #include "boreaz/engine/engine.h"
 #include "boreaz/engine/instrument.h"
+#include "boreaz/engine/param_table.h"
 #include "boreaz/gui/frame_view.h"
 #include "boreaz/gui/params_panel.h"
 #include "engine_fixture.h"
@@ -167,4 +172,91 @@ TEST_CASE("going back to the synthesiser is a request like any other, and waits 
     for (int frame = 0; frame < 5; ++frame)
         draw(engine, controls, panel);
     CHECK(applied == 1);
+}
+
+// A patch is not only numbers. Its header names the sampled library the voice wants, and that name
+// is the only way the app's voice kind travels at all: there is no `voice_kind` row in the table,
+// and a stored kind would be a lie the moment its library was gone. A browser row reaches
+// `adopt_patch`; this suite has no way to click, so the case calls what a click calls.
+TEST_CASE("a patch carries its voice kind: the library it names, or the reason it did not arrive") {
+    ui();
+    Engine engine;
+    engine.prepare(fixture::kRate);
+
+    FakeInstrument library;
+    std::vector<std::string> asked;
+    int applied = 0;
+    const Instrument* applied_to = nullptr;
+    ParamsPanel::Instruments controls;
+    controls.load = [&](const std::string& path, std::string& reason) -> const Instrument* {
+        asked.push_back(path);
+        if (path == "gone/library.txt") {
+            reason = "no such library on this machine";
+            return nullptr;
+        }
+        return path.empty() ? nullptr : &library; // an empty path is the synthesiser, not an error
+    };
+    controls.applied = [&](const Instrument* instrument) {
+        ++applied;
+        applied_to = instrument;
+    };
+
+    const auto dir = std::filesystem::temp_directory_path() / "boreaz_patch_voice_kind";
+    std::filesystem::create_directories(dir);
+    const auto write_patch = [&](const char* file, const char* instrument) {
+        boreaz::engine::Params shaped{};
+        const boreaz::engine::ParamSpec* spec = boreaz::engine::param_spec("tuning_reference_hz");
+        REQUIRE(spec != nullptr);
+        boreaz::engine::param_write(*spec, 432.0f, shaped);
+        std::string error;
+        REQUIRE(boreaz::config::save_params_file((dir / file).string(), shaped, "Kind test",
+                                                 instrument, error));
+        // The row is built the way the browser builds one: the header is read before anything
+        // plays.
+        ParamsPanel::PatchEntry entry;
+        entry.path = (dir / file).string();
+        std::string reason;
+        REQUIRE(boreaz::config::read_patch_meta(entry.path, entry.name, entry.instrument, reason));
+        entry.label = entry.name;
+        return entry;
+    };
+
+    ParamsPanel panel;
+    panel.toggle();
+    draw(engine, controls,
+         panel); // the first frame takes the engine's parameters, as a real one does
+
+    // A patch that names a library asks for it by that name, and the kind follows once the pool may
+    // be rebuilt. The tuning row went in at the same moment: one click, one sound.
+    const auto sampled = write_patch("sampled.txt", "assets/instruments/grand/library.txt");
+    panel.adopt_patch(sampled, engine, controls);
+    REQUIRE(asked.size() == 1);
+    CHECK(asked[0] == "assets/instruments/grand/library.txt");
+    CHECK(panel.status() == "loaded Kind test"); // the row's line, before the pool has moved
+    for (int frame = 0; frame < 3; ++frame)
+        draw(engine, controls, panel);
+    CHECK(applied == 1);
+    CHECK(applied_to == &library);
+    CHECK(panel.last_patch() == sampled.path);
+    CHECK(panel.status() == "playing the loaded library"); // and the line that says it arrived
+    CHECK(engine.params().tuning_reference_hz == doctest::Approx(432.0f));
+
+    // A patch that names nothing says nothing about the instrument: the library that is playing
+    // keeps playing, so the synthesiser is not smuggled in behind a preset.
+    const auto bare = write_patch("bare.txt", "");
+    panel.adopt_patch(bare, engine, controls);
+    CHECK(asked.size() == 1);
+    CHECK(applied == 1);
+
+    // A patch whose library has gone away: the parameters still arrive, the kind does not change,
+    // no second voice pool is built while the first one is playing, and the reason is a line in the
+    // panel rather than a silence.
+    const auto broken = write_patch("broken.txt", "gone/library.txt");
+    panel.adopt_patch(broken, engine, controls);
+    REQUIRE(asked.size() == 2);
+    CHECK(asked[1] == "gone/library.txt");
+    CHECK(applied == 1);
+    CHECK(panel.status() == "no such library on this machine");
+    CHECK(panel.last_patch() == broken.path);
+    CHECK(engine.params().tuning_reference_hz == doctest::Approx(432.0f));
 }
