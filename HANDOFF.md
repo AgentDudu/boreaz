@@ -46,14 +46,20 @@ synthesiser, dry                           6.81 %              8.03 %
 4 voices (lead-simple): sampled 0.23 -> 0.42 with the room; synthesiser 1.34 -> 1.58
 ```
 
+**The two synthesiser rows are history.** 8.5 read the sine out of a table and the synthesiser
+went to 1.08-1.16 % offline / 1.58-2.35 % on the device; the section further down has the numbers
+and the reason. The sampled rows still stand, and `GOLDEN_SAMPLED` did not move by one bit.
+
 - **The bus costs per sample, not per voice**: the room is +0.16-0.24 points and the delay +0.02-0.04
   at 4 voices *and* at 16. A heavier FX rack cannot blow the budget by adding polyphony.
 - **The shipping path is 1.1-1.4 % with everything on** — six times inside PLAN's 8 %.
 - **The synthesiser is at the budget and has been since phase 3** (8.03 % here, 9.40 % in PLAN's
   phase-3 row). It is not phase 8's doing, and §7's diagnosis is true: `synth_voice.h` builds
   **`osc1_`/`osc2_` as `Waveform::Sine`** — two `std::sin` per sample per voice, `step()`ed even when
-  the oscillator's level reads 0 — while `Waveform::Saw` is one FMA. So **polyBLEP is a CPU saving**;
-  re-measure this row when it lands. `oscillator.h`'s `sin` is only reached for `Sine`.
+  the oscillator's level reads 0 — while `Waveform::Saw` is one FMA. So **polyBLEP was
+  a CPU saving** — and the cost turned out to be the *sine*, not the saw, and 8.5 removed it with a
+  table two days later. `oscillator.h`'s `sin` is only reached for `Sine`, and for `Sine` it is now
+  a table read.
 - Offline sits under the device number (0.43 vs 1.09) for the same config: engine-only in a hot loop
   versus the same call with a driver and a poller on the core. Unexplained arithmetically; use the
   device figure for claims and the offline one for A/B comparisons in the same hour.
@@ -155,6 +161,50 @@ source/destination pairs want list widgets — phase 8.4, with the search box PL
 already carries every cable (`params_file.cpp` walks the table; no format change was needed). The
 `env2_*` label next to `amp_*` is the naming decision the panel forces, and `env1_*` has gone un-named
 for four phases for the same reason.
+
+## What the sine table is, and where the CPU actually was (measured 2026-11-04, PR #36)
+
+`waveform_at(Waveform::Sine, phase)` stopped evaluating `std::sin` and started reading a
+**4096-entry `float` table with linear interpolation**. `detail::sine_exact` is a constexpr 13-term
+Taylor that stops when a term becomes zero, so the table is `.rodata` built at compile time: 16 KiB,
+no generator script to keep honest. The index is masked with `kSineSize - 1` rather than `%` —
+because `phase` may land on exactly 1.0, where `phase * 4096.0f` is 4096.0, and 4096 % 4096 is the
+same wrap the phase counter already performs — and `static_assert(1 << 12 == kSineSize)` is what
+stops a resize from turning that into a discontinuity at the top of every cycle. The read is
+`std::fma(fraction, next, here - fraction * here)`, so one multiply survives instead of two. The
+table is at namespace scope and **not** a function-local `static`, because a local static puts an
+initialisation guard on every call: that guard is why the first probe measured 4.46 % instead of 1.1 %.
+
+| one binary, `-O3`, medians | `std::sin` | the table |
+|---|---|---|
+| `waveform_at(Sine, phase)`, ns per call | 48.0 | 2.9 (nearest-neighbour: 2.7) |
+| `pad-chords.mid`, 16 voices, offline render | 6.07 % | **1.14 %** |
+| the same load on the device, 48 kHz / 1024 | 10.12-11.50 % | **1.58-2.35 %** |
+| `lead-simple.mid`, 4 voices, offline | 2.28 % | **0.34 %** |
+
+- **`std::sin` was roughly 80 % of what a synthesiser voice costs.** That is why a 50-line header
+  moved the criterion number by eight points while an entire FX rack moved it by two tenths.
+- **The CPU criterion closes.** PLAN's `< 8 % of one core` has failed for the synthesiser since phase
+  3 (8.03 % measured here, 9.40 % in PLAN's own row). It is **2.32 %** now, and the sampled shipping
+  path stays at 1.1-1.4 %. Both paths pass; the harder one has 3.4x margin.
+- **The interpolation is at the floor of `float`.** Worst absolute error over a cycle, sampled half a
+  step off the table's own nodes — a real voice never lands on a node — is **4.76837e-7**, bounded at
+  1e-6 by the test, and the `float` reference `std::sin` carries **4.023e-7** of its own. So the
+  interpolation adds a little under one unit in the last place. Nearest-neighbour is 2.7 ns and
+  4.2e-5: eighty times the error to save 0.2 ns, so linear stays.
+- **Both goldens moved, and only in the hash.** `tests/golden/midifile.txt`: four `fnv1a64`, with
+  **every peak identical** (0.299295 / 0.647880 / 0.306908 / 0.604739) and every steal count identical
+  (0 0 0 8). `tools/release_check.py`: `GOLDEN_SYNTH` `e124adf1851914b9 -> 08eb2e60c42ca135`, peak
+  still 0.142584, reason in the comment above it. The flagship compared sample by sample: **573 146 of
+  573 300 bit-identical, 154 off by exactly one 16-bit unit**, which is -96 dBFS. `GOLDEN_SAMPLED` did
+  not move at all, which is the other half of the evidence: recorded voices never ask the oscillator
+  for anything.
+- **The finding that came with it is a product question, not an engineering one: no parameter selects
+  a waveform.** `synth_voice.h:37-39` builds `osc1_`/`osc2_` as `Sine` and `osc3_` as `Saw`, and there
+  is no `osc1_waveform` in the parameter table. So `Waveform::Square` and `Waveform::Triangle` have
+  never been reachable from a patch, and the aliased saw PLAN's shortcut row promises to fix reaches
+  the output only as osc3, at `osc3_level` 0.12. polyBLEP is now a **sound** fix whose scope is
+  narrower than the row implied, and the headroom it was supposed to buy already exists.
 
 ## The room's numbers (re-deriving these costs an hour)
 
@@ -285,8 +335,8 @@ loops:  0 of 208 regions loop, because upstream has none. 20 of the 120 note rec
    `AgentDudu/boreaz` — `gh api` on the wrong owner 404s and proves nothing.
 2. **The rest of phase 8's exit criteria**: per-voice modulation < 1 op/sample at defaults — **met**, 1.36 %
    unwired against 1.38 % with all eight slots routed, inside a 1.33–1.79 % run-to-run spread. CPU < 8 % — **met by the shipping sampled path** (1.1-1.4 % with all
-   three effects) and **not met by the synthesiser** (8.03 %), which is a phase-3 number and wants
-   polyBLEP. Measure anything level-related at `--gain -40`, never at a post-`tanh` peak.
+   three effects) **met by the synthesiser too** — 2.32 % since 8.5 read the sine out of a table, against the
+   8.03 % measured here and the 9.40 % in PLAN's phase-3 row. polyBLEP. Measure anything level-related at `--gain -40`, never at a post-`tanh` peak.
 3. **The panel.** `--gui` ran once by hand (window opened, file played, killed after 6 s) and nobody
    has *looked* at 25 rows drawn from one table — the drive's two sliders arrived with nobody
    touching the panel, which is the point of the table, and nobody has seen them either. PLAN's

@@ -91,7 +91,13 @@ def run(failures, what, argv, cwd=str(OUT), expect=0, grep=None):
 # checked that a line containing `fnv1a64=` was printed - so `--gain 12`, which moves the hash from
 # e124adf1851914b9 to ff6d22238f543655 and the peak from 0.1426 to 0.9640, passed it. Every level
 # claim in PLAN that says "the goldens are the gate" was true of the number and not of the gate.
-GOLDEN_SYNTH = ("e124adf1851914b9", "0.142584")
+#
+# 2026-11-04, second move: e124adf1851914b9 -> 08eb2e60c42ca135, peak unchanged at 0.142584. The sine
+# stopped being std::sin and became a table read, and the whole difference measured as 154 of 573 300
+# samples off by one 16-bit unit (99.9731% of samples were bit-identical) on the 16-voice flagship.
+# GOLDEN_SAMPLED did not move at all, which is the other half of the evidence: recorded voices never
+# ask the oscillator for anything.
+GOLDEN_SYNTH = ("08eb2e60c42ca135", "0.142584")
 GOLDEN_SAMPLED = ("8d2611517da3c819", "0.117014")
 
 
