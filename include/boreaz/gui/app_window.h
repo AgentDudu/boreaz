@@ -43,6 +43,25 @@ class AppWindow {
         // has no library to load - which is the truth on a machine where the app was started
         // without one, and better than a button that lies.
         ParamsPanel::Instruments instruments;
+
+        // What the app is playing out of a file, and what it will do if the player asks. The window
+        // does not own a song: a song outlives a frame, and the clock it runs on is the audio
+        // device's, which the window never sees. So the window asks for the state it draws and
+        // reports what was pressed, and every one of these runs on the thread that pumps the window
+        // - the same one the app's own pump loop is on, which is why none of them is a lock.
+        // Left empty, the row simply is not drawn: no song, no controls.
+        struct Transport {
+            std::function<bool()> active; // there is a song to play at all
+            std::function<bool()> playing;
+            std::function<bool()> looped;
+            std::function<double()> position; // seconds into the song
+            std::function<double()> end;      // the song's length
+            std::function<void()> toggle;     // the one button: play, pause, or start again
+            std::function<void()> stop;
+            std::function<void()> toggle_loop;
+            std::function<void(double)> seek; // 0.0 at the top, 1.0 at the end
+        };
+        Transport transport;
     };
 
     AppWindow();

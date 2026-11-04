@@ -266,6 +266,20 @@ TEST_CASE("keys the program has not promised anything about do nothing") {
     CHECK(boreaz::gui::note_for_computer_key(291) == -1); // f10, which has no ASCII meaning
 }
 
+TEST_CASE("Enter is the transport, and a key that commands cannot also be a note") {
+    // The row of controls under the views has a keyboard shortcut, and which key it is comes down to
+    // this: every letter, digit and mark on the three rows is a note, so a shortcut in letters would
+    // sound as well as command. Enter commands and sounds nothing, and the two codes (the main row
+    // and the numeric keypad) are the same key to a player.
+    CHECK(boreaz::gui::note_for_computer_key(257) == -1); // enter
+    CHECK(boreaz::gui::note_for_computer_key(335) == -1); // keypad enter
+    CHECK_FALSE(boreaz::gui::key_is_sustain_pedal(257));
+    // Space, backspace and the arrows keep the meanings they had: the pedal, the strip's clock,
+    // nothing.
+    CHECK(boreaz::gui::note_for_computer_key(259) == -1); // backspace
+    CHECK(boreaz::gui::note_for_computer_key(265) == -1); // up
+}
+
 TEST_CASE("space is the pedal, held rather than toggled") {
     INFO("The engine already treats CC 64 as a pedal with notes to hand over; the only decision "
          "here is whether the keyboard reports a press or a state, and a foot only knows the state.");

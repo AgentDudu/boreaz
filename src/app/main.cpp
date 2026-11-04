@@ -482,6 +482,28 @@ int main(int argc, char** argv) {
             }
             live_instrument = instrument;
         };
+
+        // The row of controls under the views. The window draws them and owns none of them: the
+        // song and the clock are the two objects below, and every hook runs on the thread that
+        // pumps the window, which is the thread this loop is already on - so none of them is a
+        // lock, and none of them reaches the audio thread except through the engine's own queue.
+        window_options.transport.active = [&transport] { return transport.song() != nullptr; };
+        window_options.transport.playing = [&transport] { return transport.playing(); };
+        window_options.transport.looped = [&transport] { return transport.looping(); };
+        window_options.transport.position = [&transport, rate = device.sample_rate()] {
+            return static_cast<double>(transport.position()) / rate;
+        };
+        window_options.transport.end = [&transport, rate = device.sample_rate()] {
+            return static_cast<double>(transport.end_sample()) / rate;
+        };
+        window_options.transport.toggle = [&transport, &engine] { transport.toggle(engine); };
+        window_options.transport.stop = [&transport, &engine] { transport.stop(engine); };
+        window_options.transport.toggle_loop = [&transport] {
+            transport.set_loop(!transport.looping());
+        };
+        window_options.transport.seek = [&transport, &engine](double fraction) {
+            transport.seek_fraction(engine, fraction);
+        };
         if (!window->open(window_options, error)) {
             // The window is the app, but not being able to draw is not a reason to stop a device
             // that is already making sound: say which one failed and carry on without it.

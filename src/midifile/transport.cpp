@@ -58,6 +58,31 @@ void Transport::stop(boreaz::engine::Engine& engine) {
     remap(engine, 0);
 }
 
+void Transport::toggle(boreaz::engine::Engine& engine) {
+    // Two lines, and the interesting half is not here: running becomes paused and paused becomes
+    // running, and "paused at the end means from the top" already lives in play(), where a click, a
+    // keyboard shortcut and a test all reach it. Saying it again here is how a button and a key end
+    // up disagreeing about what one press means.
+    if (playing_)
+        pause(engine);
+    else
+        play(engine);
+}
+
+void Transport::seek_fraction(boreaz::engine::Engine& engine, double fraction) {
+    if (song_ == nullptr)
+        return;
+    // Clamped twice over on purpose: the sample count has to stay inside the song, and a double
+    // that rounds past the end because of its own precision would put the cursor past the last
+    // event and stop a song that was only asked to skip to the end.
+    if (!(fraction > 0.0))
+        fraction = 0.0;
+    if (fraction > 1.0)
+        fraction = 1.0;
+    auto end = static_cast<std::int64_t>(song_->end_sample);
+    seek(engine, static_cast<std::int64_t>(fraction * static_cast<double>(end)));
+}
+
 void Transport::seek(boreaz::engine::Engine& engine, std::int64_t song_sample) {
     remap(engine, song_sample);
 }

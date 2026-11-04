@@ -42,12 +42,25 @@ class Transport {
     void set_lookahead(std::int64_t samples) { lookahead_ = samples < 0 ? 0 : samples; }
     std::int64_t lookahead() const { return lookahead_; }
 
+    // One button that knows what it means: running becomes paused, paused or finished becomes
+    // running, and finished means from the top. A control that had to ask the same question in two
+    // places is how a pause button ends up starting a song.
+    void toggle(boreaz::engine::Engine& engine);
+
     // Each of these asks the engine to drop what it has queued and silence what is sounding, which
     // is the difference between a pause that is a pause and a wobble you can hear.
     void play(boreaz::engine::Engine& engine);  // from where it stands; at the end, from the top
     void pause(boreaz::engine::Engine& engine); // holds the position
     void stop(boreaz::engine::Engine& engine);  // pause, then back to the top
     void seek(boreaz::engine::Engine& engine, std::int64_t song_sample);
+
+    // The same seek a slider or a click on a progress bar produces: 0.0 is the top of the song,
+    // 1.0 is past its last event. Out of range is clamped, because a pointer that leaves the bar
+    // is a normal thing to happen and not an error to report.
+    void seek_fraction(boreaz::engine::Engine& engine, double fraction);
+
+    // Where the song ends, and where the playhead is, in song samples. A panel draws from these.
+    std::int64_t end_sample() const { return song_ ? song_->end_sample : 0; }
 
     // The song end wraps to the top. Phase 10's only loop shape, so no engine argument: nothing is
     // dropped, the wrap happens in feed() where the position is known.
