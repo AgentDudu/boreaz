@@ -9,7 +9,7 @@
 #   fnv1a64 every output sample, so any change anywhere in the mix, the tuning, or the steal order shows
 #   peak    the loudest sample, which catches a limiter moving and a channel summing wrong
 #   steals  voices taken from holders: the only number that describes the voice pool under load
-name=bass-running-status.mid rate=44100 frames=214988 fnv1a64=e9d96e5b5aabfb52 peak=0.299295 steals=0
-name=glissando-88.mid rate=44100 frames=782775 fnv1a64=2858a99348d6766f peak=0.647880 steals=0
-name=lead-simple.mid rate=44100 frames=130463 fnv1a64=a991125acac80088 peak=0.306908 steals=0
-name=pad-chords.mid rate=44100 frames=286650 fnv1a64=9f068796427c4931 peak=0.604739 steals=8
+name=bass-running-status.mid rate=44100 frames=214988 fnv1a64=2542034057ecc7fd peak=0.299295 steals=0
+name=glissando-88.mid rate=44100 frames=782775 fnv1a64=8c9ca4d0364bda45 peak=0.647880 steals=0
+name=lead-simple.mid rate=44100 frames=130463 fnv1a64=b7d7133b79f15927 peak=0.306908 steals=0
+name=pad-chords.mid rate=44100 frames=286650 fnv1a64=8ebd91263b57f0d9 peak=0.604739 steals=8

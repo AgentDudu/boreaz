@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <vector>
@@ -73,6 +74,32 @@ TEST_CASE("every pitch from A0 to C8 runs at the frequency the tuning table aske
         CHECK(std::abs(completed - static_cast<int>(std::lround(static_cast<double>(hz) * 2.0))) <=
               1);
     }
+}
+
+TEST_CASE("the sine is read from a table, and the table is accurate off its own nodes") {
+    // Sampling at i/4096 lands exactly on a table entry, which would measure the reference's own
+    // rounding instead of the interpolation. Half a step off the grid is what a voice does: a real
+    // increment never lines up with a table point.
+    float worst = 0.0f;
+    for (int i = 0; i < 4096; ++i) {
+        const float phase = (static_cast<float>(i) + 0.5f) / 4096.0f;
+        const float want = std::sin(6.28318530717958647693f * phase);
+        const float got = waveform_at(Waveform::Sine, phase);
+        worst = std::max(worst, std::fabs(got - want));
+    }
+    // The header quotes 4.8e-7 as the largest error over a cycle. The bound here is twice that, so
+    // a table that stops being accurate at the float floor fails instead of drifting.
+    MESSAGE("worst abs error over a cycle: " << worst);
+    CHECK(worst <= 1.0e-6f);
+
+    // The seam between the last table point and the first is where a masked index goes wrong, and
+    // it is a discontinuity the ear hears as a click on every cycle of every voice.
+    CHECK(near(waveform_at(Waveform::Sine, 0.9999f), std::sin(6.28318530717958647693f * 0.9999f),
+               1.0e-6));
+    // The first sample of a note is exactly zero, and a phase that lands on exactly 1.0 reads the
+    // first entry rather than running off the end of the table.
+    CHECK(waveform_at(Waveform::Sine, 0.0f) == 0.0f);
+    CHECK(waveform_at(Waveform::Sine, 1.0f) == 0.0f);
 }
 
 TEST_CASE("sine matches std::sin sample for sample") {
