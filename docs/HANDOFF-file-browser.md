@@ -26,12 +26,17 @@ and what is still unproven.
   why `current_folder()` exists.
 - **`"C:"` is not a folder to the filesystem** (it means "the current directory on C:"), so
   `list_folder` puts the slash back. Walking up to a drive root works now.
+- **The explorer's rows are positions in `browse_entries`, so a pick must not happen while the row
+  loop is reading them.** Picking a folder replaces that vector mid-loop; the loop then indexes a
+  listing that no longer exists. Seen as `std::length_error: basic_string::_M_create` out of
+  `AppWindow::draw`. A chosen row is noted and acted on after `EndChild`.
 - A 4000-name folder walk costs ~388 ms and is bounded at 4000 names on purpose, on the click, off
   the audio thread (`0 dropped, 0 steals` in the same run).
 
 ## Open, on purpose
 
 - The click path and Enter share `pick_folder_entry`; only the keyboard route is measured.
-- No filter/type-ahead inside the listing — the field is the fast path to a huge folder.
+- ~~No filter/type-ahead inside the listing~~ — done in the next increment: address bar, drive
+  buttons and a `narrow` field, `docs/pr-folder-search.md`, 325 cases.
 - The tap's startup backlog (7680 frames before the window exists) is phase 12's, untouched.
 - `7680` and the black capture are the two things that keep "it looks right" unclaimed.

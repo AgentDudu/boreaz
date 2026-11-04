@@ -136,4 +136,38 @@ bool list_folder(const std::string& folder, std::vector<FolderEntry>& into, std:
     return true;
 }
 
+bool name_contains(const std::string& name, const std::string& needle) {
+    return folding(name).find(folding(needle)) != std::string::npos;
+}
+
+std::vector<std::string> drives() {
+    std::vector<std::string> roots;
+    std::error_code ec;
+    for (char letter = 'A'; letter <= 'Z'; ++letter) {
+        const std::string root = std::string(1, letter) + ":/";
+        if (std::filesystem::is_directory(root, ec))
+            roots.push_back(root);
+    }
+    return roots;
+}
+
+std::string absolute_folder(const std::string& path) {
+    // "C:" means a drive-relative path - the current folder on C: - which is not what a player
+    // typing a drive means by it. The slash is put back before the filesystem is asked.
+    const std::string given = (path.size() == 2 && path[1] == ':') ? path + "/" : path;
+    std::error_code ec;
+    const std::filesystem::path made = std::filesystem::absolute(given, ec);
+    if (ec)
+        return path;
+    // Lexical, because `absolute` glues the current folder onto a "/.." without folding it, and the
+    // bar is showing an address a person reads, not an expression the filesystem evaluates.
+    std::string text = made.lexically_normal().string();
+    // One separator, the one this app's paths already use: the library answers in whatever the
+    // platform's native form is, and an address bar that shows both is harder to read and to paste.
+    for (char& c : text)
+        if (c == '\\')
+            c = '/';
+    return text.empty() ? path : text;
+}
+
 } // namespace boreaz::io
