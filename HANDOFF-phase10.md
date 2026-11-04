@@ -97,14 +97,62 @@ block or every pump tick. `Transport::kLookaheadSamples` is 512 = one block.
 
 ## Verified vs not — do not overclaim
 
-Proven by `tests/test_transport.cpp` (nine cases): the 3-minute exactness, no stuck notes after stop,
+Proven by `tests/test_transport.cpp` (eleven cases): the 3-minute exactness, no stuck notes after stop,
 queued notes dropped by pause, seek forward/back, loop wrap, 20-into-8 stealing, keys 10 and 120
-sounding and flagged. Engine flush proven on its own case. `release_check` green, goldens
-byte-identical, live headless run at 0.80 % audio-thread CPU.
+sounding and flagged, what one press of one button means, and a slider pushed past either end.
+Engine flush proven on its own case. `release_check` green, goldens byte-identical, live headless run
+at 0.80 % audio-thread CPU. Whole suite: 295 cases, 8 861 666 assertions.
 
 Engine side: A/B interleaved against the code it replaced, 10 runs each, headless with a song -
 278-281 callbacks, 0 restarts, 0 dropped, 0 steals on both sides, audio-thread CPU 0.82 %-1.25 %
 against 0.94 %-1.29 % for `feed_up_to`. Nothing measurable, which is the claim.
 
-Not proven: anything a human does. Nobody has pressed play, and `main.cpp` is not in the test suite, so
-"the file still plays" rests on those live runs plus the transport's own cases.
+Not proven: what a mouse does. Nobody has clicked Play, the Loop checkbox or the position bar, and
+`main.cpp` is not in the test suite, so "the file still plays" rests on those live runs plus the
+transport's own cases.
+
+## 10.3 — the controls, and how to test a window nobody can see
+
+`feature/transport-controls`. The row is drawn in the window shell (`AppWindow::draw`), between the
+view switcher and the panel, and it is drawn from `Options::Transport`: nine `std::function` the app
+fills in (`active`, `playing`, `looped`, `position`, `end`, `toggle`, `stop`, `toggle_loop`, `seek`).
+The window owns no song and no clock, and every hook runs on the thread that pumps the window — the
+thread the app's pump loop is already on — so none of them is a lock and none reaches the audio thread
+except through `Engine::push_event`. That is why the row disappears when there is no song: with no
+song, Play would be a button that lies.
+
+`Transport::toggle` is the whole "what does this button do" answer (running -> pause, pause or
+finished -> run, finished at the end -> from the top). `Transport::seek_fraction(engine, 0..1)` clamps,
+because a pointer leaving a bar is normal. `end_sample()` exists so the panel can print the song's
+length without reaching into `Song`. The bar is click-to-seek, not a drag: a widget that follows the
+playhead and is also the thing you drag fights the player every frame. `Enter`/numpad `Enter` calls
+`toggle`, the same call the button makes. Backspace still resets the *strip's* clock — that clock is
+not the song's playhead and conflating them is a bug waiting to happen.
+
+**The live test, which is the part worth keeping.** An app with a window cannot be watched, but the app
+prints `finished` when a file runs out, so the log is the instrument:
+
+- A file that had already ended printed `finished` once. One `Enter` later it printed it twice: the key
+  restarted the song and it ran to the end again.
+- The same 2.958 s file, `Enter` at 1.2 s: still no `finished` at 5.7 s — impossible unless the pause
+  took — and `finished` after a second `Enter`.
+
+Drive it with `PostMessage(hwnd, WM_KEYDOWN/WM_KEYUP, VK_RETURN, ...)` on the process's
+`MainWindowHandle` (see `tools/key-in-window.ps1`, and `tools/key-in-window.md` for why the obvious ways deliver nothing). Do **not** try `SetForegroundWindow` +
+`keybd_event`, or `WScript.AppActivate` + `SendKeys`: the desktop refuses foreground from another
+process, both reported success, and neither delivered a single key — three runs of "the shortcut does
+not work" were three runs of testing nothing. `PostMessage` needs no focus, and GLFW's window proc
+answers it. Proof it landed: a temporary `fprintf` in the stroke loop printed `key=257 action=1`
+(`GLFW_KEY_ENTER`) and the log gained the second `finished`.
+
+**Bug this found, now fixed:** typing in a text field played notes, because every letter of a patch
+name is a key on the computer keyboard. The guard is `ImGui::GetIO().WantTextInput`. It was
+`WantCaptureKeyboard`, which in this app goes true for reasons unrelated to any field (keyboard
+navigation, `ConfigNavCaptureKeyboard`) and would have muted the piano. Measured on the live window:
+`WantCaptureKeyboard=0, NavActive=0, WantTextInput=0` while nothing is being typed. Strokes are still
+drained while typing, so closing a field does not release a queue of letters as a chord.
+
+Also deduplicated: `Transport` had both `looped()` and `looping()`; the pre-existing `looping()` is the
+one that stays.
+
+Still open in the phase: **the open-a-file dialog** (everything else 10 named), and the mouse.
