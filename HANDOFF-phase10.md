@@ -8,11 +8,12 @@ file. This one is about the transport only.
 Phase 10 is `feature/seq-playback`: in-app `.mid` playback with a transport. **The playing half has
 existed since `feature/file-playback`** — a file named on the command line is loaded, fed into the
 engine's event ring ahead of the audio thread's position, and the display parks at its length. What
-phase 10 adds is control. **10.1 landed the machinery** (`feature/transport-core`, PR #45):
+phase 10 adds is control. **10.1 landed the machinery** (`feature/transport-core`, PR #45/#46):
 `boreaz::midifile::Transport`, play / pause / stop / seek / whole-song loop, and
-`Engine::request_transport_flush()`. **It is not wired to anything yet.** `main.cpp` still feeds with
-`feed_up_to` and does not know a transport exists. The next slice is the wiring and the controls, and
-that is where the phase's remaining exit criteria live.
+`Engine::request_transport_flush()`. **10.2 wired it** (`feature/transport-routing`): `main.cpp` has no
+`feed_up_to` and no `playing` flag any more - it holds a transport, and the file named on the command
+line goes through the same object the buttons will use. What is left in the phase is the **controls**:
+the panel block, a key binding, an open dialog, and the criteria that need a human at them.
 
 ## Where the tree is
 
@@ -58,9 +59,9 @@ block or every pump tick. `Transport::kLookaheadSamples` is 512 = one block.
 
 ## What is left, in the order to take it
 
-1. **Route `main`'s pump through the transport** (replace the `feed_up_to` call, keep the finish/park
-   behaviour, keep `song_dropped` reported). Then the live criteria are measurable: CPU with the
-   transport in the loop, stuck notes at stop, seeking while playing.
+1. ~~Route `main`'s pump through the transport~~ - done on `feature/transport-routing`. One detail to
+   keep: the mixer's lookahead is half a second (`set_lookahead`), not the transport's default block,
+   because the app's pump sleeps ~10 ms and sometimes sits in a window frame or a stalled callback.
 2. **The panel block**: play/pause, stop, a position readout (`mm:ss` off `position()`, or bar:beat
    off `Song::sample_to_tick`), a loop checkbox, and a seek control. Remember there is **no click
    harness** — the suite executes the panel but presses nothing, so the honest proof is a live run.
@@ -78,6 +79,14 @@ block or every pump tick. `Transport::kLookaheadSamples` is 512 = one block.
   that owns the buttons. Nothing in it is touched by the audio callback. If a future slice calls it
   from the ImGui callback *and* the pump, that is the same thread; if anything ever moves the pump,
   re-read this.
+- **Absolute CPU readings on this machine drift by tens of percent between hours.** The phase-8 band
+  was 0.71 %-1.01 % with 0 late periods; the *same old binary* measured today gives ~1.2 % with 42-43
+  late. Any CPU claim is an A/B on the same box at the same hour, and phase 12's 1.2 % budget must be
+  judged that way, not against a stored number.
+- The headless run's exit position varies by a few blocks (142 336 - 143 872 for a 2.96 s file),
+  because the pump's own tick decides when "the tail has rung out" is noticed. That predates the
+  transport. Do not chase it as a drift bug: the transport's position is exact, and `main.cpp` prints
+  the engine's position, not the transport's.
 - The engine's finish/park path in `main.cpp` decides "the song is over" from
   `song_cursor >= events.size() && sample_position >= end_sample`. With a transport the question is
   `!playing()` plus a wrap, so a loop that parks the display at the end is the bug to expect.
@@ -93,5 +102,9 @@ queued notes dropped by pause, seek forward/back, loop wrap, 20-into-8 stealing,
 sounding and flagged. Engine flush proven on its own case. `release_check` green, goldens
 byte-identical, live headless run at 0.80 % audio-thread CPU.
 
-Not proven: anything a human does. Nobody has pressed play. Nothing has been wired, so "the file still
-plays" is a claim about `main.cpp`, which this slice did not touch.
+Engine side: A/B interleaved against the code it replaced, 10 runs each, headless with a song -
+278-281 callbacks, 0 restarts, 0 dropped, 0 steals on both sides, audio-thread CPU 0.82 %-1.25 %
+against 0.94 %-1.29 % for `feed_up_to`. Nothing measurable, which is the claim.
+
+Not proven: anything a human does. Nobody has pressed play, and `main.cpp` is not in the test suite, so
+"the file still plays" rests on those live runs plus the transport's own cases.

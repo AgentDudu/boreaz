@@ -24,16 +24,23 @@ namespace boreaz::midifile {
 // `Engine::request_transport_flush()`.
 class Transport {
   public:
-    // How far ahead of the position events are pushed. The engine applies an event on the sample it
-    // names, so feeding ahead is what makes a note land on time rather than up to a block late; and
-    // because a stop, a pause, a seek or a loop drops what is already in the ring, one block is
-    // also the most that can be sitting there when the player changes their mind.
+    // The default lookahead, and the smallest useful one: one block of the device this runs on.
     static constexpr std::int64_t kLookaheadSamples = 512;
+
+    // How far ahead of the position feed() pushes events. The engine applies an event on the sample
+    // it names, so feeding ahead is what makes a note land on time instead of late; the window it
+    // is ahead by is this number, and a pump that sleeps longer than its own lookahead feeds late.
+    // The same window is what a stop, a pause, a seek or a loop has to throw away, which is why the
+    // mixer does not just pick a big number: half a second of lookahead is half a second of notes
+    // the flush drops and the cursor feeds back after the resume.
 
     // Borrowed, not copied: the mixer keeps the Song alive while the transport points at it, and a
     // real file is tens of thousands of events. Loading stops the transport at the top.
     void load(const Song& song);
     const Song* song() const { return song_; }
+
+    void set_lookahead(std::int64_t samples) { lookahead_ = samples < 0 ? 0 : samples; }
+    std::int64_t lookahead() const { return lookahead_; }
 
     // Each of these asks the engine to drop what it has queued and silence what is sounding, which
     // is the difference between a pause that is a pause and a wobble you can hear.
@@ -76,6 +83,7 @@ class Transport {
     bool change_pending_ = false;
     bool playing_ = false;
     bool loop_ = false;
+    std::int64_t lookahead_ = kLookaheadSamples;
 };
 
 } // namespace boreaz::midifile

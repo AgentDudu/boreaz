@@ -19,6 +19,7 @@
 #include "boreaz/io/audio_device.h"
 #include "boreaz/io/midi_input.h"
 #include "boreaz/midifile/midifile.h"
+#include "boreaz/midifile/transport.h"
 #include "boreaz/samples/sample_store.h"
 
 namespace {
@@ -357,8 +358,7 @@ int main(int argc, char** argv) {
     // into samples, and before it starts, because a file that cannot be parsed should stop the app
     // rather than sit in silence looking like it was trying.
     boreaz::midifile::Song song;
-    bool playing = false;
-    std::size_t song_cursor = 0;
+    boreaz::midifile::Transport transport;
     std::size_t song_dropped = 0;
     if (!options.song.empty()) {
         boreaz::midifile::LoadResult loaded =
@@ -372,7 +372,15 @@ int main(int argc, char** argv) {
         for (const std::string& warning : loaded.warnings)
             std::cerr << "boreaz: " << options.song << ": " << warning << "\n";
         song = std::move(loaded.song);
-        playing = true;
+        // Events go in half a second ahead of the audio thread, because the engine applies an event
+        // on the sample it names: early costs nothing and late moves a note. Half a second covers
+        // this loop's own sleep, a window frame, and a driver that stalls a callback now and then,
+        // while staying far below the 4096 slots the engine's event ring holds. It is not simply
+        // the biggest number available, because the same window is what a pause has to throw away
+        // and a resume has to feed back.
+        transport.set_lookahead(static_cast<std::int64_t>(device.sample_rate() * 0.5));
+        transport.load(song);
+        transport.play(engine);
         std::cout << "boreaz: \"" << options.song << "\": " << song.events.size() << " events, "
                   << static_cast<double>(song.end_sample) / device.sample_rate() << " seconds."
                   << std::endl;
@@ -462,7 +470,7 @@ int main(int argc, char** argv) {
             // this is not silent - the gap is a few milliseconds of buffer, once, at a switch.
             device.stop();
             engine.set_instrument(instrument);
-            if (playing) {
+            if (transport.playing()) {
                 std::string restart;
                 if (!device.start(restart))
                     std::cerr << "boreaz: " << restart << " - sound stopped after the switch\n";
@@ -482,30 +490,28 @@ int main(int argc, char** argv) {
             window.reset();
         }
     }
-    if (window != nullptr && playing)
+    if (window != nullptr && transport.playing())
         window->set_external_playback(true);
-
-    // Events are queued a little ahead of the audio thread, because the engine applies an event on
-    // the sample it names: early costs nothing and late moves a note. Half a second covers this
-    // loop's own sleep, a window frame, and a driver that stalls a callback now and then, while
-    // staying far below the 4096 slots the engine's event ring holds.
-    const std::int64_t lookahead = static_cast<std::int64_t>(device.sample_rate() * 0.5);
 
     // Unplug detection is polled, because winmm does not report it. Once every quarter second,
     // not once per frame: enumeration is a driver call per port, and 60 of those a second buys
     // nothing a player would notice.
     double last_poll = 0.0;
     while (true) {
-        if (playing) {
-            const boreaz::midifile::FeedResult fed = boreaz::midifile::feed_up_to(
-                engine, song, song_cursor, engine.sample_position() + lookahead);
-            song_cursor = fed.cursor;
+        if (transport.playing()) {
+            // One clock. The transport is handed the position the audio thread has reached and
+            // works out where in the song that is; from here the file goes through the same object
+            // the window's buttons will use, so there is not a second way to play one.
+            const boreaz::midifile::FeedResult fed =
+                transport.feed(engine, engine.sample_position());
             song_dropped += fed.dropped;
-            if (song_cursor >= song.events.size() && engine.sample_position() >= song.end_sample) {
+            if (fed.cursor >= song.events.size() && engine.sample_position() >= song.end_sample) {
                 // The last event is in and its tail has rung out. In a window a file is one song
                 // among many, so park the clock on its length and stay open; with no window the
                 // file was the whole session, so stop.
-                playing = false;
+                // Parked, not rewound: the position stays where the song ended, and the next play()
+                // is what puts it back at the top.
+                transport.pause(engine);
                 if (window) {
                     window->set_external_playback(false);
                     window->park_transport();
