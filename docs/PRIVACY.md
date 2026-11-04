@@ -15,14 +15,20 @@ Boreaz collects nothing.
 
 ## What is stored, and where
 
-- **Configuration and device preferences** (chosen audio output, chosen MIDI input, last
-  patch, window size) are written to the per-user config directory
-  `%APPDATA%\Boreaz\`. This exists so the app can reopen the devices you picked. It is local,
-  it is yours, and deleting it only resets your preferences.
+- **What the machine was set up with** — the audio output port, the MIDI input port, the sample
+  library, and the patch that was open when the window last closed — is one file,
+  `%APPDATA%\Boreaz\settings.txt`, read at every start and rewritten at the end of a session that
+  had a window. Four names, no parameters, no audio and no playing history. It exists so the app
+  reopens the devices you picked instead of the first ones in the list. It is local, it is yours,
+  and deleting it only costs you your preferences.
+- **Patch files you save** go to `%APPDATA%\Boreaz\patches\`, one `key = value` text file per
+  patch, named by you. The `patches/` folder inside the repository holds the factory voices and is
+  never written to, so a save cannot overwrite a sound that shipped.
+- **A rendered file** only exists where you tell the renderer to write one. Nothing is recorded
+  from a live session.
 - **`.env`** holds environment overrides in the project directory. It is git-ignored and is
   never read by anything except the local process. `.env.example` is committed with empty
   values and contains no machine data.
-- **Rendered audio** only exists where you tell the renderer to write it.
 
 ## What we deliberately do not do
 
