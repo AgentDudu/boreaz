@@ -61,6 +61,14 @@ class Engine {
     }
     bool push_event(const Event& event) { return queue_.push(event); }
 
+    // Drop everything queued but not yet applied, and silence what is sounding. A transport stop,
+    // pause, seek or loop asks for this by flag rather than by event, because `EventQueue::clear`
+    // is consumer-side only: the drop happens on the audio thread, at the top of the next
+    // process(). The window is one block, which is the same window a hardware sampler has, and it
+    // is bounded by the lookahead the caller feeds with - feed one block ahead and the most that
+    // can be sitting in the ring is one block of notes.
+    void request_transport_flush() { flush_requested_.store(true, std::memory_order_release); }
+
     // Consumer side: one block of interleaved stereo, guaranteed inside +/-1.0.
     void process(float* output, int frames);
 
@@ -158,6 +166,7 @@ class Engine {
     // and a controller moved while a note was already held has to reach it.
     void push_channel_controllers();
 
+    std::atomic<bool> flush_requested_{false};
     EventQueue queue_;
     ParamBus params_;
     Params live_{}; // the block the audio thread is playing
