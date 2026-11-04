@@ -118,6 +118,13 @@ void Engine::process(float* output, int frames) {
         applied_master_gain_db_ = params.master_gain_db;
     }
 
+    if (flush_requested_.exchange(false, std::memory_order_acq_rel)) {
+        // A timeline being left. What is in the ring was queued for positions this take is walking
+        // away from, and letting it fire is a note from a part nobody asked for.
+        queue_.clear();
+        allocator_.panic(-1, position_, params);
+    }
+
     int done = 0;
     while (done < frames) {
         const int chunk = std::min(frames - done, kMaxScratchFrames);

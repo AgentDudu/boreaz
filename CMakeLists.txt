@@ -230,7 +230,7 @@ target_include_directories(boreaz_samples PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/in
 target_compile_features(boreaz_samples PUBLIC cxx_std_20)
 boreaz_set_warnings(boreaz_samples)
 
-add_library(boreaz_midifile STATIC src/midifile/midifile.cpp)
+add_library(boreaz_midifile STATIC src/midifile/midifile.cpp src/midifile/transport.cpp)
 target_include_directories(boreaz_midifile PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(boreaz_midifile PUBLIC boreaz_engine)
 target_compile_features(boreaz_midifile PUBLIC cxx_std_20)
@@ -338,6 +338,7 @@ if(BOREAZ_BUILD_TESTS)
     tests/test_keyboard_layout.cpp
     tests/test_midi_parser.cpp
     tests/test_midifile.cpp
+    tests/test_transport.cpp
     tests/test_io.cpp)
   if(WIN32)
     list(APPEND boreaz_test_sources tests/test_gui.cpp tests/test_note_trail.cpp
