@@ -332,6 +332,56 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
     ImGui::SameLine();
     ImGui::TextUnformatted(impl_->driver.c_str());
 
+    // The player's controls, on a line of their own under the views. They are here rather than in
+    // the mixer because the mixer is opened to build a sound and closed to play one, and a play
+    // button you have to open a window to find is a play button you do not press. Everything on it
+    // is drawn from what the app says and changes the app by asking: the song, the playhead and the
+    // clock belong to the app, and the bar is a click, not a drag, because a bar that follows a
+    // playhead and is also the thing you drag fights the player every frame.
+    const Options::Transport& player = options_.transport;
+    if (player.active && player.active()) {
+        if (ImGui::Button(player.playing && player.playing() ? "Pause" : "Play",
+                          ImVec2(72.0f, 0.0f)))
+            player.toggle();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Play or pause (Enter). Paused at the end, play starts again.");
+
+        ImGui::SameLine();
+        if (ImGui::Button("Stop", ImVec2(64.0f, 0.0f)))
+            player.stop();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Silence, and the playhead back to the top.");
+
+        ImGui::SameLine();
+        bool looping = player.looped && player.looped(); // not const: the checkbox wants to write
+        if (ImGui::Checkbox("Loop", &looping))
+            player.toggle_loop();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Repeat the song from its own top.");
+
+        ImGui::SameLine();
+        const double at = player.position ? player.position() : 0.0;
+        const double last = player.end ? player.end() : 0.0;
+        const float fraction =
+            last > 0.0
+                ? static_cast<float>(at / last < 0.0 ? 0.0 : (at / last > 1.0 ? 1.0 : at / last))
+                : 0.0f;
+        char clock_label[32];
+        std::snprintf(clock_label, sizeof clock_label, "%d:%02d / %d:%02d",
+                      static_cast<int>(at) / 60, static_cast<int>(at) % 60,
+                      static_cast<int>(last) / 60, static_cast<int>(last) % 60);
+        ImGui::ProgressBar(fraction, ImVec2(220.0f, 0.0f), clock_label);
+        if (ImGui::IsItemClicked()) {
+            const ImVec2 bar_min = ImGui::GetItemRectMin();
+            const ImVec2 bar_max = ImGui::GetItemRectMax();
+            const ImVec2 where = ImGui::GetMousePos();
+            if (bar_max.x > bar_min.x && player.seek)
+                player.seek((where.x - bar_min.x) / (bar_max.x - bar_min.x));
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Click to jump to that place in the song.");
+    }
+
     // Both halves come from the window, in proportion. The keyboard takes a share of the height
     // and never more than a cap, because a maximised window should buy the strip room, not turn
     // middle C into a floor tile; whatever is left belongs to the panel, and the strip fills
@@ -371,10 +421,22 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
     // the point: a desk with no instrument and no mouse still makes a sound. A key press has no
     // velocity, so it arrives at a firm 112 - not the 127 a maximum strike means, and not the 96
     // that made every note played this way audibly softer than one clicked on screen.
+
+    // ImGui takes the characters of a text field - the library path, the name of a patch to save -
+    // through its own input path and not through this queue, so typing "piano" into a field used to
+    // play a chord as well, because every letter here is a note. WantTextInput is the question that
+    // means it, and not WantCaptureKeyboard: keyboard navigation is off in this app, so the wider
+    // flag would say "ImGui is typing" for reasons that have nothing to do with a field and would
+    // take the piano away. The strokes are still drained, so closing a field does not release a
+    // queue of notes that were typed while it was open.
+    const bool typing = ImGui::GetIO().WantTextInput;
+
     while (impl_->stroke_count > 0) {
         const AppWindow::Impl::Stroke stroke = impl_->strokes[impl_->stroke_head];
         impl_->stroke_head = (impl_->stroke_head + 1) % AppWindow::Impl::kStrokes;
         --impl_->stroke_count;
+        if (typing)
+            continue;
 
         const std::int64_t tick = engine.sample_position();
         const int note = note_for_computer_key(stroke.key);
@@ -400,9 +462,18 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
             // view with no way to command anything, and it is not a letter because every letter on
             // this keyboard is a note: `r` is F#, so a letter shortcut would start a sound as well
             // as a stopwatch. This drops the bars already on the strip and starts the window again
-            // at the playhead, which is what "from here" means. The shortcut goes away when the
-            // transport gains real controls.
+            // at the playhead, which is what "from here" means - the strip's own clock, which is
+            // not the song's playhead: the song's controls are the row above and Enter.
             transport_.reset(view.position_seconds());
+        }
+        if ((stroke.key == GLFW_KEY_ENTER || stroke.key == GLFW_KEY_KP_ENTER) &&
+            stroke.action == GLFW_PRESS && options_.transport.toggle) {
+            // Enter is the transport, and it calls the same thing the button calls: what one press
+            // means is the transport's answer, not two answers that can disagree. It is Enter
+            // rather than Space because Space is the sustain pedal, and it is not a letter because
+            // a letter on this keyboard is a note - `m` is A, so a shortcut in letters would sound
+            // as well as command.
+            options_.transport.toggle();
         }
     }
 

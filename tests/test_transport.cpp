@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include <doctest/doctest.h>
@@ -270,4 +271,85 @@ TEST_CASE("keys an acoustic piano does not have are played, not dropped") {
     CHECK(after.max_voices > 0);
     CHECK(Engine::is_extended_key(10));
     CHECK(Engine::is_extended_key(120));
+}
+
+TEST_CASE("one button, and what one press means is decided in one place") {
+    Engine engine;
+    engine.prepare(static_cast<double>(kRate));
+    const Song song = make_song();
+    Transport transport;
+    transport.load(song);
+
+    // Nothing running: a press starts it.
+    transport.toggle(engine);
+    CHECK(transport.playing());
+    run(engine, transport, 4);
+    CHECK(transport.position() > 0);
+
+    // Running: a press is a pause, and the position is held where it was. Held means held: the pump
+    // keeps calling feed() every tick whether or not anything is coming, and a feed that advanced a
+    // stopped transport would be a pause that quietly keeps playing.
+    const std::int64_t paused_at = transport.position();
+    transport.toggle(engine);
+    CHECK_FALSE(transport.playing());
+    run(engine, transport, 8);
+    CHECK(transport.position() == paused_at);
+
+    // Paused mid-song: a press picks up from there rather than starting again, which is the whole
+    // difference between a pause and a stop.
+    transport.toggle(engine);
+    CHECK(transport.playing());
+    run(engine, transport, 1);
+    CHECK(transport.position() > paused_at);
+
+    // Play it to the end and let the tail ring out, then press again.
+    run(engine, transport, static_cast<int>(song.end_sample / kBlock) + 20);
+    transport.pause(engine);
+    CHECK(transport.position() >= song.end_sample);
+    transport.toggle(engine);
+    CHECK(transport.playing());
+    CHECK(transport.position() == 0);
+}
+
+TEST_CASE("a slider dragged past either end still lands inside the song") {
+    Engine engine;
+    engine.prepare(static_cast<double>(kRate));
+    const Song song = make_song();
+    Transport transport;
+    transport.load(song);
+    transport.play(engine);
+    run(engine, transport, 4);
+
+    // Half way: 12 000 of 24 000, past the D that was already sounding at 10 000 and before the
+    // next note at 20 000. What a seek owes the player is asked here the way the other seek cases
+    // ask it, by sound and not by a cursor nobody outside this file can read: what was passed over
+    // does not start, and what is still to come does.
+    transport.seek_fraction(engine, 0.5);
+    CHECK(transport.position() == song.end_sample / 2);
+    const Run skipped = run(engine, transport, 8); // to about 16 000, feeding a block ahead
+    CHECK(skipped.max_unreleased == 0);
+    const Run after = run(engine, transport, 40); // past 20 000
+    CHECK(after.max_unreleased > 0);
+
+    // Past the ends, and not a number at all. A pointer that leaves the bar, a file of no length
+    // that made the fraction a divide-by-zero: each has to end up somewhere inside the song,
+    // because a cursor in orbit is a song that never plays again.
+    transport.seek_fraction(engine, -3.0);
+    CHECK(transport.position() == 0);
+    transport.seek_fraction(engine, 7.0);
+    CHECK(transport.position() == song.end_sample);
+    transport.seek_fraction(engine, std::numeric_limits<double>::quiet_NaN());
+    CHECK(transport.position() == 0);
+
+    // A song with no length is a file with no events, and a control that divided by its length
+    // would have divided by zero before it got here.
+    Song empty;
+    empty.sample_rate = static_cast<double>(kRate);
+    empty.end_sample = 0;
+    transport.load(empty);
+    transport.seek_fraction(engine, 0.5);
+    CHECK(transport.position() == 0);
+    CHECK(transport.end_sample() == 0);
+    transport.toggle(engine);
+    CHECK(transport.playing()); // a player asked to play silence; there is nothing to refuse
 }
