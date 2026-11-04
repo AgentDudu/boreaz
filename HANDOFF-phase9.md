@@ -31,7 +31,7 @@ Commits reach develop **only through a PR** (direct pushes to `main` are blocked
 | | |
 |---|---|
 | develop | `291c178` = merge of **#39**; before it #38 (the writer), #37 (`env2_*` → `mod_env_*`), #36 (the sine table), #35 (cable lists in the panel), #34 (the mod router) |
-| open PR | **#24** only (docs, from long ago) — merge or close it, do not let it sit |
+| open PR | **#40** (the factory patches and the two-folder rule) — anything that builds on `user_patches_dir()` or on `patches/` existing bases on it until it merges. And **#24** (docs, from long ago) — merge or close it, do not let it sit |
 | tests | **277 cases / 8,861,545 assertions**, all passing |
 | goldens | synth `08eb2e60c42ca135` / peak `0.142584`; sampled `8d2611517da3c819` / peak `0.117014` — pinned as constants in `tools/release_check.py` (lines ~100). **A phase-9 change must not move them.** If one moves, that is a finding to explain, not a number to update. |
 | parameter table | **63 keys**, one row each in `src/engine/param_table.cpp`; that file is the only place a name, label, unit, range or default lives |
@@ -43,7 +43,7 @@ Commits reach develop **only through a PR** (direct pushes to `main` are blocked
 |---|---|---|
 | the file format and the writer | #38 | merged |
 | save / load / browser in the mixer | #39 | merged |
-| factory patches (5 registers + 3 dynamics) + the two-patch-folder rule | this one | in review |
+| factory patches (5 registers + 3 dynamics) + the two-patch-folder rule | #40 | open, gate green, base `develop` |
 | app config file (device prefs, last patch, instrument path) | — | **not started** — `grep prefs\|settings.ini\|last_patch` over `src`, `include`, `tools` returns nothing |
 | autosave on exit | — | **not started** |
 
