@@ -1,5 +1,6 @@
 # build
 build/
+build-*/
 out/
 cmake-build-*/
 CMakeUserPresets.json
@@ -7,6 +8,10 @@ CMakeUserPresets.json
 # audio output; golden fixtures stay tracked
 *.wav
 !tests/fixtures/**/*.wav
+
+# python helper bytecode (tools/*.py are read in place, never installed)
+__pycache__/
+*.pyc
 
 # third-party instrument audio is a build artifact, never history
 assets/
@@ -24,3 +29,9 @@ Thumbs.db
 
 # machine-local config and secrets
 .env
+
+# Fetched, decoded instruments: large, hash-pinned elsewhere, never committed (tools/mkinstrument.py).
+third_party/
+
+# Dear ImGui writes its window layout next to whatever the working directory is
+imgui.ini
