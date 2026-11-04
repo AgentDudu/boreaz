@@ -62,6 +62,16 @@ class AppWindow {
             std::function<void(double)> seek; // 0.0 at the top, 1.0 at the end
         };
         Transport transport;
+
+        // Replacing the song while the app runs. The window never opens the file: the app does, on
+        // the thread that pumps the window, because that is the thread allowed to do file I/O (the
+        // audio thread never opens anything) and it is the thread the transport's cursor lives on.
+        // `load` answers false with the reason, in the app's own words, for the line to show; on
+        // success it answers true and the window remembers the path it just asked for.
+        struct Songs {
+            std::function<bool(const std::string& path, std::string& reason)> load;
+        };
+        Songs songs;
     };
 
     AppWindow();
@@ -79,7 +89,7 @@ class AppWindow {
 
     void close();
 
-    // A file the app is playing, which the window did not start and cannot see. The transport's
+    // A file the app is playing, which the window did not open and cannot see. The transport's
     // clock starts on music, and all it can see is a sounding voice, so a file whose first events
     // are controller messages would otherwise start its clock at the first note and be behind by
     // whatever came before it. Pass false when the file runs out.
@@ -88,6 +98,11 @@ class AppWindow {
     // Park the clock at the end of a file: the number left on screen is then its length. New music
     // starts the clock again, so this does not put the window to sleep.
     void park_transport();
+
+    // Which file the app is playing, for the line above the panel to name. The app says it rather
+    // than the window asking, because the window asked for the change and knows the path already:
+    // the file itself stays the app's, and a path is the only part of a song the display needs.
+    void set_song_path(const std::string& path);
 
     double frames() const { return frames_; }
     double seconds_elapsed() const;
@@ -118,6 +133,8 @@ class AppWindow {
     bool was_focused_ = true;
     // True while the app is playing a file, which is the display's only other source of music.
     bool external_playback_ = false;
+    // The file named on the line above the panel. Empty means no song, which is what the line says.
+    std::string song_path_;
 };
 
 } // namespace boreaz::gui

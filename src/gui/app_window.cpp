@@ -76,6 +76,20 @@ struct AppWindow::Impl {
     Stroke strokes[kStrokes];
     int stroke_head = 0;
     int stroke_count = 0;
+
+    // A file the player dropped on the window. GLFW gives the callback C strings that are only good
+    // for the duration of the call, so the name is copied here and the drawing frame is what acts
+    // on it - the callback has no app to hand it to and no business opening files itself. One slot:
+    // a second drop before the frame draws replaces the first, which is what dropping twice means.
+    std::string dropped;
+
+    // The path the player is typing, and what the last attempt said about it. The buffer lives here
+    // so a name typed a character at a time survives the 60 frames between keystrokes, and the note
+    // is empty until something refuses a file: a load that worked has nothing left to report.
+    bool choosing_path = false;
+    bool focus_path = false; // the frame the field opens is the frame it takes the keyboard
+    char path_field[512] = {0};
+    std::string song_note;
 };
 
 namespace {
@@ -112,6 +126,15 @@ void key_typed(GLFWwindow* window, int key, int scancode, int action, int mods) 
     impl->strokes[slot] = {key, action};
     ++impl->stroke_count;
 }
+
+void file_dropped(GLFWwindow* window, int count, const char** paths) {
+    (void)window;
+    if (g_app_window_impl == nullptr || count == 0 || paths == nullptr || paths[0] == nullptr)
+        return;
+    // Only the first name: this app plays one song at a time, so a two-file drop has no second
+    // answer that is not a guess.
+    g_app_window_impl->dropped = paths[0];
+}
 } // namespace
 
 AppWindow::AppWindow() = default;
@@ -146,6 +169,7 @@ bool AppWindow::create_surface(std::string& error) {
     glfwGetFramebufferSize(window, &impl_->width, &impl_->height);
     glfwSetFramebufferSizeCallback(window, &framebuffers_resized);
     glfwSetKeyCallback(window, &key_typed);
+    glfwSetDropCallback(window, &file_dropped);
 
     DXGI_SWAP_CHAIN_DESC desc{};
     desc.BufferCount = 2;
@@ -281,6 +305,10 @@ void AppWindow::park_transport() {
     transport_.halt();
 }
 
+void AppWindow::set_song_path(const std::string& path) {
+    song_path_ = path;
+}
+
 void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
     const ImVec2 display = ImGui::GetIO().DisplaySize;
     ImGui::SetNextWindowPos(ImVec2{0.0f, 0.0f});
@@ -288,6 +316,16 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
     ImGui::Begin("##boreaz", nullptr,
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                      ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar);
+
+    // Opening and closing the path field, reached from the button or from Ctrl+O. It opens
+    // prefilled with what is loaded, so replacing a song is editing a name rather than retyping it.
+    const auto toggle_path_field = [this] {
+        impl_->choosing_path = !impl_->choosing_path;
+        if (!impl_->choosing_path)
+            return;
+        impl_->focus_path = true;
+        std::snprintf(impl_->path_field, sizeof impl_->path_field, "%s", song_path_.c_str());
+    };
 
     DeviceStats device;
     MidiStats midi;
@@ -382,6 +420,62 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
             ImGui::SetTooltip("Click to jump to that place in the song.");
     }
 
+    // The song itself: which file is loaded, and how to replace it without restarting the app.
+    // There is deliberately no file *dialog*. GetOpenFileName runs a modal message loop of its own,
+    // and the thread that pumps this window is the thread that feeds the event ring: a dialog left
+    // open past the lookahead lets the device run past the samples it was given and stutter the
+    // song. Typing a path or dropping a file on the window costs no thread at all.
+    const auto ask_for_song = [this](const std::string& path) {
+        std::string reason;
+        if (options_.songs.load && options_.songs.load(path, reason)) {
+            song_path_ = path;
+            impl_->song_note.clear();
+            impl_->choosing_path = false;
+        } else {
+            // The song that was playing keeps playing: a path that will not read is a typo, and a
+            // typo has no business silencing a session.
+            impl_->song_note =
+                reason.empty() ? "nothing to load from that path" : std::move(reason);
+        }
+    };
+    if (!impl_->dropped.empty()) {
+        ask_for_song(impl_->dropped);
+        impl_->dropped.clear();
+    }
+
+    if (song_path_.empty())
+        ImGui::TextUnformatted("song: none - drop a .mid file on this window");
+    else
+        ImGui::Text("song: %s", song_path_.c_str());
+    ImGui::SameLine();
+    if (ImGui::Button("Change"))
+        toggle_path_field();
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Type a path and press Enter, or drop the file anywhere on this window "
+                          "(F1 opens the path field). The song playing is replaced; a file that "
+                          "will not read leaves it alone.");
+    if (impl_->choosing_path) {
+        ImGui::SameLine();
+        // The field takes the keyboard in the frame it opens, or a hand that pressed F1 has to
+        // reach for the mouse to finish what the shortcut started. Taking it every frame would
+        // instead steal it back from any other field the player clicked into.
+        if (impl_->focus_path) {
+            ImGui::SetKeyboardFocusHere(0);
+            impl_->focus_path = false;
+        }
+        const bool entered =
+            ImGui::InputText("##song_path", impl_->path_field, sizeof impl_->path_field,
+                             ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::SameLine();
+        const bool pressed = ImGui::Button("Load");
+        if (entered || pressed)
+            ask_for_song(impl_->path_field);
+    }
+    if (!impl_->song_note.empty()) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4{1.0f, 0.45f, 0.45f, 1.0f}, "%s", impl_->song_note.c_str());
+    }
+
     // Both halves come from the window, in proportion. The keyboard takes a share of the height
     // and never more than a cap, because a maximised window should buy the strip room, not turn
     // middle C into a floor tile; whatever is left belongs to the panel, and the strip fills
@@ -405,8 +499,9 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
     ImGui::Dummy(ImVec2{width, keyboard_height});
 
     // A click becomes an event, and the event goes in at the audio thread's current position -
-    // the same tick the MIDI thread stamps a hardware key with, so a click and a key on the cable
-    // are indistinguishable to everything downstream, including the latency a player hears.
+    // the same tick the MIDI thread stamps a hardware key with, so a click and a key on the
+    // cable are indistinguishable to everything downstream, including the latency a player
+    // hears.
     boreaz::engine::Event events[2];
     const std::size_t produced =
         keyboard_.draw(view, layout_, engine.sample_position(), options_.channel, events, 2);
@@ -416,19 +511,20 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
         engine.push_event(events[index]);
     }
 
-    // The computer keyboard. The notes enter at the audio thread's current tick through the same
-    // queue a click or a cable message uses, so nothing downstream can tell them apart, which is
-    // the point: a desk with no instrument and no mouse still makes a sound. A key press has no
-    // velocity, so it arrives at a firm 112 - not the 127 a maximum strike means, and not the 96
-    // that made every note played this way audibly softer than one clicked on screen.
+    // The computer keyboard. The notes enter at the audio thread's current tick through the
+    // same queue a click or a cable message uses, so nothing downstream can tell them apart,
+    // which is the point: a desk with no instrument and no mouse still makes a sound. A key
+    // press has no velocity, so it arrives at a firm 112 - not the 127 a maximum strike means,
+    // and not the 96 that made every note played this way audibly softer than one clicked on
+    // screen.
 
-    // ImGui takes the characters of a text field - the library path, the name of a patch to save -
-    // through its own input path and not through this queue, so typing "piano" into a field used to
-    // play a chord as well, because every letter here is a note. WantTextInput is the question that
-    // means it, and not WantCaptureKeyboard: keyboard navigation is off in this app, so the wider
-    // flag would say "ImGui is typing" for reasons that have nothing to do with a field and would
-    // take the piano away. The strokes are still drained, so closing a field does not release a
-    // queue of notes that were typed while it was open.
+    // ImGui takes the characters of a text field - the library path, the name of a patch to
+    // save - through its own input path and not through this queue, so typing "piano" into a
+    // field used to play a chord as well, because every letter here is a note. WantTextInput is
+    // the question that means it, and not WantCaptureKeyboard: keyboard navigation is off in
+    // this app, so the wider flag would say "ImGui is typing" for reasons that have nothing to
+    // do with a field and would take the piano away. The strokes are still drained, so closing
+    // a field does not release a queue of notes that were typed while it was open.
     const bool typing = ImGui::GetIO().WantTextInput;
 
     while (impl_->stroke_count > 0) {
@@ -451,34 +547,43 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
         }
         if (key_is_sustain_pedal(stroke.key)) {
             // Space is the pedal. Held down, not toggled, because that is the only thing a foot
-            // knows, and the engine already knows how to hold a note through a pedal-down release.
+            // knows, and the engine already knows how to hold a note through a pedal-down
+            // release.
             engine.push_event(boreaz::engine::Event::control(
                 tick, options_.channel, 64, stroke.action == GLFW_RELEASE ? 0 : 127));
             continue;
         }
         if (stroke.key == GLFW_KEY_BACKSPACE && stroke.action == GLFW_PRESS) {
             // Backspace sets the clock back to zero - time a scale run, read it, reset, run it
-            // again. The window takes the key because the window owns the clock and a panel is a
-            // view with no way to command anything, and it is not a letter because every letter on
-            // this keyboard is a note: `r` is F#, so a letter shortcut would start a sound as well
-            // as a stopwatch. This drops the bars already on the strip and starts the window again
-            // at the playhead, which is what "from here" means - the strip's own clock, which is
-            // not the song's playhead: the song's controls are the row above and Enter.
+            // again. The window takes the key because the window owns the clock and a panel is
+            // a view with no way to command anything, and it is not a letter because every
+            // letter on this keyboard is a note: `r` is F#, so a letter shortcut would start a
+            // sound as well as a stopwatch. This drops the bars already on the strip and starts
+            // the window again at the playhead, which is what "from here" means - the strip's
+            // own clock, which is not the song's playhead: the song's controls are the row
+            // above and Enter.
             transport_.reset(view.position_seconds());
         }
+        // F1 opens the path field. It is not a letter, so it costs no note: every letter on this
+        // keyboard is a pitch, which is why the clock reset is Backspace and the transport is
+        // Enter.
+        if (stroke.key == GLFW_KEY_F1 && stroke.action == GLFW_PRESS)
+            toggle_path_field();
         if ((stroke.key == GLFW_KEY_ENTER || stroke.key == GLFW_KEY_KP_ENTER) &&
-            stroke.action == GLFW_PRESS && options_.transport.toggle) {
-            // Enter is the transport, and it calls the same thing the button calls: what one press
-            // means is the transport's answer, not two answers that can disagree. It is Enter
-            // rather than Space because Space is the sustain pedal, and it is not a letter because
-            // a letter on this keyboard is a note - `m` is A, so a shortcut in letters would sound
-            // as well as command.
+            stroke.action == GLFW_PRESS && options_.transport.toggle && !impl_->choosing_path) {
+            // Enter is the transport, and it calls the same thing the button calls: what one
+            // press means is the transport's answer, not two answers that can disagree. It is
+            // Enter rather than Space because Space is the sustain pedal, and it is not a
+            // letter because a letter on this keyboard is a note - `m` is A, so a shortcut in
+            // letters would sound as well as command. With the path field open the field owns
+            // Enter: it means "load the name that was typed", which the text field itself
+            // answers.
             options_.transport.toggle();
         }
     }
 
-    // Focus can be lost with a mouse button down and no release ever delivered - Alt-Tab, another
-    // window dragged over the top. The note would sound until the player clicked again.
+    // Focus can be lost with a mouse button down and no release ever delivered - Alt-Tab,
+    // another window dragged over the top. The note would sound until the player clicked again.
     const bool focused = glfwGetWindowAttrib(impl_->window, GLFW_FOCUSED) == GLFW_TRUE;
     if (was_focused_ && !focused) {
         const std::size_t released =
@@ -490,9 +595,10 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
 
     ImGui::End();
 
-    // The mixer is a second window, drawn after the main one closes: it floats over the keyboard on
-    // purpose, because it is opened to build a sound and closed to play one, and a strip of sliders
-    // permanently above the keys is the clutter that was already asked for less of.
+    // The mixer is a second window, drawn after the main one closes: it floats over the
+    // keyboard on purpose, because it is opened to build a sound and closed to play one, and a
+    // strip of sliders permanently above the keys is the clutter that was already asked for
+    // less of.
     mixer_.draw(engine, view, options_.instruments);
 }
 
@@ -538,15 +644,17 @@ bool AppWindow::frame(boreaz::engine::Engine& engine, const StatsFn& stats) {
         impl_->context->ClearRenderTargetView(impl_->target, background);
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
     }
-    // One-sync presents, so the window is frame rate limited by the monitor and never races ahead
-    // of the audio thread by burning CPU on frames nobody can see. Exactly once per frame, and not
-    // inside a condition: `a == X || b == Y` with a Present on each side presents twice whenever
-    // the device is healthy, and a second Present in the same frame waits for a second vsync.
+    // One-sync presents, so the window is frame rate limited by the monitor and never races
+    // ahead of the audio thread by burning CPU on frames nobody can see. Exactly once per
+    // frame, and not inside a condition: `a == X || b == Y` with a Present on each side
+    // presents twice whenever the device is healthy, and a second Present in the same frame
+    // waits for a second vsync.
     const HRESULT presented = impl_->swap_chain->Present(1, 0);
     if (presented == DXGI_ERROR_DEVICE_REMOVED || presented == DXGI_ERROR_DEVICE_RESET) {
-        // Deliberately not handled beyond saying so: the audio keeps running and the app exits on
-        // the player's cue. A driver reset that re-creates the device is a real feature and is not
-        // in the plan, and an unhandled case that announces itself beats one that goes quiet.
+        // Deliberately not handled beyond saying so: the audio keeps running and the app exits
+        // on the player's cue. A driver reset that re-creates the device is a real feature and
+        // is not in the plan, and an unhandled case that announces itself beats one that goes
+        // quiet.
         std::fprintf(stderr, "boreaz: the graphics device went away\n");
     }
     ++frames_;

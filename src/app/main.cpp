@@ -359,10 +359,13 @@ int main(int argc, char** argv) {
     // rather than sit in silence looking like it was trying.
     boreaz::midifile::Song song;
     boreaz::midifile::Transport transport;
+    // Which file is loaded, whether it came off the command line or out of the window later. The
+    // printouts and the line above the panel both name a song, and only this one knows both routes.
+    std::string song_path = options.song;
     std::size_t song_dropped = 0;
     if (!options.song.empty()) {
         boreaz::midifile::LoadResult loaded =
-            boreaz::midifile::load_file(options.song, device.sample_rate());
+            boreaz::midifile::load_file(song_path, device.sample_rate());
         if (!loaded.ok) {
             std::cerr << "boreaz: " << loaded.error << "\n";
             midi.close();
@@ -370,7 +373,7 @@ int main(int argc, char** argv) {
             return 1;
         }
         for (const std::string& warning : loaded.warnings)
-            std::cerr << "boreaz: " << options.song << ": " << warning << "\n";
+            std::cerr << "boreaz: " << song_path << ": " << warning << "\n";
         song = std::move(loaded.song);
         // Events go in half a second ahead of the audio thread, because the engine applies an event
         // on the sample it names: early costs nothing and late moves a note. Half a second covers
@@ -381,7 +384,7 @@ int main(int argc, char** argv) {
         transport.set_lookahead(static_cast<std::int64_t>(device.sample_rate() * 0.5));
         transport.load(song);
         transport.play(engine);
-        std::cout << "boreaz: \"" << options.song << "\": " << song.events.size() << " events, "
+        std::cout << "boreaz: \"" << song_path << "\": " << song.events.size() << " events, "
                   << static_cast<double>(song.end_sample) / device.sample_rate() << " seconds."
                   << std::endl;
     }
@@ -504,12 +507,53 @@ int main(int argc, char** argv) {
         window_options.transport.seek = [&transport, &engine](double fraction) {
             transport.seek_fraction(engine, fraction);
         };
+        // A song chosen from the window. The app does the reading, on the thread that pumps the
+        // window, because that is the thread file I/O is allowed on and the thread the transport's
+        // cursor lives on - the audio thread never opens a file, and a song outlives a frame, so
+        // the window asks and this answers.
+        window_options.songs.load =
+            [&song, &transport, &engine, &song_path, &song_dropped, win = window.get(),
+             rate = device.sample_rate()](const std::string& path, std::string& reason) -> bool {
+            // Read the whole file before touching anything that is sounding: a path that will not
+            // parse is a typo, and a typo has no business stopping a session.
+            boreaz::midifile::LoadResult loaded = boreaz::midifile::load_file(path, rate);
+            if (!loaded.ok) {
+                reason = loaded.error;
+                // The panel shows the same words, and the log carries them too: this app reports
+                // every file it could not read, whichever way the file was asked for.
+                std::cerr << "boreaz: " << reason << "\n";
+                return false;
+            }
+            // The transport borrows the Song it was loaded with, so it stops before those bytes
+            // move and is pointed at the new one afterwards.
+            transport.stop(engine);
+            song = std::move(loaded.song);
+            song_path = path;
+            // The count belongs to the song that ran, not to the session: a new song starts it
+            // over, or a drop in one file is reported against the next one that ends.
+            song_dropped = 0;
+            for (const std::string& warning : loaded.warnings)
+                std::cerr << "boreaz: " << song_path << ": " << warning << "\n";
+            std::cout << "boreaz: \"" << song_path << "\": " << song.events.size() << " events, "
+                      << static_cast<double>(song.end_sample) / rate << " seconds." << std::endl;
+            transport.load(song);
+            // A new file is music again. The pump clears this flag when a song ends, and the
+            // transport needs it to open its clock at the file's first event rather than at its
+            // first voice.
+            win->set_external_playback(true);
+            transport.play(engine);
+            return true;
+        };
         if (!window->open(window_options, error)) {
             // The window is the app, but not being able to draw is not a reason to stop a device
             // that is already making sound: say which one failed and carry on without it.
             std::cerr << "boreaz: no window: " << error
                       << "\n  continuing without one; Ctrl+C stops.\n";
             window.reset();
+        } else {
+            // The line above the panel names the song, and the only thing that knows which song the
+            // command line asked for is this file.
+            window->set_song_path(song_path);
         }
     }
     if (window != nullptr && transport.playing())
@@ -538,7 +582,7 @@ int main(int argc, char** argv) {
                     window->set_external_playback(false);
                     window->park_transport();
                 }
-                std::cout << "boreaz: \"" << options.song << "\" finished"
+                std::cout << "boreaz: \"" << song_path << "\" finished"
                           << (song_dropped == 0u
                                   ? ""
                                   : " - " + std::to_string(song_dropped) + " events dropped")
