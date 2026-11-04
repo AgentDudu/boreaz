@@ -22,9 +22,9 @@ two disagree on a number, this file is newer and PLAN is the thing that needs fi
 seven table rows (`fx_distortion_mix/drive`, `fx_delay_mix/time_ms/feedback`,
 `fx_reverb_mix/seconds`). **The mod router is in too** — 8 slots, 7 sources × 7 destinations, 38 rows
 (four a slot, `mod1_source` … `mod8_unipolar`, plus the six `env2_*`/LFO-rate rows a cable cannot work
-without), which takes the table from 25 knobs to **63**. Still out: polyBLEP, and the panel widgets a
-routed patch needs. Nothing you hear changed either way: every send ships at silence and
-every slot ships unwired.
+without), which takes the table from 25 knobs to **63**, and 8.4 put the panel's side of it in (the two
+ends of a cable are lists, not sliders). Still out: polyBLEP. Nothing you hear changed either way: every
+send ships at silence and every slot ships unwired.
 
 ## What phase 8 costs (measured 2026-11-02, PR #31)
 
@@ -156,11 +156,38 @@ that asserts **every** row reads back what the table wrote. Rule for the next ro
 has three ways to address a parameter, so a caller that branches on which one is set has to ask
 `param_is_integer`, not guess.
 
-**Not done in 8.1:** the panel draws the matrix as 32 sliders ("M1 src", 0–6, no names) where eight
-source/destination pairs want list widgets — phase 8.4, with the search box PLAN asks for. The patch file
-already carries every cable (`params_file.cpp` walks the table; no format change was needed). The
-`env2_*` label next to `amp_*` is the naming decision the panel forces, and `env1_*` has gone un-named
-for four phases for the same reason.
+The patch file carries every cable (`params_file.cpp` walks the table; no format change was needed), and
+since 8.4 the panel can *name* one too — see the next section.
+
+## What the panel is now, and the words it uses (2026-11-03)
+
+**A cable is chosen from a list, not typed as a number.** `mod_router.h` holds the two word lists beside
+the enums they describe (`kModSourceNames`, `kModDestNames`), each sized by its own `kCount` so an
+enumerator added without a word stops compiling, and `param_choices(array_kind, &count)` in the table
+hands them to the panel. Asked by array kind, not stored per row: 32 rows would otherwise be 32 copies of
+the same two lists. Three things to keep true when a source or destination is added:
+
+- **Four of the six destinations are named for the parameter row they move** — Cutoff, Osc 2, Osc 3,
+  Hammer noise — and the test asserts that equality, so the list and the slider above it cannot become
+  two vocabularies. Pitch and pan have no row to match (a note's pitch and its position are not
+  parameters), so they are named for the thing itself.
+- **Every name is pinned to its enumerator, not to its position.** Somebody adding a source will reorder
+  the enum; a panel that then calls velocity "Wheel" is a defect no engine test would ever notice.
+- **The clamp is the row's, not the panel's.** A patch file may say `mod1_source = 40`, and
+  `param_write`'s range check is what stops ImGui being handed a word it has not got. Asserted against
+  the list length rather than the row's range, so the two cannot drift apart silently.
+
+Also in this window, which now holds 63 rows in 340 px: `M1 uni` is a checkbox (any integer row whose
+range is 0..1 is drawn as a switch, so the next boolean gets one for free), the labels dropped three
+abbreviations (`M1 source`, `M1 destination`, `M1 unipolar`), and a find box filters on key **or** label
+and prints `N of 63` — a filter that hides rows has to say how many are hidden, or a parameter the
+player cannot find looks like a parameter that does not exist. PLAN's phase-7 criterion is that every
+parameter is *reachable*, and the default filter state shows all 63.
+
+**The naming decision, settled: "Mod env" is a label; the keys stay `env2_*`.** The modulation envelope
+reads "Mod env attack" beside the cable list that says "Mod env", and the amp envelope keeps the bare
+"Attack" a player already reads. Renaming the keys was free today and is not free after phase 9 puts them
+into saved patch files. `env1_*` still has no row at all.
 
 ## What the sine table is, and where the CPU actually was (measured 2026-11-04, PR #36)
 
@@ -325,12 +352,13 @@ loops:  0 of 208 regions loop, because upstream has none. 20 of the 120 note rec
    it buys is the top of the fader: 66 303 pinned samples → 0, and 1.51× rms for 1.16× peak (a little
    of that is the peak itself, +1.32 dB, because there is deliberately no makeup gain). PLAN §8.1 and
    the §6 row carry the numbers.
-1b. **The mod router is in** (`feat/the-mod-router`): see the section above for the rules and the cost.
-   **Next, in this order: the panel widgets (a routed patch is buildable from a `.ini` today — the loader
-   walks the table, so all 63 rows including the 32 cable rows already ride `--params` and `--load`; what
-   a human cannot do is *pick* a source, because the panel draws "M1 src" as a 0–6 slider), then the
-   `env2_*`/`amp_*` labels the panel forces, then polyBLEP** —
-   and polyBLEP is a CPU *saving*, see §7's engine-cost row. Two process facts stay true: open the PR with
+1b. **The mod router is in** (#34) **and so is its panel** (`feature/panel-cables`: cable ends are
+   lists, unipolar is a checkbox, a find box over 63 rows, and "Mod env" as a label with the keys left
+   alone). See the two sections above for the rules, the cost and the words.
+   **Next: polyBLEP**, the only phase-8 criterion still failing — the synthesiser sits at 8.03 % against
+   the < 8 % budget, and it is 8.03 % because every sounding voice evaluates two `std::sin` per sample,
+   so polyBLEP is a CPU *saving*, see §7's engine-cost row. **Then phase 9**, which is where the room
+   arrives as a preset and where `env2_*` stops being a name anybody can change. Two process facts stay true: open the PR with
    `--base develop` and read the base back (this checkout's default is `main`), and the remote is
    `AgentDudu/boreaz` — `gh api` on the wrong owner 404s and proves nothing.
 2. **The rest of phase 8's exit criteria**: per-voice modulation < 1 op/sample at defaults — **met**, 1.36 %

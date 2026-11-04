@@ -9,8 +9,11 @@
 
 #include <imgui.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <string>
+#include <string_view>
 
 #include "boreaz/engine/param_table.h"
 #include "boreaz/gui/keyboard_layout.h"
@@ -27,6 +30,25 @@ const char* note_name(int note, char* buffer, std::size_t size) {
                                              "F#", "G",  "G#", "A",  "A#", "B"};
     std::snprintf(buffer, size, "%s%d", kNames[((note % 12) + 12) % 12], note / 12 - 1);
     return buffer;
+}
+
+// Does this row answer to what has been typed? Both the file name and the word next to the slider,
+// because a person searches for "cutoff" and a patch file searches for "filter_". ASCII folding
+// only: the keys are ASCII and a label that needed more would be a label worth reading, not
+// finding.
+bool answers_to(const boreaz::engine::ParamSpec& spec, std::string_view needle) {
+    if (needle.empty())
+        return true;
+    for (std::string_view hay : {std::string_view(spec.key), std::string_view(spec.label)}) {
+        auto fold = [](char c) {
+            return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        };
+        auto hit = std::search(hay.begin(), hay.end(), needle.begin(), needle.end(),
+                               [&](char a, char b) { return fold(a) == fold(b); });
+        if (hit != hay.end())
+            return true;
+    }
+    return false;
 }
 
 } // namespace
@@ -78,9 +100,16 @@ void ParamsPanel::draw(boreaz::engine::Engine& engine, const FrameView& view,
 
     bool dirty = false;
     std::size_t rows = 0;
+    ImGui::SetNextItemWidth(kPanelWidth - 130.0f);
+    ImGui::InputTextWithHint("##find", "find a parameter", filter_, sizeof filter_);
+    const std::string_view needle(filter_[0] ? filter_ : "");
+    std::size_t shown = 0;
     const boreaz::engine::ParamSpec* table = boreaz::engine::param_table(&rows);
     for (std::size_t row = 0; row < rows; ++row) {
         const boreaz::engine::ParamSpec& spec = table[row];
+        if (!answers_to(spec, needle))
+            continue;
+        ++shown;
         ImGui::PushID(spec.key);
         // The unit goes next to the number, not in a column header: a slider has to be readable in
         // the same glance as the slider.
@@ -88,12 +117,31 @@ void ParamsPanel::draw(boreaz::engine::Engine& engine, const FrameView& view,
         // Both branches read and write through the table: a row that lives in an `std::array` has
         // no member pointer of its own, and the panel is not the place to guess which array a row
         // is in.
-        if (!boreaz::engine::param_is_integer(spec)) {
+        std::size_t choices = 0;
+        const char* const* words = boreaz::engine::param_choices(spec.array_kind, &choices);
+        if (words != nullptr) {
+            // A cable ends in a list, not on a scale: six whole numbers on a slider is a widget
+            // where "M1 source = 2" has to be remembered rather than read.
+            int value = static_cast<int>(boreaz::engine::param_read(spec, params_));
+            ImGui::SetNextItemWidth(kPanelWidth - 130.0f);
+            if (ImGui::Combo(label.c_str(), &value, words, static_cast<int>(choices))) {
+                boreaz::engine::param_write(spec, static_cast<float>(value), params_);
+                dirty = true;
+            }
+        } else if (!boreaz::engine::param_is_integer(spec)) {
             float value = boreaz::engine::param_read(spec, params_);
             const std::string format = std::string("%0.3f") + spec.unit;
             if (ImGui::SliderFloat(label.c_str(), &value, spec.minimum, spec.maximum,
                                    format.c_str())) {
                 boreaz::engine::param_write(spec, value, params_);
+                dirty = true;
+            }
+        } else if (spec.minimum == 0.0f && spec.maximum == 1.0f) {
+            // A whole number that can only be 0 or 1 is a switch, and drawing it as a slider asks
+            // the player to drag a thing that has two positions.
+            bool on = boreaz::engine::param_read(spec, params_) != 0.0f;
+            if (ImGui::Checkbox(label.c_str(), &on)) {
+                boreaz::engine::param_write(spec, on ? 1.0f : 0.0f, params_);
                 dirty = true;
             }
         } else {
@@ -105,11 +153,21 @@ void ParamsPanel::draw(boreaz::engine::Engine& engine, const FrameView& view,
                 dirty = true;
             }
         }
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s\n%g to %g%s, default %g%s", spec.key, spec.minimum, spec.maximum,
-                              spec.unit, spec.default_value, spec.unit);
+        if (ImGui::IsItemHovered()) {
+            // A list row has no range worth printing; the number it stands for is the one a patch
+            // file writes, which is what makes the list and the `.ini` the same cable.
+            const int index = static_cast<int>(boreaz::engine::param_read(spec, params_));
+            if (words != nullptr && index >= 0 && index < static_cast<int>(choices))
+                ImGui::SetTooltip("%s\n%s = %d of %d", spec.key, words[index], index,
+                                  static_cast<int>(choices) - 1);
+            else
+                ImGui::SetTooltip("%s\n%g to %g%s, default %g%s", spec.key, spec.minimum,
+                                  spec.maximum, spec.unit, spec.default_value, spec.unit);
+        }
         ImGui::PopID();
     }
+    if (!needle.empty())
+        ImGui::Text("%d of %d", static_cast<int>(shown), static_cast<int>(rows));
 
     ImGui::Separator();
     if (ImGui::Button("Defaults")) {

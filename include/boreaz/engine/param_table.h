@@ -56,6 +56,13 @@ inline bool param_is_integer(const ParamSpec& spec) noexcept {
     return spec.integer != nullptr;
 }
 
+// The words this row chooses between, or nullptr when the row holds a number rather than a choice.
+// Only the two ends of a cable have any: they are whole numbers over a fixed list, and a slider for
+// a list is how "M1 src = 2" ends up meaning nothing to the person holding the mouse. The list is
+// the enum's own (`mod_router.h`), so the panel cannot show a word the parameter file disagrees
+// with, and the count comes from the table rather than from the caller.
+const char* const* param_choices(ParamArray array_kind, std::size_t* count) noexcept;
+
 float param_read(const ParamSpec& spec, const Params& params);
 
 // Always lands inside [minimum, maximum]: a slider, a text file and a MIDI controller are not
