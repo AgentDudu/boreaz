@@ -178,7 +178,7 @@ TEST_CASE("no tracked file contains a machine path or a credential") {
 }
 
 TEST_CASE("the account-name rule looks for a person and not for a service login") {
-    CHECK_FALSE(generic_account("Rafael"));
+    CHECK_FALSE(generic_account("SomeOne"));
     CHECK(generic_account("runner"));
     CHECK(generic_account("ContainerAdministrator"));
     CHECK(generic_account("NT Authority"));
