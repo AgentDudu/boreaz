@@ -176,6 +176,16 @@ Boreaz's own source is licensed under the **PolyForm Noncommercial License 1.0.0
 use, study, change and share for non-commercial purposes; selling it or using it commercially
 needs a separate agreement with the author. See `LICENSE`.
 
-Bundled third-party code and the sampled piano keep their own terms, listed in `NOTICE`.
-The piano (Salamander Grand Piano, CC-BY-3.0) is *not* covered by the non-commercial clause:
-it stays freely reusable under CC-BY.
+Bundled third-party code and the sampled pianos keep their own terms, listed in `NOTICE`. Neither
+is covered by the non-commercial clause: the Salamander subset `tools/mkinst` cuts is CC-BY-3.0 and
+stays freely reusable under CC-BY, and the Upright Piano KW that `tools/mkinstrument` fetches is
+CC0 — public domain, no terms to keep.
+
+## Branches
+
+`main` is the shipped tree: source, tools, tests, `README`, `LICENSE`, `NOTICE`, `config`, `patches`
+and `docs/PRIVACY.md`. `develop` is where the work happens, and it also carries the working notes —
+`PLAN.md`, the `HANDOFF*` files and `docs/pr-*.md`. Those are a running record of decisions for
+whoever picks this up next, not documentation for a user, so they are not promoted: `main` is built
+from `develop` by `tools/promote_main.py` and is never a merge of it. Source comments that cite
+`PLAN.md §n` point at `develop`.

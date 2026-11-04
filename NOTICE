@@ -15,7 +15,8 @@ CMakeLists.txt):
   Dear ImGui         (c) The ImGui Developers, MIT
   doctest            (c) Viktor Kirilov, MIT
 
-Instrument data (built by tools/mkinst, distributed separately from the source repo):
+Instrument data (fetched or built by tools/mkinstrument and tools/mkinst; never committed to this
+repository, distributed separately from the source repo):
 
   Salamander Grand Piano v3
     (c) Alexander Holm — http://freepats.zenvoid.org/Piano/
@@ -27,7 +28,19 @@ Instrument data (built by tools/mkinst, distributed separately from the source r
     freely reusable under those terms; the attribution above is supplied for that library
     and for our subset. Per CC-BY-3.0 section 4, this file is the "specified acknowledgment"
     and the statement in this paragraph is the required indication of changes.
+    This is the instrument tools/mkinst cuts. tools/mkinst writes a generated NOTICE.txt into the
+    instrument directory it builds, so the attribution travels with the audio, not only with the source.
 
-Note: the instrument's CC-BY-3.0 terms are more permissive than the PolyForm terms that
-cover Boreaz's own source. That is deliberate. The two covers apply to different material
-and are shipped in separate artifacts.
+  Upright Piano KW, version 2022-02-21   (the starter instrument README tells you to fetch)
+    Recorded January 2017 by Gonzalo and Roberto of the FreePats project, from a Kawai upright in a
+    living room - upstream credits Inma Martínez de Miguel for the piano and the room.
+    http://freepats.zenvoid.org/Piano/acoustic-grand-piano.html#UprightKW
+    Creative Commons CC0 1.0 Universal (https://creativecommons.org/publicdomain/zero/1.0/)
+
+    CC0 needs no attribution, so this entry is a courtesy rather than a requirement. What is required
+    is that the terms stay with the audio: tools/mkinstrument checks the release zip against a pinned
+    sha256 and copies the upstream LICENSE and README.md next to the decoded samples.
+
+Note: the instruments' terms - CC-BY-3.0 for Salamander, CC0 for the upright - are more permissive
+than the PolyForm terms that cover Boreaz's own source. That is deliberate. The covers apply to
+different material and are shipped in separate artifacts.
