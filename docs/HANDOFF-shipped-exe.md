@@ -39,8 +39,13 @@ still unproven.
   and the tools keep symbols for that reason.
 - **Do not `git stash push -a` in this repository.** The build tree is untracked, so `-a` swept
   `build/` into the stash and left the tree with no executables. It came back with `git stash pop`;
-  use `git add <the files that are yours>` instead, which is also how the recurring clang-format
-  churn from the watcher is kept out of a commit.
+  use `git add <the files that are yours>` when something else in the tree moved that is not yours.
+  The formatter churn that used to make that necessary was paid off on 2026-11-05: `abe3a7f` ran the
+  tree through its own `.clang-format` (63 of 111 files were never formatted to it, and
+  `ColumnLimit: 100` has been the rule since the scaffold `84152d3`), so an edit's diff should now
+  hold only your lines. If it does not, the installed clang-format is not the 23.1.2 that formatted
+  the tree — nothing in the repository pins a formatter version and no gate runs the formatter, so
+  the drift can come back on another machine.
 - Scratch layouts live in temp folders and are safe to delete: `%TEMP%\boreaz-release`,
   `%TEMP%\boreaz-fresh`, and (from a mistyped path) `%LOCALAPPDATA%\Local\Temp\boreaz-release`.
 
