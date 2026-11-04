@@ -317,7 +317,7 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                      ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar);
 
-    // Opening and closing the path field, reached from the button or from Ctrl+O. It opens
+    // Opening and closing the path field, reached from the button or from F1. It opens
     // prefilled with what is loaded, so replacing a song is editing a name rather than retyping it.
     const auto toggle_path_field = [this] {
         impl_->choosing_path = !impl_->choosing_path;
@@ -569,6 +569,17 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
         // Enter.
         if (stroke.key == GLFW_KEY_F1 && stroke.action == GLFW_PRESS)
             toggle_path_field();
+        if (stroke.key == GLFW_KEY_F2 && stroke.action == GLFW_PRESS) {
+            // F2 moves to the next view. The switcher is a row of buttons, and a view reachable
+            // only by clicking is a view a hand that is on the keys never opens, which is the same
+            // reason the transport is Enter and the path field is F1. F-keys and Backspace are used
+            // because every letter on this keyboard is a pitch: `w` is A#, so a letter shortcut
+            // would sound a note as well as command. It walks the panel table, so a view added to
+            // the table is reachable from here without touching this line. `table` and `count` are
+            // the switcher's own, read earlier in this function: one table, one walk of it.
+            const int next = (static_cast<int>(panel_) + 1) % count;
+            panel_ = table[next].kind;
+        }
         if ((stroke.key == GLFW_KEY_ENTER || stroke.key == GLFW_KEY_KP_ENTER) &&
             stroke.action == GLFW_PRESS && options_.transport.toggle && !impl_->choosing_path) {
             // Enter is the transport, and it calls the same thing the button calls: what one

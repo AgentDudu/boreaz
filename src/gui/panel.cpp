@@ -12,6 +12,7 @@ namespace boreaz::gui {
 
 namespace viz {
 void transport(const FrameView& view);
+void waterfall(const FrameView& view);
 } // namespace viz
 
 namespace {
@@ -23,6 +24,13 @@ constexpr PanelEntry kTable[] = {
      "own: play, stop, loop, a place to jump to, and a song chosen without restarting the app. "
      "Backspace sets the clock back to zero.",
      &viz::transport},
+    {PanelKind::kWaterfall, "Waterfall",
+     "What has been played, in the columns of the keys that played it. Time runs upwards from the "
+     "keyboard line: a note starts there, grows while it is held, and leaves at the length it "
+     "sounded. Height is how long, brightness is how hard, colour is which channel. Scroll and "
+     "lane "
+     "height are this view's own, and F2 moves to the next view.",
+     &viz::waterfall},
 };
 
 static_assert(std::size(kTable) == static_cast<std::size_t>(PanelKind::kCount),
