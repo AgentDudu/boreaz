@@ -109,9 +109,9 @@ Sources: `freepats.zenvoid.org/Piano/acoustic-grand-piano.html`,
 `sfzinstruments.github.io/pianos/salamander/`, `github.com/sfzinstruments/SalamanderGrandPiano`.
 
 **The first instrument that ships is not that one.** It is **FreePats Upright Piano KW** — a
-Kawai upright, recorded January 2017 by Gonzalo (humanogonzalo@gmail.com) and Roberto
-(roberto@zenvoid.org) with a Zoom H1, **CC0 1.0, dedicated by the recorders themselves**
-(`LICENSE`, `github.com/freepats/upright-piano-KW`): 66 regions, 2 velocity layers, stereo,
+Kawai upright, recorded January 2017 by Gonzalo and Roberto with a Zoom H1, **CC0 1.0,
+dedicated by the recorders themselves** (`LICENSE`, `github.com/freepats/upright-piano-KW`,
+`freepats.zenvoid.org` — where the release page still says how to reach them): 66 regions, 2 velocity layers, stereo,
 bass notes looped. **Reading the release rather than this plan corrected one line here:** the
 release has two builds, FLAC (32.4 MB) and OGG (2.2 MB), and **no WAV build at all** - so the
 starter asset needs one offline decode to PCM, which is what `tools/mkinstrument.py` is for, and

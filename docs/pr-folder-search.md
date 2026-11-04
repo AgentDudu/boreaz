@@ -29,7 +29,7 @@ letter on this keyboard is a pitch.
 |---|---|---|
 | open | F3 | explorer at the folder the app stands in |
 | jump to another drive | F4, `C:/`, Enter | the listing is the drive root — no walking |
-| six hops | F5, a few letters, Enter — `Users`, `Rafael`, `VSC_Projects`, `boreaz`, `build`, `.mid` | each hop landed on the folder (or file) the letters named |
+| six hops | F5, a few letters, Enter — `Users`, the account folder, `VSC_Projects`, `boreaz`, `build`, `.mid` (the account name is read from the environment by `tools/walk-to-song.ps1`, never written into it) | each hop landed on the folder (or file) the letters named |
 | the last hop | `.mid` + Enter | `boreaz: "<home>\VSC_Projects\boreaz\build\drive-ab.mid": 176 events, 17.75 seconds.` (the home part scrubbed; the hygiene test in `tests/test_hygiene.cpp` is why) |
 
 So: drive root → a song file, seven keystroke groups, no mouse, and the proof is the load line on

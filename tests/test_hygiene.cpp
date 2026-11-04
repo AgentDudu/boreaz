@@ -4,9 +4,17 @@
 // tracked files" is enforced by `ctest` rather than by a reviewer's attention. The rules
 // are deliberately narrow: each one is a mistake someone can plausibly make once.
 
+// The gate asks the environment who owns the machine, and MSVC deprecates `getenv` for it. The
+// value is copied into a std::string on the line that reads it, so the define is the honest
+// answer rather than a per-platform branch around one call. It has to precede the includes.
+#define _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_DEPRECATE
+
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -66,6 +74,44 @@ std::string read_file(const std::filesystem::path& path) {
     return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
 }
 
+std::string lower(std::string s) {
+    for (char& c : s) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return s;
+}
+
+// A login belongs to a person, or to a service. The generic names a CI job or a Windows
+// service starts under are not identity, and looking for them would flag ordinary prose.
+bool generic_account(const std::string& account) {
+    static const std::vector<std::string> kGeneric = {
+        "runner", "containeradministrator", "administrator", "admin", "root", "git",
+        "networkservice", "localservice", "system", "ci", "docker", "vsts", "nt authority",
+    };
+    return std::find(kGeneric.begin(), kGeneric.end(), lower(account)) != kGeneric.end();
+}
+
+// Who owns the machine the tree is being checked on. This is the identity a measurement note
+// leaks most easily, because it is typed as a filter needle or a folder hop and never looks
+// like a path. Under three characters the name matches ordinary text, so it is not looked for.
+std::string account_name() {
+    for (const char* var : {"USERNAME", "USER", "LOGNAME"}) {
+        if (const char* value = std::getenv(var); value != nullptr && *value != '\0') {
+            std::string name{value};
+            if (name.size() >= 3 && !generic_account(name)) {
+                return name;
+            }
+        }
+    }
+    return {};
+}
+
+// The account name this file is not allowed to contain, or empty when the body is clean.
+std::string identity_offender(const std::string& body) {
+    const std::string name = account_name();
+    return (!name.empty() && lower(body).find(lower(name)) != std::string::npos) ? name : std::string{};
+}
+
 struct Rule {
     std::regex pattern;
     const char* why;
@@ -105,6 +151,9 @@ TEST_CASE("no tracked file contains a machine path or a credential") {
         if (name == "test_hygiene.cpp") {
             continue; // this file necessarily contains the patterns it looks for
         }
+        if (name == "NOTICE") {
+            continue; // the licence line states the copyright holder's own name on purpose
+        }
         if (!is_text(it->path())) {
             continue;
         }
@@ -117,11 +166,35 @@ TEST_CASE("no tracked file contains a machine path or a credential") {
                     "\n  " + rel_path(it->path()) + ": " + rule.why + " -> \"" + match.str() + "\"";
             }
         }
+        if (const std::string who = identity_offender(body); !who.empty()) {
+            offenders += "\n  " + rel_path(it->path()) + ": this machine's own account name -> \"" + who +
+                         "\"";
+        }
     }
 
     INFO("scanned " << files << " text files under " << root().generic_string());
     INFO("offenders:" << offenders);
     CHECK(offenders.empty());
+}
+
+TEST_CASE("the account-name rule looks for a person and not for a service login") {
+    CHECK_FALSE(generic_account("Rafael"));
+    CHECK(generic_account("runner"));
+    CHECK(generic_account("ContainerAdministrator"));
+    CHECK(generic_account("NT Authority"));
+    CHECK_FALSE(generic_account("SomeOne"));
+
+    const std::string me = account_name();
+    INFO("the login this tree is checked under: \"" << me << "\" (empty when it is a generic one)");
+    if (me.empty()) {
+        return; // a service login carries no identity for the rule to look for
+    }
+    CHECK_FALSE(identity_offender("cd C:/Users/" + me + "/boreaz").empty());
+    CHECK_FALSE(identity_offender("typed " + me + " into the filter").empty());
+    CHECK_FALSE(identity_offender(lower(me) + " spelled another way").empty()); // folded
+    const std::string other = (me == "SomeOne") ? "SomeTwo" : "SomeOne";
+    CHECK(identity_offender("cd C:/Users/" + other + "/boreaz").empty());
+    CHECK(identity_offender("the job ran as runner and remembered nothing").empty());
 }
 
 TEST_CASE("every BOREAZ_ key in .env.example has an empty value") {
