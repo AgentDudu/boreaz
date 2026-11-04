@@ -1,4 +1,4 @@
-# HANDOFF — phase 9 continuation (written 2026-11-04 at develop `291c178`, updated after 9.4)
+# HANDOFF — phase 9 continuation (written 2026-11-04 at develop `291c178`, updated after 9.4 and the voice-kind question)
 
 Start here. `HANDOFF.md` is the older whole-project handoff (seventh/eighth pass) and its header
 table is stale about the develop tip and the test count; `PLAN.md` is the contract. Where this file
@@ -46,6 +46,7 @@ Commits reach develop **only through a PR** (direct pushes to `main` are blocked
 | save / load / browser in the mixer | #39 | merged |
 | factory patches (5 registers + 3 dynamics) + the two-patch-folder rule | #40 | merged |
 | app setup file (audio port, MIDI port, library, last patch) and autosave on exit | #41 | merged |
+| a patch carries its voice kind; no `voice_kind` parameter | #42 | merged |
 
 
 ### The format, exactly
