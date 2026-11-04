@@ -17,11 +17,11 @@ void transport(const FrameView& view);
 namespace {
 
 constexpr PanelEntry kTable[] = {
-    {PanelKind::kTransport,
-     "Transport",
+    {PanelKind::kTransport, "Transport",
      "Where the song is: a strip that sits still until a note or a song starts it and then rolls, "
-     "the playhead at the right, two meters at its foot. A view, not a remote - seeking needs the "
-     "scheduler, which is a later phase. Backspace sets the clock back to zero.",
+     "the playhead at the right, two meters at its foot. The row above this one is the player's "
+     "own: play, stop, loop, a place to jump to, and a song chosen without restarting the app. "
+     "Backspace sets the clock back to zero.",
      &viz::transport},
 };
 
