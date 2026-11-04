@@ -5,8 +5,9 @@
 # keys have to be posted. Not part of the build.
 #
 # It assumes this machine's layout: the song ends up at <repo>/build/drive-ab.mid, reached by
-# filtering Users / Rafael / VSC_Projects / boreaz / build / .mid from C:\. Change the list for
-# another machine.
+# filtering Users / <this account> / VSC_Projects / boreaz / build / .mid from C:\. The account
+# name is read from the environment rather than written here, so the script does not commit
+# whoever's machine it was measured on. Change the list for another machine.
 param([switch]$short)
 $ErrorActionPreference = 'Stop'
 $repo = (Get-Location).Path
@@ -48,7 +49,9 @@ Key 0x0D   # Enter in the field: go to the drive root
 Start-Sleep -Milliseconds 900
 Write-Output 'jumped to C:/'
 if (-not $short) {
-    foreach ($name in @('Users', 'Rafael', 'VSC_Projects', 'boreaz', 'build', '.mid')) {
+    $account = $env:USERNAME
+    if (-not $account) { throw 'USERNAME is not in the environment; this walk needs the account folder name' }
+    foreach ($name in @('Users', $account, 'VSC_Projects', 'boreaz', 'build', '.mid')) {
         Key 0x74           # F5: the filter takes the keyboard
         SendText $name
         Key 0x0D           # Enter takes the top row the filter left

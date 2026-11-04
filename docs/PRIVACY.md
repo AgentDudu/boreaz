@@ -38,6 +38,8 @@ Boreaz collects nothing.
   logged, buffered to disk, or uploaded.
 - No absolute machine paths, device serials, or user names are committed to the repository.
   A test in `tests/test_hygiene.cpp` fails the build if a tracked file starts to contain a
-  machine-absolute path or a config value with real data in it.
+  machine-absolute path, a config value with real data in it, an embedded credential or token,
+  or the account name of the machine the tree is being checked on. The one personal name kept
+  on purpose is the copyright holder's own, in `NOTICE`, because the licence requires it.
 
 If any of the above changes, this file changes first, in the same pull request.
