@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -22,6 +23,8 @@
 #include "engine_fixture.h"
 
 using boreaz::config::load_params_file;
+using boreaz::config::read_patch_meta;
+using boreaz::config::save_params_file;
 using boreaz::engine::Engine;
 using boreaz::engine::Event;
 using boreaz::engine::Params;
@@ -240,6 +243,112 @@ TEST_CASE("a parameter file refuses a number the engine cannot use, and says wha
     REQUIRE(std::filesystem::is_regular_file(ini));
     Params shipped{};
     REQUIRE_MESSAGE(load_params_file(ini.string(), shipped, error), ini.string() << ": " << error);
+}
+
+TEST_CASE(
+    "a patch writes every parameter, reads them back exactly, and writes the same bytes again") {
+    const auto dir = std::filesystem::temp_directory_path() / "boreaz_patch_round_trip";
+    std::filesystem::create_directories(dir);
+
+    std::size_t rows = 0;
+    const ParamSpec* table = boreaz::engine::param_table(&rows);
+    REQUIRE(rows > 0);
+
+    const auto text_of = [](const std::filesystem::path& path) {
+        std::ifstream in(path, std::ios::binary);
+        std::ostringstream body;
+        body << in.rdbuf();
+        return body.str();
+    };
+
+    std::string error;
+    // Set by key rather than by member: the modulation rows live inside `std::array`s, and a test
+    // that reaches them the way the file format does is testing the thing that matters.
+    Params shaped{};
+    const auto set = [&](const char* key, float value) {
+        const ParamSpec* spec = boreaz::engine::param_spec(key);
+        REQUIRE(spec != nullptr);
+        boreaz::engine::param_write(*spec, value, shaped);
+    };
+    set("master_gain_db", -6.5f);
+    set("transpose_semitones", -3.0f);
+    set("octave_shift", 2.0f);
+    set("tuning_reference_hz", 432.0f);
+    set("pan_spread", 0.75f);
+    set("mod1_source", 3.0f);
+    set("mod3_depth", 0.4f);
+
+    // A name and an instrument are the two fields a preset browser reads before it plays anything,
+    // so they survive the trip even though neither is an engine parameter.
+    const auto first = dir / "first.txt";
+    REQUIRE(save_params_file(first.string(), shaped, "Bright Grand",
+                             "assets/instruments/grand/library.txt", error));
+    std::string name;
+    std::string instrument;
+    REQUIRE(read_patch_meta(first.string(), name, instrument, error));
+    CHECK(name == "Bright Grand");
+    CHECK(instrument == "assets/instruments/grand/library.txt");
+
+    // A whole number row is written as a whole number: the reader refuses `octave_shift = 1.5`, and
+    // it would refuse `2.0` too, so a writer that printed a decimal point would write files it
+    // cannot read.
+    CHECK(text_of(first).find("octave_shift = 2\n") != std::string::npos);
+    CHECK(text_of(first).find("transpose_semitones = -3\n") != std::string::npos);
+
+    Params back{};
+    REQUIRE(load_params_file(first.string(), back, error));
+    for (std::size_t row = 0; row < rows; ++row) {
+        // Exact rather than Approx. A value that came back one bit away is a patch that does not
+        // sound like the one that was saved, and "close enough" is how a preset drifts.
+        CHECK(param_read(table[row], back) == param_read(table[row], shaped));
+    }
+
+    const auto second = dir / "second.txt";
+    REQUIRE(save_params_file(second.string(), back, name, instrument, error));
+    CHECK(text_of(first) == text_of(second));
+
+    // Every row at both ends of its own range and at its default. The eight cables that live inside
+    // an `std::array` are the rows a writer gets wrong when it guesses how to reach a parameter
+    // instead of asking the table, and an out-of-range value is where that shows up first.
+    for (std::size_t row = 0; row < rows; ++row) {
+        for (const float edge :
+             {table[row].minimum, table[row].maximum, table[row].default_value}) {
+            Params p{};
+            boreaz::engine::param_write(table[row], edge, p);
+            const auto edge_path = dir / ("edge" + std::to_string(row) + ".txt");
+            INFO("row " << table[row].key << " = " << edge);
+            REQUIRE(save_params_file(edge_path.string(), p, "", "", error));
+            Params q{};
+            REQUIRE(load_params_file(edge_path.string(), q, error));
+            CHECK(param_read(table[row], q) == param_read(table[row], p));
+            const auto again = dir / ("edge" + std::to_string(row) + "b.txt");
+            REQUIRE(save_params_file(again.string(), q, "", "", error));
+            CHECK(text_of(edge_path) == text_of(again));
+        }
+    }
+
+    // A file with no header is every parameter file that has ever existed, and it is still a patch:
+    // the two name fields come back empty and the parameters load.
+    std::string bare_name = "leftover";
+    std::string bare_instrument = "leftover";
+    const auto bare = dir / "bare.ini";
+    std::ofstream(bare) << "# no header here\nmaster_gain_db = -6.5\n";
+    REQUIRE(read_patch_meta(bare.string(), bare_name, bare_instrument, error));
+    CHECK(bare_name.empty());
+    CHECK(bare_instrument.empty());
+    Params bare_params{};
+    REQUIRE(load_params_file(bare.string(), bare_params, error));
+    CHECK(bare_params.master_gain_db == doctest::Approx(-6.5f));
+
+    // A name with a newline in it would write a second header line and read back as something else,
+    // so the writer takes the newline out instead of writing a file it cannot read.
+    const auto tricky = dir / "tricky.txt";
+    REQUIRE(save_params_file(tricky.string(), shaped, "Two\nLines", "a path\rwith a break", error));
+    std::string tricky_name;
+    std::string tricky_instrument;
+    REQUIRE(read_patch_meta(tricky.string(), tricky_name, tricky_instrument, error));
+    CHECK(tricky_name == "Two Lines");
+    CHECK(tricky_instrument == "a path with a break");
 }
 
 TEST_CASE("a parameter moves toward its new value instead of arriving there") {
