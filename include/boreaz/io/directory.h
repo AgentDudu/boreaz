@@ -49,4 +49,19 @@ std::string current_folder();
 // greyed-out name is greyed out, and two rules written twice are two rules that drift.
 bool reads_as_song(const std::string& name);
 
+// The drives this machine answers on, said the way Windows says them: "C:/", "D:/". The letters are
+// probed rather than asked of a platform API, which keeps this file portable and costs 26 stat
+// calls - a price worth paying when the alternative is a player climbing out of one drive a folder
+// at a time. Empty on a system with no drive letters, which is what a non-Windows system is.
+std::vector<std::string> drives();
+
+// True when `needle` is inside `name` with the case ignored, and true for an empty needle. The
+// picker narrows its own listing with this so the folding it sorts by is the folding it searches
+// by: two rules about case would disagree with each other.
+bool name_contains(const std::string& name, const std::string& needle);
+
+// The same folder said absolutely, so the explorer's address bar shows something a player can read
+// and paste back instead of "..". The input comes back unchanged when the filesystem cannot answer.
+std::string absolute_folder(const std::string& path);
+
 } // namespace boreaz::io

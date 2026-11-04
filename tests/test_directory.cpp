@@ -144,6 +144,38 @@ TEST_CASE("current_folder names the folder the app is standing in") {
     CHECK(note.empty());
 }
 
+TEST_CASE("absolute_folder turns an address bar's .. into a folder") {
+    // The bar shows what this returns, so it has to be something a player reads and pastes back.
+    const std::string here = boreaz::io::absolute_folder(".");
+    CHECK_FALSE(here.empty());
+    CHECK(here[0] != '.');
+    CHECK(boreaz::io::absolute_folder(here) == here);
+#if defined(_WIN32)
+    CHECK(boreaz::io::absolute_folder("C:/a/b/../c") == "C:/a/c"); // folded, and one separator
+    CHECK(boreaz::io::absolute_folder("C:").rfind("C:", 0) == 0);
+#endif
+}
+
+TEST_CASE("name_contains narrows a listing by the same folding that sorts it") {
+    CHECK(boreaz::io::name_contains("Glissando-88.MID", "gli"));
+    CHECK(boreaz::io::name_contains("glissando-88.mid", "SSAND"));
+    CHECK_FALSE(boreaz::io::name_contains("lead-simple.mid", "glis"));
+    CHECK(boreaz::io::name_contains("anything", "")); // an empty filter narrows nothing
+}
+
+#if defined(_WIN32)
+TEST_CASE("drives answers the roots a player can jump to") {
+    // The row of buttons that replaces climbing out of one drive a folder at a time.
+    const std::vector<std::string> roots = boreaz::io::drives();
+    CHECK_FALSE(roots.empty());
+    for (const std::string& root : roots) {
+        CHECK(root.size() == 3);
+        CHECK(root[1] == ':');
+        CHECK(root[2] == '/');
+    }
+}
+#endif
+
 #if defined(_WIN32)
 TEST_CASE("a walk up to a drive root still lists the root") {
     // The edge the picker reaches by pressing Left out of C:/songs: parent_folder answers "C:", which

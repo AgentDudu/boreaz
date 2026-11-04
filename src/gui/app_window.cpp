@@ -105,6 +105,17 @@ struct AppWindow::Impl {
     std::size_t browse_more = 0;
     int browse_pick = -1; // the row the arrow keys are on; -1 is none of them
     ImVec2 browse_at{0.0f, 0.0f}; // where the Browse button stood when it was pressed
+
+    // The address bar, the filter, and what the filter lets through. The bar is the fast way from
+    // one drive to another - typing `D:\songs` beats climbing out a folder at a time - and the filter
+    // is the fast way through a folder of 2 000 names. Both are buffers rather than widgets so the
+    // text survives the frames between keystrokes, like the song field above.
+    char browse_jump[512] = {0};
+    char browse_filter[128] = {0};
+    std::vector<std::string> browse_drives; // read when the explorer opens, never per frame
+    std::vector<std::size_t> browse_shown;  // positions in browse_entries, in order, filter applied
+    bool focus_jump = false; // F4 gives the address bar the keyboard in the frame it is pressed
+    bool focus_filter = false;
 };
 
 // Rows the explorer draws at most. It is not a claim about what the folder holds - the count past it
@@ -363,16 +374,27 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
             return false;
         }
         impl_->browse_note.clear();
-        impl_->browse_folder = folder;
+        // Absolute, because the bar above the listing shows this string and ".." is not an address a
+        // player reads or pastes back.
+        impl_->browse_folder = boreaz::io::absolute_folder(folder);
         impl_->browse_entries = std::move(entries);
         impl_->browse_more = more;
         impl_->browse_pick = -1;
+        // The narrowing goes with the folder it narrowed. Keeping it across a jump is the surprise:
+        // the next folder opens showing nothing because of text typed for the last one.
+        impl_->browse_filter[0] = '\0';
+        // The bar answers with the folder that opened, so editing it means editing where you are.
+        std::snprintf(impl_->browse_jump, sizeof impl_->browse_jump, "%s",
+                      impl_->browse_folder.c_str());
         return true;
     };
     const auto toggle_browse = [this, &show_folder] {
         impl_->browsing = !impl_->browsing;
         if (!impl_->browsing)
             return;
+        // The drive row is read once per visit. Twenty-six stat calls every frame is the same stall
+        // the listing itself is bounded against.
+        impl_->browse_drives = boreaz::io::drives();
         if (!impl_->choosing_path)
             // F3 with no path field open: the explorer goes where the field's row is, because the
             // position the Browse button set is from a previous visit, and never set at all it is
@@ -565,9 +587,11 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
         if (ImGui::Button("Browse"))
             toggle_browse();
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Look through the folders for a .mid or .midi file. Up and Down walk "
-                              "the list, Enter picks what is highlighted, Left goes out one folder "
-                              "and Escape closes it: F3 opens this without a mouse.");
+            ImGui::SetTooltip("Look through the folders for a .mid or .midi file. The bar at the top "
+                              "is where you are - type another folder or another drive and press "
+                              "Enter, or press a drive button. F3 opens this, F4 gives you the bar, "
+                              "F5 narrows the list as you type, Up and Down walk it, Enter picks what "
+                              "is highlighted, Left goes out one folder, Escape closes it.");
         // Where the explorer goes: under the button that opened it, which is where the eye already is.
         impl_->browse_at = ImVec2{ImGui::GetItemRectMin().x, ImGui::GetItemRectMax().y + 6.0f};
         if (entered || pressed)
@@ -678,12 +702,19 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
             toggle_path_field();
         if (stroke.key == GLFW_KEY_F3 && stroke.action == GLFW_PRESS)
             toggle_browse(); // the folders without a mouse, for the same reason F1 is the field
+        // F4 and F5 hand the keyboard to the explorer's own fields. They need keys of their own
+        // because every letter on this keyboard is a pitch: without them the address bar and the
+        // filter can only be reached with a mouse.
+        if (stroke.key == GLFW_KEY_F4 && stroke.action == GLFW_PRESS && impl_->browsing)
+            impl_->focus_jump = true;
+        if (stroke.key == GLFW_KEY_F5 && stroke.action == GLFW_PRESS && impl_->browsing)
+            impl_->focus_filter = true;
         if (impl_->browsing && stroke.action == GLFW_PRESS) {
             // Up and Down walk the listing, Enter picks the highlighted row, Escape shuts the folder.
             // F-keys and arrows rather than letters because every letter on this keyboard is a pitch,
             // and a folder reached only by clicking is a folder a hand that is on the keys has never
             // seen - which is the same argument that put the path field on F1 and the views on F2.
-            const int rows = static_cast<int>(impl_->browse_entries.size());
+            const int rows = static_cast<int>(impl_->browse_shown.size());
             if (stroke.key == GLFW_KEY_UP || stroke.key == GLFW_KEY_DOWN) {
                 const int step = stroke.key == GLFW_KEY_DOWN ? 1 : -1;
                 impl_->browse_pick =
@@ -696,8 +727,9 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
                 show_folder(boreaz::io::parent_folder(impl_->browse_folder));
             } else if ((stroke.key == GLFW_KEY_ENTER || stroke.key == GLFW_KEY_KP_ENTER) &&
                        impl_->browse_pick >= 0 && impl_->browse_pick < rows) {
-                pick_folder_entry(
-                    impl_->browse_entries[static_cast<std::size_t>(impl_->browse_pick)]);
+                pick_folder_entry(impl_->browse_entries
+                                      [impl_->browse_shown[static_cast<std::size_t>(
+                                          impl_->browse_pick)]]);
             }
         }
         if (stroke.key == GLFW_KEY_F2 && stroke.action == GLFW_PRESS) {
@@ -751,7 +783,41 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
         // handler had highlighted, and a song loads from a row the player never chose.
         ImGui::Begin("song folders", nullptr,
                      ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoNavInputs);
-        ImGui::TextUnformatted(impl_->browse_folder.c_str());
+        // Where this is, said absolutely, and editable: typing `D:\songs` and pressing Enter is a
+        // jump, which is what climbing out of one drive a folder at a time used to cost.
+        ImGui::SetNextItemWidth(-56.0f);
+        if (impl_->focus_jump) {
+            ImGui::SetKeyboardFocusHere(0);
+            impl_->focus_jump = false;
+        }
+        const bool jump_enter =
+            ImGui::InputText("##where", impl_->browse_jump, sizeof impl_->browse_jump,
+                             ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::SameLine();
+        const bool go = ImGui::Button("Go");
+        if (go || jump_enter)
+            show_folder(impl_->browse_jump); // a folder that refuses says so under the bar
+        for (std::size_t drive = 0; drive < impl_->browse_drives.size(); ++drive) {
+            if (drive > 0)
+                ImGui::SameLine();
+            if (ImGui::SmallButton(impl_->browse_drives[drive].c_str()))
+                show_folder(impl_->browse_drives[drive]);
+        }
+        // The listing narrows as it is typed, which is what a folder of 2 000 names needs. Enter
+        // takes the top row the filter left, so three letters of a name is one key from the song.
+        ImGui::SetNextItemWidth(-56.0f);
+        if (impl_->focus_filter) {
+            ImGui::SetKeyboardFocusHere(0);
+            impl_->focus_filter = false;
+        }
+        // The listing narrows as it is typed, which is what a folder of 2 000 names needs. Enter
+        // takes the top row the filter left, so three letters of a name is one key from the song.
+        const bool filter_enter =
+            ImGui::InputText("narrow", impl_->browse_filter, sizeof impl_->browse_filter,
+                             ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("clear"))
+            impl_->browse_filter[0] = '\0';
         if (!impl_->browse_note.empty())
             ImGui::TextColored(ImVec4{1.0f, 0.45f, 0.45f, 1.0f}, "%s",
                                impl_->browse_note.c_str());
@@ -761,12 +827,39 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
         if (ImGui::SmallButton("Close"))
             impl_->browsing = false;
         ImGui::BeginChild("##rows", ImVec2{0.0f, 0.0f}, true);
-        for (std::size_t index = 0; index < impl_->browse_entries.size(); ++index) {
-            const boreaz::io::FolderEntry& entry = impl_->browse_entries[index];
+        // The rows the filter lets through, rebuilt here: a keystroke arrives as part of this same
+        // frame, and 300 substring tests cost less than the state needed to know when they would be
+        // wasted. The keys above read this list a frame later, which is where a key already is.
+        impl_->browse_shown.clear();
+        for (std::size_t index = 0; index < impl_->browse_entries.size(); ++index)
+            if (boreaz::io::name_contains(impl_->browse_entries[index].name,
+                                          impl_->browse_filter))
+                impl_->browse_shown.push_back(index);
+        if (impl_->browse_pick >= static_cast<int>(impl_->browse_shown.size()))
+            impl_->browse_pick = -1; // the filter moved that row out from under the highlight
+        // A pick cannot act while the rows are being read. The rows are positions in browse_entries,
+        // and picking a folder replaces that vector: a loop that went on reading the old positions
+        // after that is reading names out of a listing that no longer exists. So the pick is noted
+        // here and done once the child window is closed.
+        int pending_pick = -1;
+        if (filter_enter && !impl_->browse_shown.empty())
+            // Enter with the filter holding the keyboard, where the arrows are in the field too: the
+            // first row a few letters left is what a person typing a name is asking for.
+            pending_pick = 0;
+        for (std::size_t position = 0; position < impl_->browse_shown.size(); ++position) {
+            const boreaz::io::FolderEntry& entry =
+                impl_->browse_entries[impl_->browse_shown[position]];
             const std::string label = entry.folder ? entry.name + "/" : entry.name;
             if (ImGui::Selectable(label.c_str(),
-                                  static_cast<int>(index) == impl_->browse_pick))
-                pick_folder_entry(entry);
+                                  static_cast<int>(position) == impl_->browse_pick) &&
+                pending_pick < 0)
+                pending_pick = static_cast<int>(position);
+        }
+        if (impl_->browse_filter[0] != '\0') {
+            char counted[64];
+            std::snprintf(counted, sizeof counted, "%zu of %zu names",
+                          impl_->browse_shown.size(), impl_->browse_entries.size());
+            ImGui::TextUnformatted(counted);
         }
         if (impl_->browse_more > 0) {
             char rest[64];
@@ -774,9 +867,17 @@ void AppWindow::draw(boreaz::engine::Engine& engine, const StatsFn& stats) {
                           impl_->browse_more);
             ImGui::TextUnformatted(rest);
         }
-        if (impl_->browse_entries.empty() && impl_->browse_note.empty())
-            ImGui::TextUnformatted("no .mid or .midi files here");
+        if (impl_->browse_shown.empty()) {
+            if (impl_->browse_filter[0] != '\0')
+                ImGui::TextColored(ImVec4{0.75f, 0.78f, 0.82f, 1.0f}, "nothing here matches %s",
+                                   impl_->browse_filter);
+            else if (impl_->browse_entries.empty() && impl_->browse_note.empty())
+                ImGui::TextUnformatted("no .mid or .midi files here");
+        }
         ImGui::EndChild();
+        if (pending_pick >= 0 && pending_pick < static_cast<int>(impl_->browse_shown.size()))
+            pick_folder_entry(
+                impl_->browse_entries[impl_->browse_shown[static_cast<std::size_t>(pending_pick)]]);
         ImGui::End();
     }
 
