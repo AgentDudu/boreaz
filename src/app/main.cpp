@@ -3,6 +3,7 @@
 // key lives in the layout. What is here is argument parsing and a run loop, which is the smallest
 // honest description of an application shell.
 #include <atomic>
+#include <array>
 #include <chrono>
 #include <csignal>
 #include <cstdio>
@@ -14,6 +15,7 @@
 
 #include "boreaz/config/app_settings.h"
 #include "boreaz/config/params_file.h"
+#include "boreaz/dsp/analyser.h"
 #include "boreaz/engine/engine.h"
 #include "boreaz/gui/app_window.h"
 #include "boreaz/io/audio_device.h"
@@ -178,6 +180,60 @@ bool parse(int argc, char** argv, Options& options, std::string& error) {
     return true;
 }
 
+// The spectrum panel's maths, once per frame, on the thread that runs the frame loop.
+//
+// The audio thread's whole contribution is a memcpy into a ring it never waits on. Everything that
+// costs time - the window, the transform, the fold into the 88 key ranges, the hold line - happens
+// here, where being slow is a late frame and not a glitch in the sound. An 8192-point transform
+// inside a 441-frame callback would be the opposite: the window's appetite put inside the audio
+// path's deadline, which is the rule this program is built around (PLAN.md 3).
+void feed_spectrum(boreaz::gui::AppWindow& window, boreaz::dsp::SampleTap& tap,
+                   boreaz::dsp::Analyser& wide, boreaz::dsp::Analyser& fast, float* drain) {
+    static_assert(boreaz::dsp::Analyser::band_count() == boreaz::gui::SpectrumSnapshot::kBandCount,
+                  "the analyser and the frame view disagree about how many bands there are, and one "
+                  "of them would read past the other");
+
+    if (window.panel_kind() != boreaz::gui::PanelKind::kSpectrum) {
+        // Nobody is looking. The ring is still drained, because letting it fill would count holes
+        // against a panel that is not even on screen. And the analysers are reset rather than left
+        // alone: a panel that comes back showing the picture from before it was hidden is a meter
+        // frozen on the past, which is the one thing a level display may not be.
+        tap.read(drain, tap.pending_frames());
+        wide.reset();
+        fast.reset();
+        return;
+    }
+
+    const int frames = tap.read(drain, boreaz::dsp::SampleTap::kCapacityFrames);
+    if (frames > 0) {
+        wide.push(drain, frames);
+        fast.push(drain, frames);
+    }
+    wide.transform();
+    fast.transform();
+    const double now = window.seconds_elapsed();
+    wide.advance(now);
+    fast.advance(now);
+
+    boreaz::gui::SpectrumSnapshot snap;
+    for (int index = 0; index < boreaz::gui::SpectrumSnapshot::kBandCount; ++index) {
+        const std::size_t band = static_cast<std::size_t>(index);
+        snap.wide_db[band] = wide.band_db(index);
+        snap.wide_peak[band] = wide.peak_db(index);
+        snap.fast_db[band] = fast.band_db(index);
+        snap.fast_peak[band] = fast.peak_db(index);
+    }
+    snap.wide_size = wide.window_size();
+    snap.fast_size = fast.window_size();
+    snap.wide_microseconds = wide.last_microseconds();
+    snap.fast_microseconds = fast.last_microseconds();
+    // Both counters travel to the panel: how much of the sound the copy threw away, and how much of
+    // what it kept the analyser never looked at. A picture with a hole in it has to say so.
+    snap.dropped_frames = tap.dropped_frames();
+    snap.unanalysed_frames = wide.dropped_input_frames() + fast.dropped_input_frames();
+    window.set_spectrum(snap);
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -305,7 +361,19 @@ int main(int argc, char** argv) {
                 std::cout << "  " << warning << "\n";
         }
     }
+    // The spectrum panel's feed, declared before the device so it outlives it: the audio callback
+    // holds a pointer into this ring. Built once, at startup; a frame never allocates. The drain is
+    // the ring's whole capacity, so one read per frame is enough to catch up from any stall the
+    // frame loop takes.
+    boreaz::dsp::SampleTap spectrum_tap;
+    std::array<float, static_cast<std::size_t>(boreaz::dsp::SampleTap::kCapacityFrames) * 2>
+        spectrum_drain{};
+
     boreaz::io::AudioDevice device(engine);
+    // Only a window looks. Headless pays a compare and nothing else, and the callback's branch on a
+    // null tap is one predictable jump.
+    if (options.gui)
+        device.set_tap(&spectrum_tap);
     boreaz::io::MidiInput midi;
 
     if (options.list_devices) {
@@ -409,6 +477,34 @@ int main(int argc, char** argv) {
               << (options.gui ? "window" : "headless") << ". Ctrl+C stops." << std::endl;
 
     const std::string port_name = device.name();
+
+    // The two windows the panel can be set to, both measured on this thread. Long and short because
+    // one window cannot do both jobs: the bins have to be narrow enough to tell A0 from A#0, and a
+    // transient has to light in the frame after it happens. The rate is the device's, not the one
+    // that was asked for - a driver that answers 44100 would otherwise put every band at a pitch a
+    // semitone off.
+    boreaz::dsp::Analyser wide_analyser(boreaz::dsp::Analyser::kWideWindow,
+                                        device.sample_rate());
+    boreaz::dsp::Analyser fast_analyser(boreaz::dsp::Analyser::kFastWindow,
+                                        device.sample_rate());
+
+    // The one display knob the plan puts in the setup file: how fast the spectrum's hold line falls.
+    // Read here and not in the panel, because the panel may no more read a file than open a device.
+    // A number out of range is a word to print and ignore, the same rule the file's reader gives every
+    // line it cannot use: a setup file is never the reason the instrument cannot start.
+    if (!setup.peak_decay.empty()) {
+        char* end = nullptr;
+        const double fall = std::strtod(setup.peak_decay.c_str(), &end);
+        if (end == setup.peak_decay.c_str() || fall < 0.0 || fall > 120.0) {
+            std::cout << "boreaz: peak_decay = " << setup.peak_decay
+                      << " is not a rate between 0 and 120 dB/s; using "
+                      << wide_analyser.peak_decay_db_per_second() << " dB/s." << std::endl;
+        } else {
+            wide_analyser.set_peak_decay_db_per_second(static_cast<float>(fall));
+            fast_analyser.set_peak_decay_db_per_second(static_cast<float>(fall));
+        }
+    }
+
     auto stats = [&](boreaz::gui::DeviceStats& out, boreaz::gui::MidiStats& in) {
         out.open = device.is_open();
         out.name = port_name;
@@ -591,6 +687,9 @@ int main(int argc, char** argv) {
                     break;
             }
         }
+        if (window != nullptr)
+            feed_spectrum(*window, spectrum_tap, wide_analyser, fast_analyser,
+                          spectrum_drain.data());
         const bool running = window ? window->frame(engine, stats) : !stopping.load();
         if (!running || stopping.load())
             break;
@@ -621,6 +720,21 @@ int main(int argc, char** argv) {
               << engine.sample_position() << " samples, " << (window ? window->frames() : 0.0)
               << " frames, " << (device.cpu_fraction() * 100.0) << "% audio-thread cpu."
               << std::endl;
+
+    // The frame loop's own cost, in the log and not only on the screen. A panel that does maths has to
+    // say what the maths costs, and this is the number phase 11 said it could not measure: printed in
+    // microseconds per transform, from the analyser's own clock, on this machine, in this run.
+    if (wide_analyser.transform_count() != 0u || fast_analyser.transform_count() != 0u) {
+        std::cout << "boreaz: spectrum " << wide_analyser.transform_count() << " long + "
+                  << fast_analyser.transform_count() << " short transforms, "
+                  << wide_analyser.last_microseconds() << " us at " << wide_analyser.window_size()
+                  << " samples + " << fast_analyser.last_microseconds() << " us at "
+                  << fast_analyser.window_size() << " samples per frame, hold falls at "
+                  << wide_analyser.peak_decay_db_per_second() << " dB/s, "
+                  << spectrum_tap.dropped_frames() << " frames of sound the copy threw away, "
+                  << wide_analyser.dropped_input_frames() + fast_analyser.dropped_input_frames()
+                  << " frames older than what its own window can hold." << std::endl;
+    }
     device.stop();
 
     // Ending a session at the mixer is when the app writes down what it was using, so the next one
@@ -648,6 +762,10 @@ int main(int argc, char** argv) {
         const std::string open_patch =
             window->last_patch().empty() ? remembered_patch : window->last_patch();
         closing.patch = boreaz::config::resolved_path(open_patch);
+        // Carried through unchanged. The writer writes every key every time, so a knob this version
+        // read has to be written back or the file loses it, and a key that goes missing means "the
+        // default this version happens to have" instead of the number the player typed.
+        closing.peak_decay = setup.peak_decay;
         std::string reason;
         if (!boreaz::config::save_settings(boreaz::config::settings_path(), closing, reason))
             std::cerr << "boreaz: " << reason << " - the next start will not remember this one\n";

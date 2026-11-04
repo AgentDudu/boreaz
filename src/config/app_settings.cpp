@@ -26,7 +26,7 @@ namespace {
 // compare against, rather than a date and a guess.
 constexpr const char* kSettingsHeader = "# boreaz app setup 1";
 
-// The four keys, in the order they are written. A name here is a name in the file, and the list is
+// The five keys, in the order they are written. A name here is a name in the file, and the list is
 // walked by both the reader and the writer so neither of them can know a key the other does not.
 struct Field {
     const char* key;
@@ -38,6 +38,7 @@ const Field kFields[] = {
     {"midi_port", &AppSettings::midi_port},
     {"instrument", &AppSettings::instrument},
     {"patch", &AppSettings::patch},
+    {"peak_decay", &AppSettings::peak_decay},
 };
 
 std::string trimmed(std::string text) {

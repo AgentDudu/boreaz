@@ -12,6 +12,8 @@
 
 #include <miniaudio.h>
 
+#include "boreaz/dsp/analyser.h"
+
 #include <algorithm>
 #include <cctype>
 #include <new>
@@ -258,6 +260,14 @@ void AudioDevice::render(float* output, int frames) {
 
     callback_frames_.store(frames, std::memory_order_relaxed);
     engine_.process(output, frames);
+
+    // The spectrum panel's feed: a copy of the block the speakers are about to get, into a ring that is
+    // never waited on. A tap that blocked when the display fell behind would put the window's frame rate
+    // inside the audio path's timing, which is the rule this whole program is built around; so the cost of
+    // a slow frame loop is a hole in the picture, counted, and nothing to the sound.
+    if (tap_ != nullptr) {
+        tap_->write(output, frames);
+    }
 
     const std::int64_t end_ns = static_cast<std::int64_t>(ticks_to_ns(now_ticks()));
     busy_ns_.fetch_add(static_cast<std::uint64_t>(end_ns - begin_ns), std::memory_order_relaxed);

@@ -104,6 +104,11 @@ class AppWindow {
     // the file itself stays the app's, and a path is the only part of a song the display needs.
     void set_song_path(const std::string& path);
 
+    // The master bus, measured by the app's own frame loop. The window carries it into the frame view for
+    // the spectrum panel, because a panel must not reach into an analyser any more than it reaches into
+    // the engine: the maths belongs to the thread that runs it, and the drawing to the one that draws.
+    void set_spectrum(const SpectrumSnapshot& spectrum);
+
     double frames() const { return frames_; }
     double seconds_elapsed() const;
     PanelKind panel_kind() const { return panel_; }
@@ -135,6 +140,7 @@ class AppWindow {
     bool external_playback_ = false;
     // The file named on the line above the panel. Empty means no song, which is what the line says.
     std::string song_path_;
+    SpectrumSnapshot spectrum_;
 };
 
 } // namespace boreaz::gui

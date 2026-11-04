@@ -18,8 +18,10 @@ Boreaz collects nothing.
 - **What the machine was set up with** — the audio output port, the MIDI input port, the sample
   library, and the patch that was open when the window last closed — is one file,
   `%APPDATA%\Boreaz\settings.txt`, read at every start and rewritten at the end of a session that
-  had a window. Four names, no parameters, no audio and no playing history. It exists so the app
-  reopens the devices you picked instead of the first ones in the list. It is local, it is yours,
+  had a window. Five names, no parameters, no audio and no playing history: the audio device, the
+  MIDI port, the sample library, the patch that was open, and how fast the spectrum panel's hold line
+  falls. It exists so the app reopens the devices you picked instead of the first ones in the list.
+  It is local, it is yours,
   and deleting it only costs you your preferences.
 - **Patch files you save** go to `%APPDATA%\Boreaz\patches\`, one `key = value` text file per
   patch, named by you. The `patches/` folder inside the repository holds the factory voices and is

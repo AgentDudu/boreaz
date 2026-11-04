@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -62,6 +63,48 @@ struct MidiStats {
     std::string name;
 };
 
+// What the spectrum panel draws: the master bus cut into the instrument's 88 key ranges, at two
+// window lengths. One window cannot do both jobs - 8192 samples where the bins have to be narrow enough
+// to tell A0 from A#0, 2048 where a transient has to light now - so the frame loop runs both and the view
+// decides which to show. Levels are dB relative to full scale, floor at -120, and `*_peak` is the hold
+// line above each bar: the loudest the band has been recently, falling at the panel's decay rate.
+//
+// Fixed size and plain data, like the rest of the frame view: a panel gets a copy per frame and never
+// reaches into the analyser, which belongs to the thread that runs the maths.
+struct SpectrumSnapshot {
+    static constexpr int kBandCount = 88;
+    static constexpr float kFloorDb = -120.0f;
+
+    // A frame that has not been measured yet reads as silence, not as full scale: a default of zero
+    // dB would draw an empty panel as if the master bus were clipping, which is the one wrong answer a
+    // meter is not allowed to give.
+    SpectrumSnapshot() {
+        wide_db.fill(kFloorDb);
+        wide_peak.fill(kFloorDb);
+        fast_db.fill(kFloorDb);
+        fast_peak.fill(kFloorDb);
+    }
+
+    std::array<float, kBandCount> wide_db{};
+    std::array<float, kBandCount> wide_peak{};
+    std::array<float, kBandCount> fast_db{};
+    std::array<float, kBandCount> fast_peak{};
+
+    // What each analyser is actually listening with, and what the transform cost. The panel prints the
+    // cost because it is the frame loop's own work, and a panel that cannot say what it costs is a panel
+    // nobody can tell is too slow.
+    int wide_size = 0;
+    int fast_size = 0;
+    double wide_microseconds = 0.0;
+    double fast_microseconds = 0.0;
+
+    // Frames of master output that were thrown away because nobody was draining the tap. The panel prints
+    // this when it is not zero: a spectrum with a hole in it has to say so.
+    std::uint64_t dropped_frames = 0;
+    // Frames of sound the analyser was handed but never transformed, for the same reason on its side.
+    std::uint64_t unanalysed_frames = 0;
+};
+
 // Everything a panel is allowed to know about the running instrument, in one POD that `app`
 // copies together once per frame from the engine's telemetry.
 //
@@ -96,6 +139,9 @@ struct FrameView {
     // song ends.
     bool transport_running = false;
     double transport_seconds = 0.0;
+
+    // The master bus, measured. Filled by the frame loop, not by the audio thread.
+    SpectrumSnapshot spectrum;
 
     // The notes themselves, plus the ones this keyboard cannot show. A voice playing note 9 is
     // real and audible, and an 88 key display that silently drops it is lying about the pitch, so
