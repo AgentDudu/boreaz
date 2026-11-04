@@ -41,8 +41,8 @@ std::string patches_dir();
 // there is a save that can overwrite a voice somebody else named.
 //
 // `%APPDATA%\Boreaz\patches` on Windows, which is where PLAN puts everything the machine writes.
-// With no APPDATA at all - a service session, or a profile with the variable cleared - the answer is
-// `patches-user` under the working directory, which is the same shape the release zip has.
+// With no APPDATA at all - a service session, or a profile with the variable cleared - the answer
+// is `patches-user` under the working directory, which is the same shape the release zip has.
 std::string user_patches_dir();
 
 // Every key the engine has, in the engine's own order, as one comma separated line. The message

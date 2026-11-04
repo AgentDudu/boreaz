@@ -150,9 +150,9 @@ TEST_CASE("a factory patch re-saved by the app is the same numbers") {
         REQUIRE_MESSAGE(boreaz::config::load_params_file(file.string(), params, error), error);
 
         const auto again = dir / file.filename();
-        REQUIRE_MESSAGE(boreaz::config::save_params_file(again.string(), params, name, instrument,
-                                                         error),
-                        error);
+        REQUIRE_MESSAGE(
+            boreaz::config::save_params_file(again.string(), params, name, instrument, error),
+            error);
 
         std::istringstream original{read_text(file)};
         std::istringstream written{read_text(again)};
@@ -171,8 +171,8 @@ TEST_CASE("a factory patch re-saved by the app is the same numbers") {
 }
 
 TEST_CASE("the folder the app writes patches into is not the folder it ships them in") {
-    // The factory patches arrived, which made an overwrite possible: a save called "Bass" used to be
-    // able to land on the shipped voice of the same name. It cannot, because the two directories
+    // The factory patches arrived, which made an overwrite possible: a save called "Bass" used to
+    // be able to land on the shipped voice of the same name. It cannot, because the two directories
     // are different by construction and only one of them is ever written to.
     const std::string factory = boreaz::config::patches_dir();
     const std::string mine = boreaz::config::user_patches_dir();
