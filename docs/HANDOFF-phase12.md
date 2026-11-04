@@ -57,6 +57,9 @@ view it shares the window with".
 - Formatter noise: the installed clang-format 23 wants to realign comments that were written by an
   older one (`frame_view.h`). Not applied; the repository has no format gate and the surrounding code
   already runs to 106 columns.
+  **Superseded 2026-11-05:** the whole tree was formatted to `.clang-format`'s 100 columns in
+  `abe3a7f`, so 106 columns is no longer what the surrounding code does. The absence of a format gate
+  is still true, and it is why a different clang-format on another machine can put this drift back.
 
 ## Where the project stands
 
