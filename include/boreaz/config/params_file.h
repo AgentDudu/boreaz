@@ -29,11 +29,22 @@ bool set_param_from_text(const std::string& flag, const std::string& key, const 
 // back unchanged, which is the name the load error will print.
 std::string defaults_path();
 
+// A path said the way the filesystem means it: absolute, with `.` and `..` gone, without touching
+// the disk. Empty stays empty - an empty instrument path is the synthesiser, and resolving it would
+// turn it into the working directory and ask the next start to load a folder as a piano.
+//
+// The reason it exists is memory. Anything the app writes into `settings.txt` is read back from a
+// session that may begin anywhere, and a path remembered relative to where today's process happened
+// to start is a thing that worked once.
+std::string resolved_path(const std::string& path);
+
 // The directory patches are listed from and written to: `patches/` next to the repository or the
 // release, found by the same walk up the tree that `defaults_path` does, because a build tree sits
 // below the repository and the two ways of running a build are from the root or from `build/`. When
 // there is no such directory yet it answers `patches` anyway, which is the name the caller creates
-// on the first save and the name the failure message prints if it cannot.
+// on the first save and the name the failure message prints if it cannot. Absolute either way, so
+// the file it lists and the file the app remembers on exit are the same file from any working
+// directory.
 std::string patches_dir();
 
 // The directory the player's own patches are written to, and the only one the app ever writes a
