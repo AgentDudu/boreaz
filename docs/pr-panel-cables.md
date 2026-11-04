@@ -39,6 +39,8 @@ Nothing to measure: no engine file changed, so the sound cannot have moved, and 
 
 **"Mod env" is a label. The keys stay `env2_*`.**
 
+> **Superseded 2026-11-04.** The keys became `mod_env_*` anyway, one phase before phase 9 would have written `env2_*` into saved patch files. The reasoning above is kept because it is the reasoning that was in force when this merged; PLAN §7 has the reversal.
+
 Inside this engine the envelope a player hears as "the second envelope" is the amp one, so a window that
 puts `env2_attack_s` ("Env2 attack") under `Attack` is a defect the panel would otherwise ship — and the
 panel is where the name becomes the player's problem. Only the label moves, for one reason: renaming the

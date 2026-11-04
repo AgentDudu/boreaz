@@ -1,5 +1,9 @@
 # Modulation router: eight cables, and the polarity is a per-slot flag
 
+> **Partly superseded 2026-11-04.** The source listed below as `env2` is `ModSource::kModEnv` and
+> its rows are `mod_env_attack_s`/`_decay_s`/`_sustain`/`_release_s`. Everything else is what merged,
+> and the naming argument in it is why the keys moved before phase 9 rather than after.
+
 ## What landed
 
 `ModSource` {off, lfo1, lfo2, env2, velocity, keytrack, wheel} × `ModDest` {off, cutoff, pitch, osc2,

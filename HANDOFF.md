@@ -21,7 +21,7 @@ two disagree on a number, this file is newer and PLAN is the thing that needs fi
 `Engine::render_chunk` = voices → **FxBus** (`drive → delay → room`) → master gain → `tanh`, and
 seven table rows (`fx_distortion_mix/drive`, `fx_delay_mix/time_ms/feedback`,
 `fx_reverb_mix/seconds`). **The mod router is in too** — 8 slots, 7 sources × 7 destinations, 38 rows
-(four a slot, `mod1_source` … `mod8_unipolar`, plus the six `env2_*`/LFO-rate rows a cable cannot work
+(four a slot, `mod1_source` … `mod8_unipolar`, plus the six `mod_env_*`/LFO-rate rows a cable cannot work
 without), which takes the table from 25 knobs to **63**, and 8.4 put the panel's side of it in (the two
 ends of a cable are lists, not sliders). Still out: polyBLEP. Nothing you hear changed either way: every
 send ships at silence and every slot ships unwired.
@@ -110,8 +110,8 @@ takes `IN.mid [PARAMS]`), and the drive's own first test asserted a harmonic rat
 should be told:
 
 - **Polarity is a slot field, not a source property, and that is the whole design.** Velocity, wheel and
-  keytrack rest at 0; an LFO swings ±1; **Env2 falls back to 0 when the note lets go**. A per-source rule
-  turns "env2 → pitch, bipolar" into an envelope *pitch drop* whose depth depends on how long the key was
+  keytrack rest at 0; an LFO swings ±1; **the mod env falls back to 0 when the note lets go**. A per-source rule
+  turns "mod env → pitch, bipolar" into an envelope *pitch drop* whose depth depends on how long the key was
   held. Unipolar passes the source through; bipolar reads `2v − 1`.
 - **The depth is in the destination's own units**: pitch ±2 semitones, cutoff **±3 octaves as `2^x`** (a
   cutoff is a multiplier, so a linear depth would read hertz at A0 and kilohertz at C8), **pan the whole
@@ -120,9 +120,9 @@ should be told:
 - **Keytrack is exactly PLAN's rule** (A0 −1.0, C4 0.0, C8 +1.0) with the two halves scaled separately
   (39 keys below centre, 48 above) so both ends are exact; the slopes therefore differ either side of
   middle C. That is the one thing the plan's row left open, said at the function.
-- **One value per source per block, and only for a source somebody routed** (`mod_used_env2_`,
-  `mod_used_lfo1_`, `mod_used_lfo2_`, all worked out at `patch()`; `mod_active_` skips the loop). Env2 is
-  the voice's own mod envelope — fresh at `start()` so a reused voice cannot open the filter before the
+- **One value per source per block, and only for a source somebody routed** (`mod_used_env_`,
+  `mod_used_lfo1_`, `mod_used_lfo2_`, all worked out at `patch()`; `mod_active_` skips the loop). The mod env is
+  the voice's own envelope — fresh at `start()` so a reused voice cannot open the filter before the
   key was hit — and it releases with the key, so it goes on modulating after the note is gone. The LFOs
   are **not** reset at `start()`, which predates the router: a chord whose vibrato all begins at phase
   zero is one instrument. So a routed LFO's phase belongs to the note and its rate is the assertable
@@ -184,7 +184,7 @@ and prints `N of 63` — a filter that hides rows has to say how many are hidden
 player cannot find looks like a parameter that does not exist. PLAN's phase-7 criterion is that every
 parameter is *reachable*, and the default filter state shows all 63.
 
-**The naming decision, settled: "Mod env" is a label; the keys stay `env2_*`.** The modulation envelope
+**The naming decision, settled twice: “Mod env” is the word everywhere.** On 2026-11-03 the call was labels only — the panel says “Mod env attack” while the file keeps `env2_attack_s`, because a rename is free until a name gets written down. On 2026-11-04 the keys moved to `mod_env_attack_s`/`_decay_s`/`_sustain`/`_release_s` and the enumerator to `ModSource::kModEnv`, because phase 9 is the thing that writes names down and it is next. The break is loud, not quiet: `params_file.cpp` refuses an unknown key, so an old config says `line 1: 'env2_attack_s' is not an engine parameter` and the app refuses to start — measured with a one-line `.ini`. Nothing in the repo used the old keys, so only hand-written configs are affected. The amp envelope keeps the bare `attack_s`/`decay_s`/`sustain_level`/`release_s`: that is the one a player reads without a qualifier, and `env1_*` has never existed.
 reads "Mod env attack" beside the cable list that says "Mod env", and the amp envelope keeps the bare
 "Attack" a player already reads. Renaming the keys was free today and is not free after phase 9 puts them
 into saved patch files. `env1_*` still has no row at all.
@@ -358,7 +358,7 @@ loops:  0 of 208 regions loop, because upstream has none. 20 of the 120 note rec
    **Next: polyBLEP**, the only phase-8 criterion still failing — the synthesiser sits at 8.03 % against
    the < 8 % budget, and it is 8.03 % because every sounding voice evaluates two `std::sin` per sample,
    so polyBLEP is a CPU *saving*, see §7's engine-cost row. **Then phase 9**, which is where the room
-   arrives as a preset and where `env2_*` stops being a name anybody can change. Two process facts stay true: open the PR with
+   arrives as a preset and where the keys are already `mod_env_*` so the file format starts on the right word. Two process facts stay true: open the PR with
    `--base develop` and read the base back (this checkout's default is `main`), and the remote is
    `AgentDudu/boreaz` — `gh api` on the wrong owner 404s and proves nothing.
 2. **The rest of phase 8's exit criteria**: per-voice modulation < 1 op/sample at defaults — **met**, 1.36 %

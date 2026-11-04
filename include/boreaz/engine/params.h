@@ -79,14 +79,14 @@ struct Params {
     // Pitch bend reach in semitones at full deflection.
     float bend_range_semitones = 2.0f;
 
-    // The second envelope and the two LFOs, which exist as modulation sources. Env2 shapes a
+    // The second envelope and the two LFOs, which exist as modulation sources. Mod env shapes a
     // destination over the note's life; the LFOs swing one forever. Defaults are a percussive
-    // Env2 (all the way down by the time the amp envelope has decayed) and two LFO rates far
+    // Mod env (all the way down by the time the amp envelope has decayed) and two LFO rates far
     // apart, because a slow and a fast one are what a patch reaches for first.
-    float env2_attack_s = 0.002f;
-    float env2_decay_s = 0.8f;
-    float env2_sustain = 0.0f;
-    float env2_release_s = 0.4f;
+    float mod_env_attack_s = 0.002f;
+    float mod_env_decay_s = 0.8f;
+    float mod_env_sustain = 0.0f;
+    float mod_env_release_s = 0.4f;
     float lfo1_rate_hz = 5.5f;
     float lfo2_rate_hz = 0.8f;
 

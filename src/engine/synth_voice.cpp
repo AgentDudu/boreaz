@@ -7,9 +7,9 @@
 namespace boreaz::engine {
 namespace {
 
-constexpr float kMinSeconds = 1.0e-4f; // shorter than this is a click, and a click is a bug
-constexpr float kMinFrequencyHz = 1.0f;   // the floor for a cutoff, which may not be zero
-constexpr int kLastMidiNote = 127;        // the tuning table is 128 entries because MIDI is
+constexpr float kMinSeconds = 1.0e-4f;  // shorter than this is a click, and a click is a bug
+constexpr float kMinFrequencyHz = 1.0f; // the floor for a cutoff, which may not be zero
+constexpr int kLastMidiNote = 127;      // the tuning table is 128 entries because MIDI is
 
 // Cutoff for a note. keytrack 1 means the cutoff follows the note, which is what a piano does
 // (the bass is dark, the treble is not); keytrack 0 means every note gets the cutoff middle C
@@ -22,12 +22,12 @@ float cutoff_for(int note, float note_frequency, const Params& params) {
     return std::isfinite(cutoff) ? std::max(cutoff, kMinFrequencyHz) : kMinFrequencyHz;
 }
 
-void apply_env2_times(boreaz::dsp::Adsr& env, const Params& params) {
+void apply_mod_env_times(boreaz::dsp::Adsr& env, const Params& params) {
     env.set_times(
-        std::max(static_cast<double>(params.env2_attack_s), static_cast<double>(kMinSeconds)),
-        std::max(static_cast<double>(params.env2_decay_s), static_cast<double>(kMinSeconds)),
-        params.env2_sustain,
-        std::max(static_cast<double>(params.env2_release_s), static_cast<double>(kMinSeconds)));
+        std::max(static_cast<double>(params.mod_env_attack_s), static_cast<double>(kMinSeconds)),
+        std::max(static_cast<double>(params.mod_env_decay_s), static_cast<double>(kMinSeconds)),
+        params.mod_env_sustain,
+        std::max(static_cast<double>(params.mod_env_release_s), static_cast<double>(kMinSeconds)));
 }
 
 void apply_envelope_times(boreaz::dsp::Adsr& amp, const Params& params) {
@@ -41,15 +41,16 @@ void apply_envelope_times(boreaz::dsp::Adsr& amp, const Params& params) {
 } // namespace
 
 void SynthVoice::start(const NoteRequest& request, const Params& params, double sample_rate,
-                  std::int64_t start_tick) {
+                       std::int64_t start_tick) {
     sample_rate_ = sample_rate > 0.0 ? static_cast<float>(sample_rate) : 44100.0f;
 
     note_ = request.note;
     key_ = request.key;
     channel_ = request.channel;
     velocity_ = std::clamp(request.velocity, 0.0f, 1.0f);
-    frequency_ = std::isfinite(request.frequency) ? clamp_pitch(request.frequency, sample_rate_)
-                                                  : 261.625565f; // middle C, the least surprising default
+    frequency_ = std::isfinite(request.frequency)
+                     ? clamp_pitch(request.frequency, sample_rate_)
+                     : 261.625565f; // middle C, the least surprising default
     start_tick_ = start_tick;
     release_tick_ = start_tick;
     state_ = State::kDown;
@@ -81,12 +82,12 @@ void SynthVoice::start(const NoteRequest& request, const Params& params, double 
     apply_envelope_times(amp_, params);
     amp_.gate_on();
 
-    // Env2 is struck with the note, like the amp envelope, and starts from nothing: a reused voice
-    // that kept the previous note's envelope would open the filter before the key was hit.
-    env2_ = boreaz::dsp::Adsr{};
-    env2_.prepare(sample_rate_);
-    apply_env2_times(env2_, params);
-    env2_.gate_on();
+    // Mod env is struck with the note, like the amp envelope, and starts from nothing: a reused
+    // voice that kept the previous note's envelope would open the filter before the key was hit.
+    mod_env_ = boreaz::dsp::Adsr{};
+    mod_env_.prepare(sample_rate_);
+    apply_mod_env_times(mod_env_, params);
+    mod_env_.gate_on();
 
     // The LFOs are not reset: several notes struck in sequence should not all start their vibrato
     // at the same phase, which is what makes a chord of vibrato voices sound like one instrument.
@@ -110,8 +111,9 @@ void SynthVoice::release(const Params& params, std::int64_t tick) {
     apply_envelope_times(amp_,
                          params); // takes the release time that is current now, not at note start
     amp_.gate_off();
-    apply_env2_times(env2_, params); // the mod envelope releases with the note, whatever it is
-    env2_.gate_off();                // modulating after the key went up is what a real Env2 does
+    apply_mod_env_times(mod_env_,
+                        params); // the mod envelope releases with the note, whatever it is
+    mod_env_.gate_off();         // modulating after the key went up is what a real Mod env does
 }
 
 void SynthVoice::silence(std::int64_t tick) {
@@ -132,7 +134,7 @@ void SynthVoice::refresh(const Params& params, bool force) {
     filter_.prepare(sample_rate_, cutoff_hz_ * std::exp2(mod_.cutoff_octaves),
                     params.filter_resonance);
     apply_envelope_times(amp_, params);
-    apply_env2_times(env2_, params);
+    apply_mod_env_times(mod_env_, params);
     noise_step_ = 1.0f / (std::max(params.noise_decay_s, kMinSeconds) * sample_rate_);
 
     pan_base_ = key_pan_value(key_, params.pan_spread);
@@ -167,7 +169,8 @@ void SynthVoice::retune(int semitones, const Params& params) {
     note_ = std::clamp(note_ + semitones, 0, kLastMidiNote);
     const float ratio = static_cast<float>(std::exp2(static_cast<double>(semitones) / 12.0));
     // `set_frequency` keeps the phase of all three oscillators and re-prepares the filter without
-    // touching its memory, so the wave has no seam in it: the note changes, the sound does not stop.
+    // touching its memory, so the wave has no seam in it: the note changes, the sound does not
+    // stop.
     set_frequency(clamp_pitch(frequency_ * ratio, sample_rate_), params);
 }
 
@@ -176,7 +179,7 @@ void SynthVoice::prepare_modulation(const Params& params) {
     // block, so it is worked out here and read as eight bools by `apply_modulation`. A patch that
     // routes nothing leaves every one of them false and `render` never calls the router at all.
     mod_active_ = false;
-    mod_used_env2_ = false;
+    mod_used_env_ = false;
     mod_used_lfo1_ = false;
     mod_used_lfo2_ = false;
     mod_moves_cutoff_ = false;
@@ -194,8 +197,8 @@ void SynthVoice::prepare_modulation(const Params& params) {
             continue;
 
         switch (static_cast<ModSource>(raw_source)) {
-            case ModSource::kEnv2:
-                mod_used_env2_ = true;
+            case ModSource::kModEnv:
+                mod_used_env_ = true;
                 break;
             case ModSource::kLfo1:
                 mod_used_lfo1_ = true;
@@ -236,11 +239,11 @@ void SynthVoice::apply_modulation(int frames) {
     // shortcut: modulation is block-rate, so a 20 Hz LFO reaches 3 steps per cycle at 44.1 kHz's
     // 64-frame blocks. Fine for a cutoff or a pan; a per-sample ramp is the upgrade if a patch
     // ever wants smooth vibrato, and it costs one add per sample per routed destination.
-    float env2_value = 0.0f;
-    if (mod_used_env2_) {
-        env2_value = env2_.value();
+    float mod_env_value = 0.0f;
+    if (mod_used_env_) {
+        mod_env_value = mod_env_.value();
         for (int i = 0; i < frames; ++i)
-            env2_.process(); // keeps the envelope's clock in step with the audio
+            mod_env_.process(); // keeps the envelope's clock in step with the audio
     }
     const float lfo1_value = mod_used_lfo1_ ? lfo1_.advance_block(frames) : 0.0f;
     const float lfo2_value = mod_used_lfo2_ ? lfo2_.advance_block(frames) : 0.0f;
@@ -260,29 +263,54 @@ void SynthVoice::apply_modulation(int frames) {
 
         float value = 0.0f;
         switch (source) {
-            case ModSource::kEnv2: value = env2_value; break;
-            case ModSource::kLfo1: value = lfo1_value; break;
-            case ModSource::kLfo2: value = lfo2_value; break;
-            case ModSource::kVelocity: value = velocity_; break;
-            case ModSource::kKeyTrack: value = keytrack; break;
-            case ModSource::kWheel: value = wheel; break;
-            default: continue;
+            case ModSource::kModEnv:
+                value = mod_env_value;
+                break;
+            case ModSource::kLfo1:
+                value = lfo1_value;
+                break;
+            case ModSource::kLfo2:
+                value = lfo2_value;
+                break;
+            case ModSource::kVelocity:
+                value = velocity_;
+                break;
+            case ModSource::kKeyTrack:
+                value = keytrack;
+                break;
+            case ModSource::kWheel:
+                value = wheel;
+                break;
+            default:
+                continue;
         }
 
         if (!std::isfinite(depth))
             continue; // a depth that is not a number would make the frequency one too
 
-        const float amount = mod_amount(dest, depth,
-                                        shape_source_value(source, value,
-                                                           applied_.mod_unipolar[index] != 0));
+        const float amount = mod_amount(
+            dest, depth, shape_source_value(source, value, applied_.mod_unipolar[index] != 0));
         switch (dest) {
-            case ModDest::kCutoff: totals.cutoff_octaves += amount; break;
-            case ModDest::kPitch: totals.pitch_semitones += amount; break;
-            case ModDest::kOsc2Level: totals.osc2_level += amount; break;
-            case ModDest::kOsc3Level: totals.osc3_level += amount; break;
-            case ModDest::kNoiseLevel: totals.noise_level += amount; break;
-            case ModDest::kPan: totals.pan += amount; break;
-            default: break;
+            case ModDest::kCutoff:
+                totals.cutoff_octaves += amount;
+                break;
+            case ModDest::kPitch:
+                totals.pitch_semitones += amount;
+                break;
+            case ModDest::kOsc2Level:
+                totals.osc2_level += amount;
+                break;
+            case ModDest::kOsc3Level:
+                totals.osc3_level += amount;
+                break;
+            case ModDest::kNoiseLevel:
+                totals.noise_level += amount;
+                break;
+            case ModDest::kPan:
+                totals.pan += amount;
+                break;
+            default:
+                break;
         }
     }
     mod_ = totals;
@@ -291,7 +319,8 @@ void SynthVoice::apply_modulation(int frames) {
     // filter and the oscillators are then re-prepared from the unmodulated values, not from last
     // block's, so nothing accumulates.
     if (mod_moves_cutoff_)
-        filter_.prepare(sample_rate_, std::max(kMinFrequencyHz, cutoff_hz_ * std::exp2(mod_.cutoff_octaves)),
+        filter_.prepare(sample_rate_,
+                        std::max(kMinFrequencyHz, cutoff_hz_ * std::exp2(mod_.cutoff_octaves)),
                         applied_.filter_resonance);
     if (mod_moves_pitch_) {
         const float ratio = std::exp2(mod_.pitch_semitones / 12.0f);

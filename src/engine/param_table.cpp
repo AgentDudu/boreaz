@@ -47,11 +47,12 @@ constexpr ParamSpec kTable[] = {
 
     // The second envelope and the two LFOs. They are sources rather than sounds: nothing in the
     // unpatched instrument listens to them, so they reach the audio only through a slot below.
-    {"env2_attack_s", "Mod env attack", " s", 0.0005f, 10.0f, 0.002f, &Params::env2_attack_s,
+    {"mod_env_attack_s", "Mod env attack", " s", 0.0005f, 10.0f, 0.002f, &Params::mod_env_attack_s,
      nullptr},
-    {"env2_decay_s", "Mod env decay", " s", 0.001f, 60.0f, 0.8f, &Params::env2_decay_s, nullptr},
-    {"env2_sustain", "Mod env sustain", "", 0.0f, 1.0f, 0.0f, &Params::env2_sustain, nullptr},
-    {"env2_release_s", "Mod env release", " s", 0.005f, 60.0f, 0.4f, &Params::env2_release_s,
+    {"mod_env_decay_s", "Mod env decay", " s", 0.001f, 60.0f, 0.8f, &Params::mod_env_decay_s,
+     nullptr},
+    {"mod_env_sustain", "Mod env sustain", "", 0.0f, 1.0f, 0.0f, &Params::mod_env_sustain, nullptr},
+    {"mod_env_release_s", "Mod env release", " s", 0.005f, 60.0f, 0.4f, &Params::mod_env_release_s,
      nullptr},
     {"lfo1_rate_hz", "LFO 1 rate", " Hz", 0.01f, 40.0f, 5.5f, &Params::lfo1_rate_hz, nullptr},
     {"lfo2_rate_hz", "LFO 2 rate", " Hz", 0.01f, 40.0f, 0.8f, &Params::lfo2_rate_hz, nullptr},
