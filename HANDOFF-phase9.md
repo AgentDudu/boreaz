@@ -47,6 +47,7 @@ Commits reach develop **only through a PR** (direct pushes to `main` are blocked
 | factory patches (5 registers + 3 dynamics) + the two-patch-folder rule | #40 | merged |
 | app setup file (audio port, MIDI port, library, last patch) and autosave on exit | #41 | merged |
 | a patch carries its voice kind; no `voice_kind` parameter | #42 | merged |
+| a remembered path resolves from any folder (`config::resolved_path`) | #44 | merged |
 
 
 ### The format, exactly
@@ -85,6 +86,7 @@ bool set_param_from_text(flag, key, value, Params&, error);   // same parser, fo
 std::string defaults_path();                                  // config/params.ini, walks up 3 levels
 std::string patches_dir();                                    // the factory patches, same walk
 std::string user_patches_dir();                               // %APPDATA%/Boreaz/patches, created
+std::string resolved_path(path);          // absolute, `..` collapsed, no disk; "" stays ""
 std::string known_keys();                                     // the 63 keys, for the error message
 bool save_params_file(path, Params&, name, instrument, error);
 bool read_patch_meta(path, name, instrument, error);
@@ -170,6 +172,22 @@ remembered `Nonexistent Interface XYZ` was named and then the default was opened
 played (283 callbacks, 0 restarts); a remembered `patches/nope.txt` reported and started from the
 defaults.
 
+**Paths in that file are absolute (#44), and one line of it was a bug.** 9.4 wrote the name the app
+had used, which is right for a port and wrong for a path: the name it used was relative to where that
+process started. A file holding `patch = patches/piano-fortissimo.txt`, read back by a start from
+`build/`, printed `cannot open the parameter file 'patches/piano-fortissimo.txt'` and came up on the
+shipped defaults instead of the voice the player had left open. `config::resolved_path()` now sits at
+the write: `absolute()` plus `lexically_normal()` - **not `weakly_canonical`**, which in this standard
+library leaves a relative path relative when the file is not there yet, and these are often files the
+first save is about to create; it failed two assertions before it was replaced. `patches_dir()`
+answers absolute too, which is what makes the browser list the factory voices from a foreign working
+directory at all. Measured in order on the device: relative memory from `build/` = 1 warning; one
+session = the line absolute; start from `build/` = 0 warnings; start from the repository root = 0
+warnings. Two things that were not done on purpose: reading does **not** go looking in the two patch
+folders when a path fails (a bare `patches/x.txt` is ambiguous between the shipped folder and the
+player's own, and the app choosing one silently is the worse bug), and a patch file keeps the name its
+author typed, because a patch travels between machines and this file does not. So an old
+`settings.txt` still carries a relative line until one window session rewrites it.
 ### The factory patches, and the two rules that came with them
 
 `patches/` holds eight files, written by `tools/factory_patches.py`: one delta dictionary per patch,
@@ -245,7 +263,7 @@ is higher only because of the room (+0.10 points on four voices, +0.21 on sixtee
   file leaves the `Params` it was given untouched. The factory patches load through the same strict
   reader, and every one of them takes all 63 rows to a legal value. Levels and CPU of every patch are
   measured, not guessed. Both render-contract gates pass, goldens unmoved.
-- **Not proven:** the panel's click path. Both cases in `tests/test_params_panel.cpp` call `toggle()`,
+- **Not proven:** the panel's click path. Two cases in `tests/test_params_panel.cpp` call `toggle()` and one calls `adopt_patch` directly,
   so the Patch block, both folder scans and the buttons **execute** under the suite, but **no button is
   pressed** — there is no click harness. The new folder headers have never been looked at in a window
   either, in a 340 px column or anywhere else.
