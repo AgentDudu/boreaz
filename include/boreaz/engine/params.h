@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <array>
 
 #include "boreaz/engine/mod_router.h"

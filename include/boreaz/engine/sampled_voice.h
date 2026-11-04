@@ -4,7 +4,6 @@
 
 #include "boreaz/engine/instrument.h"
 #include "boreaz/engine/note.h"
-#include "boreaz/engine/voice_common.h"
 #include "boreaz/engine/params.h"
 #include "boreaz/engine/voice.h"
 
