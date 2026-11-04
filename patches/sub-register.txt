@@ -1,0 +1,73 @@
+# boreaz patch format 1
+#
+# name: Sub Register
+# The lowest octave of the instrument: the octave above the fundamental turned up, the saw
+# at zero, a corner that does not chase the keyboard, and a decay long enough that a low
+# note is still in the room when the next one arrives.
+#
+# Every parameter the engine has, because a patch that leaves one out is a patch
+# whose sound depends on what was playing before it was loaded.
+
+master_gain_db = -12
+transpose_semitones = 0
+octave_shift = 0
+tuning_reference_hz = 440
+filter_cutoff_ratio = 1
+filter_resonance = 0.25
+filter_keytrack = 0.5
+osc2_level = 0.9
+osc3_level = 0
+osc_detune_cents = 0
+noise_level = 0
+noise_decay_s = 0.06
+amp_attack_s = 0.012
+amp_decay_s = 4
+amp_sustain = 0.5
+amp_release_s = 1.5
+pan_spread = 0.25
+bend_range_semitones = 2
+mod_env_attack_s = 0.002
+mod_env_decay_s = 0.8
+mod_env_sustain = 0
+mod_env_release_s = 0.4
+lfo1_rate_hz = 5.5
+lfo2_rate_hz = 0.8
+mod1_source = 0
+mod1_dest = 0
+mod1_depth = 0
+mod1_unipolar = 0
+mod2_source = 0
+mod2_dest = 0
+mod2_depth = 0
+mod2_unipolar = 0
+mod3_source = 0
+mod3_dest = 0
+mod3_depth = 0
+mod3_unipolar = 0
+mod4_source = 0
+mod4_dest = 0
+mod4_depth = 0
+mod4_unipolar = 0
+mod5_source = 0
+mod5_dest = 0
+mod5_depth = 0
+mod5_unipolar = 0
+mod6_source = 0
+mod6_dest = 0
+mod6_depth = 0
+mod6_unipolar = 0
+mod7_source = 0
+mod7_dest = 0
+mod7_depth = 0
+mod7_unipolar = 0
+mod8_source = 0
+mod8_dest = 0
+mod8_depth = 0
+mod8_unipolar = 0
+fx_distortion_mix = 0
+fx_distortion_drive = 3
+fx_delay_mix = 0
+fx_delay_time_ms = 220
+fx_delay_feedback = 0.35
+fx_reverb_mix = 0
+fx_reverb_seconds = 1.8

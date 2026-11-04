@@ -1,5 +1,7 @@
 # HANDOFF — 2026-11-04 (eighth pass)
 
+**Continuing phase 9 (patches)? Read `HANDOFF-phase9.md` first** — it is newer than this file about where the tree is and what phase 9 has and lacks.
+
 State of the session, what was decided, and what to do next. Read PLAN.md alongside this; where the
 two disagree on a number, this file is newer and PLAN is the thing that needs fixing.
 

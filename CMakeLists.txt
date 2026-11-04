@@ -331,6 +331,7 @@ if(BOREAZ_BUILD_TESTS)
     tests/test_engine.cpp
     tests/test_engine_events.cpp
     tests/test_fx.cpp
+    tests/test_factory_patches.cpp
     tests/test_live_params.cpp
     tests/test_params_panel.cpp
     tests/test_keyboard_layout.cpp
