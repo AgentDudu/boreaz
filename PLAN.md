@@ -135,7 +135,7 @@ public domain" — the conflict is why we still credit it if we ever ship it.
 | Format | **SFZ read at runtime** (plain text, both good libraries ship it). No home-grown format, no converter |
 | In git | **Nothing binary.** The 748 MB upstream tree, the 147 MB subset and the 280 MB it becomes in RAM never enter the repo; only the `mkinst` recipe (text) is committed — and `third_party/` is gitignored, so a PR can show the tool and never the instrument it built |
 | Distribution | Subset published as a release artifact, fetched/built on demand |
-| Attribution | `NOTICE.txt` in the zip + credit in the about box: author, title, link, **and a statement that we modified it** (CC-BY-3.0 "indicate changes") |
+| Attribution | `NOTICE.txt` in the zip + credit in the about box: author, title, link, **and a statement that we modified it** (CC-BY-3.0 "indicate changes"). **As built (2026-11-05): two of the three channels exist.** `mkinst` writes a generated `NOTICE.txt` into the instrument it builds (`third_party/instruments/salamander/NOTICE.txt` on disk), `mkinstrument` copies the upstream `LICENSE` and `README.md` next to the CC0 samples it decodes, and the repository's `NOTICE` names **both** instruments — including the one README actually tells you to fetch, which is CC0 and needs no attribution. **The about-box credit is not built**: no About panel exists in the GUI, so a running app carries the attribution nowhere on screen. That is an open item, not a feature |
 | CI test asset | A **synthetic SFZ + generated sine samples** fixture, so tests cover the reader without downloading licensed audio |
 
 Two consequences that are easy to get wrong:
@@ -300,6 +300,8 @@ src/midifile/          .mid parser static lib (shared by offline + seq)
 src/sfz/               SFZ subset reader: text parse + region inheritance + opcode subset
 src/samples/           SampleBuffer store (resident), SampledVoice, cubic resampler, release pool
 tools/mkinst.py        offline subsetter: Salamander → 4-layer instrument + NOTICE (built 2026-11-01)
+tools/mkinstrument.py  one command: fetch + decode the CC0 upright piano README tells you to build
+tools/sanitize.py      the AddressSanitizer gate: probe an instrumented program, then build-san, then the suite
 src/seq/               transport, sample-clock, tempo map → event ring
 tests/                 doctest units, golden .wav fixtures
 third_party/           empty by design — FetchContent downloads elsewhere
@@ -411,7 +413,7 @@ the second is the waterfall's motion wearing a colour ramp).
 | A tap or an FFT in the wrong thread turns a display feature into an audio glitch | the callback only copies into a fixed ring and overwrites when the UI is slow, so it cannot wait; the FFT runs on the UI thread where the worst outcome is a dropped frame; µs/frame is printed and plan §3 already rules that a visualiser costing a glitch is a bug |
 | 88 lanes + 40 quads per frame starves the audio thread of CPU | draw-list batching, no per-frame allocations, fixed < 2 ms/frame budget with a measured report; the glitch counter is the arbiter, not opinion |
 | Naive oscillators sound cheap and alias | phase 8 polyBLEP; keep the naive version behind a clear `shortcut:` comment |
-| CC-BY-3.0 needs attribution **and "indicate changes"** on a subset we modified | `NOTICE.txt` and the about-box credit are **generated** from the pinned `mkinst` recipe; CI fails a release whose instrument has no matching attribution |
+| CC-BY-3.0 needs attribution **and "indicate changes"** on a subset we modified | `NOTICE.txt` is **generated** into the artifact by the pinned `mkinst` recipe, which is what carries the obligation today. **There is no CI to fail** — this tree has no hosted pipeline at all — so nothing stops a release whose instrument lost its attribution except that the tool that builds it writes the notice as part of building it. The about-box half of this row is unbuilt. See §1's asset table |
 | 394 MB upstream download for build and CI | **Recounted 2026-11-01: the download is 488.7 MB** (the 44.1/16 `.tar.bz2`) **or per-file FLAC from Git LFS for only what the subset keeps** — the second is what `mkinst` will do, which turns "download the whole library to build" into ~2.7 MB per recording kept. Pinned URL + sha1/md5 published by the host, sha256 computed and pinned here; cached; fetched by `mkinst` only. Unit tests use the synthetic SFZ fixture, so CI needs no download. The **starter** CC0 asset needs 32.4 MB (or 2.2 MB) and it too stays out of git; `tools/mkinstrument.py` is the only thing that fetches it, and `--verify` checks what came back |
 | SFZ's opcode surface is open-ended (ARIA/OPCODEX extensions) | implement a **declared subset**; unknown opcodes warn once and are ignored; a region we cannot honour is refused loudly at load, never mis-played silently |
 | `trigger=release` regions fight note-off voice reuse | release samples live in their own small pool outside the 16, so they survive the voice that spawned them |
@@ -623,6 +625,7 @@ python tools/listen.py --instrument third_party/instruments/salamander/salamande
 #     `drive_peak`, never by an output peak that is already inside the curve.
 # the gate, in one command: build, the suite, both render paths, and the release behaviour in audio
 python tools/release_check.py           # prints the window table; exit 0 means every gate ran
+python tools/sanitize.py                # the ASan gate: probes first, and refuses if the toolchain cannot do ASan
 ```
 
 **The render-contract gate compares values, and until 2026-11-02 it did not.** It ran `--golden` on
@@ -642,16 +645,28 @@ Toolchain facts, measured in phase 0 rather than assumed:
   build directory; both have to stay warning-free because our own targets compile with
   `-Werror`. Dependency headers are included as *system* headers so third-party warnings
   cannot break our build.
-- **A sanitizer gate nobody builds silently stops gating — and this one came back.** `build-clang`
-  (the ASan tree) had stopped compiling on toolchain drift alone: VS 18's STL headers mark `sscanf`
-  deprecated and clang-cl turns that into an error under `-Werror` (`src/tools/render/main.cpp`);
-  two tests carried unused names (`test_io.cpp`, `test_midifile.cpp`); and `test_tuning.cpp` hit an
-  incomplete `std::basic_ostream` inside the STL, because doctest stringifies a `string_view` and
-  clang-cl instantiates that `operator<<` where `<ostream>` has to have been seen. All four are
-  fixed, and the suite is green under AddressSanitizer again: **233 cases, 7 934 953 assertions,
-  `ASH_NO_THREAD_SAFETY_ANALYSIS=1 ASH_OPTIONS=no_leaks=true ASH_VSEH=0 ./build-clang/boreaz_tests.exe`**
-  (leak detection is off on Windows; `ASH_VSEH=0` because miniaudio's SEH frames confuse ASan).
-  Say "sanitizer clean" only against a run like that one.
+- **A sanitizer gate nobody builds silently stops gating — and this one has gone quiet twice.** The
+  four clang-cl breakages that had stopped `build-clang` compiling on toolchain drift alone are fixed
+  and committed: VS 18's STL headers mark `sscanf` deprecated and clang-cl turns that into an error
+  under `-Werror` (`src/tools/render/main.cpp`); two tests carried unused names (`test_io.cpp`,
+  `test_midifile.cpp`); and `test_tuning.cpp` hit an incomplete `std::basic_ostream` inside the STL,
+  because doctest stringifies a `string_view` and clang-cl instantiates that `operator<<` where
+  `<ostream>` has to have been seen. After that the suite was reported green under AddressSanitizer —
+  **233 cases, 7 934 953 assertions, run with `ASH_NO_THREAD_SAFETY_ANALYSIS=1
+  ASH_OPTIONS=no_leaks=true ASH_VSEH=0`** — but that was a hand-configured tree, and on 2026-11-05
+  both `build-clang` and `build-asan` on disk carry **no `-fsanitize` flag anywhere in their compile
+  commands**, which is how a tree looks when it stopped being instrumented and nobody noticed. So that
+  green is history, not a current measurement.
+- **No sanitizer on this machine, and the gate now says so instead of pretending.**
+  `tools/sanitize.py` is the tracked recipe: it compiles and *runs* one instrumented program before it
+  builds anything, because linking ASan and running ASan are different abilities. Measured here on
+  2026-11-05: the primary GCC (MinGW-w64 UCRT 13.2 as shipped by Strawberry) cannot link it — `ld.exe:
+  cannot find -lasan` — and LLVM 23.1.2 links an instrumented binary that then dies at load, because
+  `ldd` reports `clang_rt.asan_dynamic-x86_64.dll => not found` for a MinGW-target binary. Both paths
+  print a refusal with the reason. **Until a toolchain with a working ASan runtime is installed and
+  `python tools/sanitize.py` prints its OK line, nothing in this project may claim "sanitizer clean"**
+  — including the paragraph above. Leak detection stays off (LSan does not work on Windows) and
+  ASan's structured-exception handling stays off because miniaudio's frames confuse it.
 - **A golden is a promise from one compiler, so there are now two files.** `fnv1a64` moves under
   clang-cl because it contracts multiply-add and the MSVC build does not: the same four fixtures
   render to the same `frames`, the same `peak` to six decimals and the same `steals`, and a
