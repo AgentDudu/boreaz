@@ -18,7 +18,6 @@
 #include <algorithm>
 #include <cstdio>
 
-#include "boreaz/gui/panel.h"
 #include "boreaz/gui/waterfall_view.h"
 
 namespace boreaz::gui {
@@ -44,10 +43,15 @@ const ImVec4 kChannelColour[16] = {
     ImVec4(0.66f, 0.86f, 0.58f, 1.0f), ImVec4(0.82f, 0.62f, 0.70f, 1.0f),
 };
 
-// How much of the top of the area a note spends fading on its way out. The strip's own fade band is
-// the same idea turned through ninety degrees, for the same reason: a thing leaving sight should be
-// leaving gradually and not blinking out at an edge.
-constexpr float kFadeFraction = 0.30f;
+// How wide the band a note leaves through is, at the very top of the area. Fixed pixels rather than
+// a fraction of the height: the fade wants to be the same physical size at every window height, and
+// a fraction of a tall plot put the death of a note a third of the way from the edge it was still
+// travelling to.
+constexpr float kFadePixels = 20.0f;
+
+// The scroll-speed bar's width. Wide enough that the fill reads as a length of past, narrow enough
+// that the lane-height control and the on-screen span still fit the line.
+constexpr float kScrollBarWidth = 200.0f;
 
 // The line the notes leave, and the octave marks. Kept thin and dim: they are the ruler, and the
 // notes are what is being read.
@@ -81,8 +85,14 @@ void waterfall(const FrameView& view) {
     std::snprintf(span, sizeof span, "%.1f s on screen", area.visible_seconds());
 
     ImGui::SetCursorScreenPos(origin);
-    ImGui::DragFloat("Scroll", &scroll, 8.0f, WaterfallView::kMinScroll, WaterfallView::kMaxScroll,
-                     "%.0f px/s");
+    // Scroll speed as a bar, not a number dragged sideways. A DragFloat shows digits that change and
+    // nothing else, so the setting being made has no shape: this fills from the left in proportion to
+    // how fast the past moves up, which is what an eye adjusting it is looking for. Click and drag is
+    // the same, and a hand on the keys can also click it and use the arrows, which a DragFloat has no
+    // way to do.
+    ImGui::SetNextItemWidth(kScrollBarWidth);
+    ImGui::SliderFloat("Scroll", &scroll, WaterfallView::kMinScroll, WaterfallView::kMaxScroll,
+                       "%.0f px/s");
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("How fast the past moves up. The number after it is how much music the "
                           "area can show at once.");
@@ -126,7 +136,11 @@ void waterfall(const FrameView& view) {
 
     int outside = 0;
     if (view.transport_running) {
-        const float fade_band = plot_height * kFadeFraction;
+        // The band is the top `fade_band` pixels of the plot: alpha 0 at the area's edge and full at
+        // the band's lower edge, so a bar is undimmed until its oldest end reaches the band and gone
+        // exactly where the area ends.
+        const float fade_band = std::min(kFadePixels, plot_height * 0.5f);
+        const float band_bottom = plot_top + fade_band;
         for (int index = 0; index < view.trail_count; ++index) {
             const TrailNote& note = view.trail[static_cast<std::size_t>(index)];
             WaterfallBar bar;
@@ -137,24 +151,37 @@ void waterfall(const FrameView& view) {
                     ++outside;
                 continue;
             }
-            // The fill is opaque at the line and fades towards the top, so a note that has decayed
-            // is dimmer than a fresh one without vanishing while it still sounds, and one on its
-            // way out is leaving rather than blinking.
-            const float up = plot_bottom - bar.rect.bottom();
-            float leave = 1.0f;
-            if (up > plot_height - fade_band) {
-                const float t = (plot_bottom - bar.rect.y) / fade_band;
-                leave = 1.0f - t;
-                leave = std::clamp(leave, 0.0f, 1.0f);
-                leave = leave * leave * (3.0f - 2.0f * leave); // smoothstep: the fade has no corner
-            }
+            // A note that has decayed is dimmer than a fresh one (the level term), and a note on its
+            // way out is dissolving into the edge rather than blinking at it.
             const ImVec4& hue = kChannelColour[bar.channel & 15u];
-            const float alpha = (0.68f + 0.32f * bar.level) * leave;
-            if (alpha <= 0.002f)
+            const float base = 0.68f + 0.32f * bar.level;
+            if (base <= 0.002f)
                 continue;
-            draw->AddRectFilled(ImVec2(bar.rect.x, bar.rect.y),
-                                ImVec2(bar.rect.right(), bar.rect.bottom()),
-                                ImGui::GetColorU32(ImVec4(hue.x, hue.y, hue.z, alpha)));
+            if (bar.rect.y >= band_bottom) {
+                // Whole of it below the band: one flat colour. The common case, which is worth the
+                // branch on its own - a held chord at 320 px/s is a column the height of the plot.
+                draw->AddRectFilled(ImVec2(bar.rect.x, bar.rect.y),
+                                    ImVec2(bar.rect.right(), bar.rect.bottom()),
+                                    ImGui::GetColorU32(ImVec4(hue.x, hue.y, hue.z, base)));
+                continue;
+            }
+            // Part of the bar is inside the band. That part is a gradient to nothing at the area's
+            // edge and the part below the band keeps its brightness - not one alpha for the whole
+            // bar, which is what used to switch a long note's tail off the moment its head reached the
+            // band and made the waterfall look as though it stopped short of the top.
+            const float grad_bottom = std::min(bar.rect.bottom(), band_bottom);
+            const float at_edge =
+                base * std::clamp((grad_bottom - plot_top) / fade_band, 0.0f, 1.0f);
+            draw->AddRectFilledMultiColor(
+                ImVec2(bar.rect.x, bar.rect.y), ImVec2(bar.rect.right(), grad_bottom),
+                ImGui::GetColorU32(ImVec4(hue.x, hue.y, hue.z, 0.0f)),
+                ImGui::GetColorU32(ImVec4(hue.x, hue.y, hue.z, 0.0f)),
+                ImGui::GetColorU32(ImVec4(hue.x, hue.y, hue.z, at_edge)),
+                ImGui::GetColorU32(ImVec4(hue.x, hue.y, hue.z, at_edge)));
+            if (bar.rect.bottom() > band_bottom)
+                draw->AddRectFilled(ImVec2(bar.rect.x, band_bottom),
+                                    ImVec2(bar.rect.right(), bar.rect.bottom()),
+                                    ImGui::GetColorU32(ImVec4(hue.x, hue.y, hue.z, base)));
         }
     }
 
