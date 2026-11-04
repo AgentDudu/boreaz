@@ -12,7 +12,8 @@ namespace boreaz::gui {
 // aspirational.
 enum class PanelKind : std::uint8_t {
     kTransport = 0,
-    kCount, // sentinel: the table has to have exactly this many rows
+    kWaterfall, // the same notes, seen as the keys that played them
+    kCount,     // sentinel: the table has to have exactly this many rows
 };
 
 // A panel draws itself at the cursor of the child window the app made for it, and reads nothing
