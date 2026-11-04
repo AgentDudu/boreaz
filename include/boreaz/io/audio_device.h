@@ -120,9 +120,9 @@ class AudioDevice {
     void close();
     bool is_open() const { return open_.load(std::memory_order_relaxed); }
 
-    // A second reader for the same master block, for a frame loop that draws a spectrum. The audio thread
-    // copies into it and never waits on it, so a display that stops draining costs the sound nothing and
-    // costs the display a hole it can count. Null means nobody is looking.
+    // A second reader for the same master block, for a frame loop that draws a spectrum. The audio
+    // thread copies into it and never waits on it, so a display that stops draining costs the sound
+    // nothing and costs the display a hole it can count. Null means nobody is looking.
     void set_tap(boreaz::dsp::SampleTap* tap) { tap_ = tap; }
 
     // Application thread. Reopens the device when the system takes it away: an unplugged

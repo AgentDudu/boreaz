@@ -12,27 +12,27 @@ std::uint8_t MidiParser::message_length(std::uint8_t status) {
     if (status >= 0xF8)
         return 1; // realtime, interleaves anywhere
     switch (status & 0xF0) {
-    case 0x80:
-    case 0x90:
-    case 0xA0:
-    case 0xB0:
-    case 0xE0:
-        return 3;
-    case 0xC0:
-    case 0xD0:
-        return 2;
-    default:
-        break;
+        case 0x80:
+        case 0x90:
+        case 0xA0:
+        case 0xB0:
+        case 0xE0:
+            return 3;
+        case 0xC0:
+        case 0xD0:
+            return 2;
+        default:
+            break;
     }
     // System common.
     switch (status) {
-    case 0xF1:
-    case 0xF3:
-        return 2;
-    case 0xF2:
-        return 3;
-    default:
-        return 1; // 0xF0, 0xF7, 0xF4, 0xF5, 0xF6
+        case 0xF1:
+        case 0xF3:
+            return 2;
+        case 0xF2:
+            return 3;
+        default:
+            return 1; // 0xF0, 0xF7, 0xF4, 0xF5, 0xF6
     }
 }
 
@@ -96,7 +96,8 @@ std::optional<Event> MidiParser::feed(std::uint8_t byte) {
     // What the message means is one function for the whole program, shared with MIDI files and the
     // offline renderer, so a keyboard and a file cannot disagree about "note on, velocity zero" or
     // about how many bits a pitch wheel has. This layer's job stops at message boundaries: running
-    // status, realtime bytes arriving in the middle of a dump, and bytes that cannot start anything.
+    // status, realtime bytes arriving in the middle of a dump, and bytes that cannot start
+    // anything.
     const std::optional<Event> event =
         engine::decode_message(engine::MidiMessage{finished, one, two}, tick_);
     if (event)

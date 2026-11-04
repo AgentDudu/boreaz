@@ -20,9 +20,10 @@ void VoiceAllocator::reallocate(int pool_size, const Instrument* instrument) {
     // Every voice in a pool is the same kind, and it is decided here, once, on the setup path: a
     // sound source that changed under a held note would be a bug nobody could name.
     for (int i = 0; i < count; ++i)
-        voices_.push_back(instrument_ == nullptr
-                              ? std::unique_ptr<Voice>(std::make_unique<SynthVoice>())
-                              : std::unique_ptr<Voice>(std::make_unique<SampledVoice>(instrument_)));
+        voices_.push_back(
+            instrument_ == nullptr
+                ? std::unique_ptr<Voice>(std::make_unique<SynthVoice>())
+                : std::unique_ptr<Voice>(std::make_unique<SampledVoice>(instrument_)));
 }
 
 int VoiceAllocator::allocate(const NoteRequest& request, const Params& params, double sample_rate,

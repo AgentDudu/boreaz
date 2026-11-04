@@ -18,8 +18,8 @@ std::optional<Event> decode_message(const MidiMessage& message, std::int64_t pos
         case 0xE0: {
             // 14 bits, LSB first. The cast is safe because both bytes are masked to 7 bits by the
             // sender; a file that ignores that gets a wheel a bit further over, not a wrong note.
-            const std::int32_t value = static_cast<std::int32_t>(first) |
-                                      (static_cast<std::int32_t>(second) << 7);
+            const std::int32_t value =
+                static_cast<std::int32_t>(first) | (static_cast<std::int32_t>(second) << 7);
             return Event::bend(position, channel, static_cast<std::int16_t>(value & 0x3FFF));
         }
         default:

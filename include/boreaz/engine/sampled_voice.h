@@ -35,8 +35,8 @@ class SampledVoice final : public Voice {
     explicit SampledVoice(const Instrument* instrument) : instrument_(instrument) {}
 
     // Play this voice from the instrument's `trigger=release` recordings instead of its notes. Only
-    // the engine's release pool asks: a release is the same read-head answering a different question,
-    // which is why it is a flag on this voice and not a third kind of voice.
+    // the engine's release pool asks: a release is the same read-head answering a different
+    // question, which is why it is a flag on this voice and not a third kind of voice.
     void plays_release_samples(bool on) { release_samples_ = on; }
 
     // Re-point an idle voice at another library (setup path only). A voice that is sounding keeps

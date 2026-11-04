@@ -35,8 +35,8 @@ ImU32 color(const ImVec4& rgba) {
 } // namespace
 
 std::size_t KeyboardView::draw(const FrameView& view, const KeyboardLayout& layout,
-                               std::int64_t tick, std::uint8_t channel,
-                               boreaz::engine::Event* out, std::size_t capacity) {
+                               std::int64_t tick, std::uint8_t channel, boreaz::engine::Event* out,
+                               std::size_t capacity) {
     std::size_t produced = 0;
     if (capacity == 0u)
         return 0u;
@@ -86,8 +86,8 @@ std::size_t KeyboardView::draw(const FrameView& view, const KeyboardLayout& layo
             // where every keyboard, every patch and every instruction says "put your left thumb".
             list->AddCircleFilled(ImVec2{key.center_x(), key.bottom() - 9.0f}, 2.5f,
                                   color(kMiddleCMark));
-            list->AddText(ImVec2{key.center_x() - 8.0f, key.bottom() - 22.0f},
-                          color(kMiddleCMark), "C4");
+            list->AddText(ImVec2{key.center_x() - 8.0f, key.bottom() - 22.0f}, color(kMiddleCMark),
+                          "C4");
         }
     }
 
@@ -119,8 +119,8 @@ std::size_t KeyboardView::draw(const FrameView& view, const KeyboardLayout& layo
         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
 
     if (pressed_note_ >= 0 && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-        out[produced++] = boreaz::engine::Event::note_off(
-            tick, channel, static_cast<std::uint8_t>(pressed_note_));
+        out[produced++] = boreaz::engine::Event::note_off(tick, channel,
+                                                          static_cast<std::uint8_t>(pressed_note_));
         pressed_note_ = -1;
         return produced;
     }
@@ -142,8 +142,8 @@ std::size_t KeyboardView::force_release(std::int64_t tick, std::uint8_t channel,
                                         boreaz::engine::Event* out, std::size_t capacity) {
     if (pressed_note_ < 0 || out == nullptr || capacity == 0u)
         return 0u;
-    out[0] = boreaz::engine::Event::note_off(tick, channel,
-                                             static_cast<std::uint8_t>(pressed_note_));
+    out[0] =
+        boreaz::engine::Event::note_off(tick, channel, static_cast<std::uint8_t>(pressed_note_));
     pressed_note_ = -1;
     return 1u;
 }

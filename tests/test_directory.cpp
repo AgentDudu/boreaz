@@ -1,8 +1,9 @@
 // The folder listing a song picker is built from. What is asserted is the three rules that decide
-// whether a player finds the file they are looking for: folders come first, only the extensions this
-// app can actually read are offered, and the order is the one a person expects rather than the one
-// the filesystem happened to store. What is also asserted is the count that keeps a 30 000-file
-// folder from stalling the thread that pumps the window: a truncated listing has to say it truncated.
+// whether a player finds the file they are looking for: folders come first, only the extensions
+// this app can actually read are offered, and the order is the one a person expects rather than the
+// one the filesystem happened to store. What is also asserted is the count that keeps a 30 000-file
+// folder from stalling the thread that pumps the window: a truncated listing has to say it
+// truncated.
 
 #include <doctest.h>
 
@@ -17,11 +18,12 @@
 namespace {
 
 // A folder that exists for the length of one test case and is gone afterwards, because a listing
-// asserted against a folder the developer happened to have is an assertion that fails on every other
-// machine.
+// asserted against a folder the developer happened to have is an assertion that fails on every
+// other machine.
 struct Scratch {
     std::filesystem::path root;
-    explicit Scratch(const std::string& name) : root(std::filesystem::temp_directory_path() / name) {
+    explicit Scratch(const std::string& name)
+        : root(std::filesystem::temp_directory_path() / name) {
         std::error_code ignored;
         std::filesystem::remove_all(root, ignored);
         std::filesystem::create_directories(root, ignored);
@@ -45,7 +47,7 @@ TEST_CASE("reads_as_song takes the two extensions the parser takes, at any case"
     CHECK(boreaz::io::reads_as_song("sonata.mid"));
     CHECK(boreaz::io::reads_as_song("SONATA.MIDI"));
     CHECK_FALSE(boreaz::io::reads_as_song("sonata.txt"));
-    CHECK_FALSE(boreaz::io::reads_as_song("mid"));     // a folder named `mid` is a folder
+    CHECK_FALSE(boreaz::io::reads_as_song("mid")); // a folder named `mid` is a folder
     CHECK_FALSE(boreaz::io::reads_as_song("samples.mp3"));
     CHECK_FALSE(boreaz::io::reads_as_song(""));
 }
@@ -64,7 +66,8 @@ TEST_CASE("a folder lists its folders first and only the song files it can open"
     REQUIRE(boreaz::io::list_folder(scratch.root.string(), entries, 64, more, error));
     CHECK(error.empty());
     CHECK(more == 0);
-    CHECK(names(entries) == std::vector<std::string>{"apollo", "Beethoven", "alpha.mid", "BETA.MIDI"});
+    CHECK(names(entries) ==
+          std::vector<std::string>{"apollo", "Beethoven", "alpha.mid", "BETA.MIDI"});
 
     // Every entry carries its own joined path, because a name is not a path and the window that
     // draws this list must not be the thing that assembles one.
@@ -101,9 +104,9 @@ TEST_CASE("a folder too big to walk on the frame thread says how big it is") {
     // And the cut is the same cut every time: the whole folder is sorted before it is truncated, so
     // the names on show are the first eight of the order a player expects and not eight the
     // directory entry order felt like giving.
-    CHECK(names(entries) ==
-          std::vector<std::string>{"song0.mid", "song1.mid", "song10.mid", "song11.mid",
-                                   "song12.mid", "song13.mid", "song14.mid", "song15.mid"});
+    CHECK(names(entries) == std::vector<std::string>{"song0.mid", "song1.mid", "song10.mid",
+                                                     "song11.mid", "song12.mid", "song13.mid",
+                                                     "song14.mid", "song15.mid"});
 }
 
 TEST_CASE("a folder that is not there says so instead of returning an empty list") {
@@ -120,8 +123,8 @@ TEST_CASE("a folder that is not there says so instead of returning an empty list
     // A file is not a folder either, and the picker needs to be able to tell the player which.
     Scratch scratch("boreaz_dir_notafolder");
     std::ofstream(scratch.root / "song.mid").close();
-    CHECK_FALSE(boreaz::io::list_folder((scratch.root / "song.mid").string(), entries, 64, more,
-                                        error));
+    CHECK_FALSE(
+        boreaz::io::list_folder((scratch.root / "song.mid").string(), entries, 64, more, error));
     CHECK_FALSE(error.empty());
 }
 
@@ -178,9 +181,9 @@ TEST_CASE("drives answers the roots a player can jump to") {
 
 #if defined(_WIN32)
 TEST_CASE("a walk up to a drive root still lists the root") {
-    // The edge the picker reaches by pressing Left out of C:/songs: parent_folder answers "C:", which
-    // the filesystem reads as "the current directory on drive C:" and is_directory refuses. A folder
-    // that plainly exists is not a reason to stop the walk.
+    // The edge the picker reaches by pressing Left out of C:/songs: parent_folder answers "C:",
+    // which the filesystem reads as "the current directory on drive C:" and is_directory refuses. A
+    // folder that plainly exists is not a reason to stop the walk.
     std::vector<boreaz::io::FolderEntry> entries;
     std::size_t more = 0;
     std::string note;

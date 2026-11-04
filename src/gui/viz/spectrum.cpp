@@ -1,16 +1,17 @@
 // The spectrum panel: what the air is doing, cut into the instrument's 88 key ranges.
 //
-// It draws levels the engine never produces. They come from the master bus, measured in the app's frame
-// loop and handed over as numbers in the FrameView, exactly like the device counters: this file has no
-// analyser, no device, and no way to delay a block (plan 3). What it can do is print what it was given,
-// including what was dropped on the way to it.
+// It draws levels the engine never produces. They come from the master bus, measured in the app's
+// frame loop and handed over as numbers in the FrameView, exactly like the device counters: this
+// file has no analyser, no device, and no way to delay a block (plan 3). What it can do is print
+// what it was given, including what was dropped on the way to it.
 //
-// The x geometry is KeyboardLayout asked for the same width as the keyboard below, so a band sits over
-// the key that plays it. That is the whole argument for cutting the spectrum by key range instead of by
-// log frequency: the spectrum and the waterfall above the same keyboard then agree about where a note is,
-// because they are the same ruler twice.
+// The x geometry is KeyboardLayout asked for the same width as the keyboard below, so a band sits
+// over the key that plays it. That is the whole argument for cutting the spectrum by key range
+// instead of by log frequency: the spectrum and the waterfall above the same keyboard then agree
+// about where a note is, because they are the same ruler twice.
 //
-// Levels are dB relative to full scale, floor at -120, which is the only absolute the master bus has.
+// Levels are dB relative to full scale, floor at -120, which is the only absolute the master bus
+// has.
 
 #include <imgui.h>
 
@@ -60,15 +61,18 @@ void spectrum(const FrameView& view) {
     ImGui::Combo("Window", &window_choice, kWindowNames[0]);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip(
-            "One window cannot do both jobs. The short one lights a transient in the frame after it "
-            "happens, and cannot tell A0 from A#0. The long one separates the low notes and smears a "
+            "One window cannot do both jobs. The short one lights a transient in the frame after "
+            "it "
+            "happens, and cannot tell A0 from A#0. The long one separates the low notes and smears "
+            "a "
             "transient over a tenth of a second. The bands are the same 88 key ranges either way.");
     ImGui::SameLine();
     ImGui::Checkbox("Hold", &show_hold);
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("The loudest each band has been recently, falling at the engine's own decay "
-                          "rate. A hammer strikes once and is gone; a bar that has already fallen to "
-                          "the average hides that it happened at all.");
+        ImGui::SetTooltip(
+            "The loudest each band has been recently, falling at the engine's own decay "
+            "rate. A hammer strikes once and is gone; a bar that has already fallen to "
+            "the average hides that it happened at all.");
     ImGui::SameLine();
     char cost[64];
     std::snprintf(cost, sizeof cost, "%d samples  \xc2\xb7  transform %.1f ms", size, usec * 1e-3);
@@ -76,7 +80,8 @@ void spectrum(const FrameView& view) {
 
     if (!enough) {
         const char* too_narrow = "too narrow for 88 bands";
-        draw->AddText(ImVec2(origin.x + 4.0f, plot_top + 4.0f), ImGui::GetColorU32(kDim), too_narrow);
+        draw->AddText(ImVec2(origin.x + 4.0f, plot_top + 4.0f), ImGui::GetColorU32(kDim),
+                      too_narrow);
         ImGui::SetCursorScreenPos(ImVec2(origin.x, plot_bottom));
         ImGui::Dummy(ImVec2(1.0f, 1.0f));
         return;
@@ -115,8 +120,8 @@ void spectrum(const FrameView& view) {
         if (t <= 0.002f)
             continue;
         // One hue, brighter as the band gets louder: the colour carries level here, not channel,
-        // because this view is about the air and not about who sent it. The channel colours belong to
-        // the waterfall, where the same song is already drawn in them.
+        // because this view is about the air and not about who sent it. The channel colours belong
+        // to the waterfall, where the same song is already drawn in them.
         const float alpha = 0.40f + 0.60f * t;
         const float top = y_for(level);
         draw->AddRectFilled(ImVec2(band.x, top), ImVec2(band.right(), plot_bottom),
@@ -136,8 +141,8 @@ void spectrum(const FrameView& view) {
                       ImGui::GetColorU32(kDim), waiting);
     }
 
-    // What the measurement is missing. A tap that drops frames is the frame loop being slower than the
-    // sound, and a panel that shows a hole without saying so is a meter with a blind spot.
+    // What the measurement is missing. A tap that drops frames is the frame loop being slower than
+    // the sound, and a panel that shows a hole without saying so is a meter with a blind spot.
     if (view.spectrum.dropped_frames != 0u || view.spectrum.unanalysed_frames != 0u) {
         char holes[96];
         std::snprintf(holes, sizeof holes,
@@ -148,8 +153,8 @@ void spectrum(const FrameView& view) {
                       ImGui::GetColorU32(kDim), holes);
     }
 
-    // The panel consumed its region: without this the child window sizes itself to the control row and
-    // clips the plot, the same trap the other two panels document.
+    // The panel consumed its region: without this the child window sizes itself to the control row
+    // and clips the plot, the same trap the other two panels document.
     ImGui::SetCursorScreenPos(ImVec2(origin.x, plot_bottom));
     ImGui::Dummy(ImVec2(1.0f, 1.0f));
 }

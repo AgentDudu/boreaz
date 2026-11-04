@@ -12,16 +12,17 @@ namespace boreaz::gui {
 // a panel drawing that photograph shows a note vanish at the instant the key is let go - which is
 // not what the ear hears, since the string rings on, and not what a transport looks like, since a
 // bar that appears and disappears with the finger reads as a glitch rather than as music. So the
-// history lives here instead: one entry per note, open while it sounds and closed with the second it
-// stopped on, which is exactly what the piano roll and the waterfall are going to want to scroll and
-// will not have to rebuild.
+// history lives here instead: one entry per note, open while it sounds and closed with the second
+// it stopped on, which is exactly what the piano roll and the waterfall are going to want to scroll
+// and will not have to rebuild.
 //
-// It is built by watching one frame against the next, because the engine publishes no note events to
-// the display - that is the plan's note-event ring, and it belongs to the piano roll, whose needs
-// are wider (a song file's notes never touch a voice at all). Until then this is honest bookkeeping,
-// not a poor substitute: the panel gets onsets the engine itself reported, from `Voice::age`.
+// It is built by watching one frame against the next, because the engine publishes no note events
+// to the display - that is the plan's note-event ring, and it belongs to the piano roll, whose
+// needs are wider (a song file's notes never touch a voice at all). Until then this is honest
+// bookkeeping, not a poor substitute: the panel gets onsets the engine itself reported, from
+// `Voice::age`.
 class NoteTrail {
-public:
+  public:
     // How long a note is remembered. Longer than the strip's window by enough to have finished
     // scrolling out of it, and no longer: this is a fixed buffer, and a note nobody can see is
     // occupying the place of one that can still be played.
@@ -32,10 +33,10 @@ public:
     // played before the clock started has to be placed by the clock it will be scrolled past.
     void update(FrameView& view);
 
-private:
+  private:
     struct Entry {
         TrailNote note;
-        bool seen = false;  // scratch: this frame's snapshot had it
+        bool seen = false; // scratch: this frame's snapshot had it
     };
 
     // Oldest first, so dropping the oldest is dropping what has scrolled furthest left.

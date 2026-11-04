@@ -23,10 +23,10 @@ struct FolderEntry {
 // assertion, not an eye test.
 //
 // `limit` is not decoration. The thread that pumps the window is the thread that feeds the audio
-// ring, and a directory walk over a folder of 30 000 files on that thread is a stutter you can hear.
-// The first `limit` offers are returned and `more` says how many there were after them - or, when the
-// walk reached its own bound first, at least how many: a bounded walk cannot count what it did not
-// look at, and the picker says "at least" rather than inventing a number.
+// ring, and a directory walk over a folder of 30 000 files on that thread is a stutter you can
+// hear. The first `limit` offers are returned and `more` says how many there were after them - or,
+// when the walk reached its own bound first, at least how many: a bounded walk cannot count what it
+// did not look at, and the picker says "at least" rather than inventing a number.
 //
 // A folder that is not there, or cannot be read, answers false with the reason in the caller's own
 // words to show. Nothing throws: the walk stops at the first entry it cannot read and keeps what it
@@ -35,14 +35,14 @@ struct FolderEntry {
 bool list_folder(const std::string& folder, std::vector<FolderEntry>& into, std::size_t limit,
                  std::size_t& more, std::string& error);
 
-// The folder a path sits in, so the picker can open where the song already loaded lives. A path with
-// no folder in it - a bare name typed at the field - answers with the current directory, which is
-// where the app is standing anyway.
+// The folder a path sits in, so the picker can open where the song already loaded lives. A path
+// with no folder in it - a bare name typed at the field - answers with the current directory, which
+// is where the app is standing anyway.
 std::string parent_folder(const std::string& path);
 
 // The folder the app is standing in, absolute, or "" when the question cannot be answered. The
-// picker opens here rather than at "." because a dot has no parent: `parent_folder(".")` is ".", so a
-// player pressing Left out of a seeded "." lands in the folder they were already looking at.
+// picker opens here rather than at "." because a dot has no parent: `parent_folder(".")` is ".", so
+// a player pressing Left out of a seeded "." lands in the folder they were already looking at.
 std::string current_folder();
 
 // True for the names a song picker will offer as files. Public because the window has to say why a

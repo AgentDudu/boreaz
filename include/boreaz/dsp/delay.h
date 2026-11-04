@@ -46,7 +46,8 @@ class Delay {
     std::size_t size_frames() const { return line_l_.size(); }
 
     void set_delay_seconds(double seconds) {
-        delay_seconds_ = seconds < 0.0 ? 0.0 : (seconds > kMaxDelaySeconds ? kMaxDelaySeconds : seconds);
+        delay_seconds_ =
+            seconds < 0.0 ? 0.0 : (seconds > kMaxDelaySeconds ? kMaxDelaySeconds : seconds);
         delay_frames_ = frames_for(delay_seconds_);
     }
     double delay_seconds() const { return delay_seconds_; }
@@ -66,8 +67,8 @@ class Delay {
         if (frames <= 0)
             return;
         if (!ready()) {
-            // Silence, not whatever was in the caller's buffer: an unprepared delay is bypassed, and
-            // a bypass that leaks the previous block's wet signal is a stuck echo.
+            // Silence, not whatever was in the caller's buffer: an unprepared delay is bypassed,
+            // and a bypass that leaks the previous block's wet signal is a stuck echo.
             std::fill_n(wet_l, frames, 0.0f);
             std::fill_n(wet_r, frames, 0.0f);
             return;
@@ -75,8 +76,9 @@ class Delay {
         const std::size_t size = line_l_.size();
         const std::size_t d = delay_frames_;
         if (d == 0u) {
-            // A ring cannot be tapped zero samples behind itself, so 0 ms means what it sounds like:
-            // the wet is the input, and with no tap into the line there are no repeats either.
+            // A ring cannot be tapped zero samples behind itself, so 0 ms means what it sounds
+            // like: the wet is the input, and with no tap into the line there are no repeats
+            // either.
             for (int i = 0; i < frames; ++i) {
                 line_l_[head_] = flush(in_l[i]);
                 line_r_[head_] = flush(in_r[i]);

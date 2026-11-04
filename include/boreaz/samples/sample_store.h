@@ -46,11 +46,11 @@ struct LoadResult {
     std::string error;
     std::vector<std::string> warnings;
 
-    std::size_t regions = 0;   // regions this store can play as a note
-    std::size_t releases = 0;  // regions it plays when a key goes up (`trigger=release`)
-    std::size_t refused = 0;   // regions it cannot, and said so about
-    std::size_t files = 0;     // distinct sample files read
-    std::size_t bytes = 0;     // resident float PCM
+    std::size_t regions = 0;  // regions this store can play as a note
+    std::size_t releases = 0; // regions it plays when a key goes up (`trigger=release`)
+    std::size_t refused = 0;  // regions it cannot, and said so about
+    std::size_t files = 0;    // distinct sample files read
+    std::size_t bytes = 0;    // resident float PCM
     double load_ms = 0.0;
     std::size_t samples_in_error = 0; // files that were unreadable but not fatal - normally zero
 };
@@ -60,9 +60,9 @@ struct LoadResult {
 // `load_*` belongs to startup (or a test). After that the object is read-only, which is what lets a
 // voice hold a `const engine::Instrument*` and nothing else.
 //
-// A release region is loaded the same way a note region is, with one change forced: its loop is off.
-// A recording of a key being let go is one event, whatever the file's own `smpl` chunk says, and a
-// hammer noise that loops forever is a hiss nobody asked for.
+// A release region is loaded the same way a note region is, with one change forced: its loop is
+// off. A recording of a key being let go is one event, whatever the file's own `smpl` chunk says,
+// and a hammer noise that loops forever is a hiss nobody asked for.
 class SampleStore : public boreaz::engine::Instrument {
   public:
     // Read `path` (a `.sfz`), then every file it points at, resolved against `root_dir` - which is
@@ -103,8 +103,8 @@ class SampleStore : public boreaz::engine::Instrument {
 
     // The store's one lookup, walked by both questions: what do I play for this strike, and what do
     // I play when this key goes up. One function because the precedence between the two must not be
-    // able to drift. `low`/`high` bound the clamp applied before matching - the instrument's own span
-    // for a note, the whole MIDI range for a release.
+    // able to drift. `low`/`high` bound the clamp applied before matching - the instrument's own
+    // span for a note, the whole MIDI range for a release.
     static const boreaz::engine::VoiceSample* lookup(const std::deque<Entry>& list, int key,
                                                      int velocity, int low, int high);
 

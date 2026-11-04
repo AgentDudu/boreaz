@@ -280,7 +280,7 @@ TEST_CASE("letting go of a key starts the release recording, and the note still 
 
     REQUIRE(engine.push_event(Event::note_on(0, 0, 60, 110)));
     const Audio held = fixture::render(engine, 2205); // 50 ms
-    CHECK(library.release_lookups == 0); // nothing has been let go yet
+    CHECK(library.release_lookups == 0);              // nothing has been let go yet
     // The note is a constant, so it has a mean as well as a peak: 0.7 from the pan, 0.25 from the
     // default -12 dB master gain.
     CHECK(fixture::mean(held, 1000, 2205, 0) > 0.15f);
@@ -307,9 +307,9 @@ TEST_CASE("letting go of a key starts the release recording, and the note still 
 }
 
 TEST_CASE("an instrument with no release recordings is silent once its own envelope is done") {
-    // The CC0 starter instrument is 66 regions, none of them `trigger=release`. This is the shape the
-    // engine meets most often, and the answer to a key-up on it has to be the note's own amp release
-    // and nothing else.
+    // The CC0 starter instrument is 66 regions, none of them `trigger=release`. This is the shape
+    // the engine meets most often, and the answer to a key-up on it has to be the note's own amp
+    // release and nothing else.
     fixture::FakeLibrary library;
     library.has_releases = false;
     Engine engine;
@@ -376,8 +376,8 @@ TEST_CASE("panic takes the release recordings with it") {
                                       : Event::all_notes_off(tick, 0)));
         const Audio after = fixture::render(engine, 4410);
         // Both are fading over the engine's release time, 10 ms here, so a fifth of a second later
-        // the block is digital silence - and stays it for the rest of what the recording's own length
-        // would have been.
+        // the block is digital silence - and stays it for the rest of what the recording's own
+        // length would have been.
         CHECK(fixture::peak(after, 882, 4410, 0) < fixture::kSilence);
     }
 }
@@ -424,8 +424,8 @@ TEST_CASE("a glissando through an instrument with releases stays finite and insi
     CHECK(sweep.first_sound() < 512u); // and there is sound, which a broken lookup would not be
     CHECK(library.release_lookups == 88);
 
-    // One and a half seconds after the last key went up the instrument is silent: an eight-slot pool
-    // that overflows, steals the oldest, and then leaks a voice is the failure this catches.
+    // One and a half seconds after the last key went up the instrument is silent: an eight-slot
+    // pool that overflows, steals the oldest, and then leaks a voice is the failure this catches.
     CHECK(fixture::peak(sweep, static_cast<std::size_t>(tick) + 61740u, sweep.frames(), 0) <
           fixture::kSilence);
 }

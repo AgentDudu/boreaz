@@ -24,10 +24,10 @@ struct VoiceSample {
     std::int64_t loop_end = 0;
 
     double file_sample_rate = 44100.0; // so a 44.1 kHz instrument on a 48 kHz device is in tune
-    int key_center = 60;              // the MIDI key this recording already matches
-    std::int64_t start_frame = 0;     // the first frame to play, from `offset`
+    int key_center = 60;               // the MIDI key this recording already matches
+    std::int64_t start_frame = 0;      // the first frame to play, from `offset`
 
-    float gain = 1.0f;   // linear, from `volume`
+    float gain = 1.0f; // linear, from `volume`
     float tune_cents = 0.0f;
     float velocity_tracking = 1.0f; // 1 = the full velocity curve, 0 = no dynamics at all
 };
@@ -48,10 +48,10 @@ class Instrument {
     virtual const VoiceSample* find(int key, int velocity) const = 0;
 
     // What to play when the key goes *up*, from `trigger=release`. Defaulted to silence: a synth
-    // instrument has no recordings to let go with, and neither does a sample library that ships only
-    // attacks, which is what the CC0 starter instrument is (none of its 66 regions asks for one).
-    // It answers nullptr rather than the note recording, because the whole point of a release sample
-    // is that it is not the note: it is the hammer falling back and the strings going quiet.
+    // instrument has no recordings to let go with, and neither does a sample library that ships
+    // only attacks, which is what the CC0 starter instrument is (none of its 66 regions asks for
+    // one). It answers nullptr rather than the note recording, because the whole point of a release
+    // sample is that it is not the note: it is the hammer falling back and the strings going quiet.
     virtual const VoiceSample* find_release(int, int) const { return nullptr; }
 
     virtual bool empty() const = 0;

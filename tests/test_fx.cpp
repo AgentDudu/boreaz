@@ -77,8 +77,9 @@ FxBuffer render(Engine& engine, int seconds, float& demand_out = meter_default()
         engine.process(block.data(), 96);
         demand_out = std::max(demand_out, engine.drive_peak());
         for (int i = 0; i < 96; ++i) {
-            peak_out = std::max(peak_out, std::max(std::fabs(block[static_cast<std::size_t>(2 * i)]),
-                                                   std::fabs(block[static_cast<std::size_t>(2 * i + 1)])));
+            peak_out =
+                std::max(peak_out, std::max(std::fabs(block[static_cast<std::size_t>(2 * i)]),
+                                            std::fabs(block[static_cast<std::size_t>(2 * i + 1)])));
             out.left[done + static_cast<std::size_t>(i)] = block[static_cast<std::size_t>(2 * i)];
             out.right[done + static_cast<std::size_t>(i)] =
                 block[static_cast<std::size_t>(2 * i + 1)];
@@ -146,8 +147,7 @@ void arm_loud(Engine& engine) {
         // parameters once per block and the block the notes land in is prepared for the block
         // before: arming at the first frame of the window asks for 8 dB and gets 3.
         const auto tick = static_cast<std::int64_t>(kSettleFrames) - 96;
-        REQUIRE(engine.push_event(
-            Event::note_on(tick, 0, note, static_cast<std::uint8_t>(127))));
+        REQUIRE(engine.push_event(Event::note_on(tick, 0, note, static_cast<std::uint8_t>(127))));
         REQUIRE(engine.push_event(
             Event::note_off(static_cast<std::int64_t>(kSettleFrames) + 48000, 0, note))); // 1 s
     }
@@ -377,7 +377,8 @@ TEST_CASE("every send is a row like every other parameter, with the defaults tha
     CHECK(defaults.fx_reverb_seconds > 0.0f);
     CHECK(defaults.fx_reverb_seconds < 12.0f); // the ceiling the room itself refuses
     CHECK(defaults.fx_distortion_mix == 0.0f);
-    CHECK(defaults.fx_distortion_drive > 1.0f); // off is the mix, and the floor of drive is still a curve
+    CHECK(defaults.fx_distortion_drive >
+          1.0f); // off is the mix, and the floor of drive is still a curve
     CHECK(defaults.fx_distortion_drive < 10.0f); // the ceiling the curve itself refuses
 
     // The table owns the range, on every path a parameter arrives from.
@@ -683,8 +684,8 @@ double harmonic_ratio(const std::vector<float>& samples, int k, int cycles) {
     const double n = static_cast<double>(samples.size());
     double c = 0.0, s = 0.0, c1 = 0.0, s1 = 0.0;
     for (std::size_t i = 0; i < samples.size(); ++i) {
-        const double base = 2.0 * 3.14159265358979323846 * static_cast<double>(i) *
-                            static_cast<double>(cycles) / n;
+        const double base =
+            2.0 * 3.14159265358979323846 * static_cast<double>(i) * static_cast<double>(cycles) / n;
         const double phase = base * static_cast<double>(k);
         c += samples[i] * std::cos(phase);
         s += samples[i] * std::sin(phase);
@@ -724,10 +725,12 @@ TEST_CASE("distortion: the curve is unity where the music lives and squash only 
     const std::vector<float> quiet = sine_at(120.0, 40, 0.01f);
     std::vector<float> wet(quiet.size(), 0.0f);
     drive.process(quiet.data(), quiet.data(), wet.data(), wet.data(), static_cast<int>(wet.size()));
-    // The difference is the cubic term, d^2 x^3 / 3, so at 0.01 it is 3e-6 of a 0.01 note: 0.009 dB.
+    // The difference is the cubic term, d^2 x^3 / 3, so at 0.01 it is 3e-6 of a 0.01 note: 0.009
+    // dB.
     CHECK(max_abs(wet) < 1e-3f * max_abs(quiet));
 
-    // ... and at full scale the same curve is a hard squash: tanh(3)/3, checked against the formula.
+    // ... and at full scale the same curve is a hard squash: tanh(3)/3, checked against the
+    // formula.
     CHECK(drive.saturate(1.0f) == doctest::Approx(std::tanh(3.0f) / 3.0f).epsilon(1e-6));
     CHECK(drive.saturate(1.0f) < 0.34f); // -9.5 dB, from a curve that never raises a peak
 
@@ -759,7 +762,7 @@ TEST_CASE("distortion: the curve is unity where the music lives and squash only 
     const double hot_third = harmonic_ratio(shaped, 3, 40);
     const double hot_fifth = harmonic_ratio(shaped, 5, 40);
     INFO("third partial: drive 1 " << mild_third << ", drive 8 " << hot_third
-         << ", fifth at drive 8 " << hot_fifth);
+                                   << ", fifth at drive 8 " << hot_fifth);
     CHECK(hot_third > 0.2);
     CHECK(hot_fifth > 0.1);
     CHECK(hot_third > mild_third * 2.0);
@@ -769,11 +772,9 @@ TEST_CASE("distortion: the curve is unity where the music lives and squash only 
     const std::vector<float> left = sine_at(120.0, 8, 0.7f);
     const std::vector<float> right = noise_in(static_cast<int>(left.size()));
     std::vector<float> wl(left.size()), wr(left.size());
-    drive.process(left.data(), right.data(), wl.data(), wr.data(),
-                  static_cast<int>(left.size()));
+    drive.process(left.data(), right.data(), wl.data(), wr.data(), static_cast<int>(left.size()));
     const std::vector<float> wl_was = wl, wr_was = wr;
-    drive.process(right.data(), left.data(), wl.data(), wr.data(),
-                  static_cast<int>(left.size()));
+    drive.process(right.data(), left.data(), wl.data(), wr.data(), static_cast<int>(left.size()));
     CHECK(wl == wr_was);
     CHECK(wr == wl_was);
 
@@ -821,8 +822,9 @@ TEST_CASE("distortion: at full mix the bus carries the driven note, and drive ne
 }
 
 TEST_CASE("distortion: the drive colours a note without lifting it, and it feeds the echo") {
-    // The synthesiser path at unity master - the engine with no instrument loaded, The sampled instrument's peaks are far too quiet for a tanh
-    // to notice, and an effect that only works near full scale is worth knowing about.
+    // The synthesiser path at unity master - the engine with no instrument loaded, The sampled
+    // instrument's peaks are far too quiet for a tanh to notice, and an effect that only works near
+    // full scale is worth knowing about.
     Params base;
     base.master_gain_db = 0.0f;
     base.amp_release_s = 0.005f; // so a later window holds only what the delay left behind
@@ -840,16 +842,16 @@ TEST_CASE("distortion: the drive colours a note without lifting it, and it feeds
 
     Engine clean_engine;
     clean_engine.prepare(kRate);
-        clean_engine.set_params(clean);
+    clean_engine.set_params(clean);
     Engine hot;
     hot.prepare(kRate);
-        hot.set_params(driven);
+    hot.set_params(driven);
     Engine hot_echo;
     hot_echo.prepare(kRate);
-        hot_echo.set_params(driven_echo);
+    hot_echo.set_params(driven_echo);
     Engine plain_echo;
     plain_echo.prepare(kRate);
-        plain_echo.set_params(echo_only);
+    plain_echo.set_params(echo_only);
     arm(clean_engine);
     arm(hot);
     arm(hot_echo);
@@ -887,8 +889,7 @@ TEST_CASE("distortion: the drive colours a note without lifting it, and it feeds
     CHECK(relative > 0.05);
 
     // (c) The peak rule survives the whole chain: the drive may squash and may not lift.
-    CHECK(window_peak(wet.left, note, note_end) <=
-          window_peak(dry.left, note, note_end) + 1e-6f);
+    CHECK(window_peak(wet.left, note, note_end) <= window_peak(dry.left, note, note_end) + 1e-6f);
 
     // (d) Order: the echo is a copy of what the drive left behind, so the echo-only window changes
     // when the drive is on. An effect wired after the fader could pass (a) and fail this.
@@ -897,8 +898,7 @@ TEST_CASE("distortion: the drive colours a note without lifting it, and it feeds
     const float echo_level = window_peak(dry_echo.left, echo_at, echo_end);
     float echo_difference = 0.0f;
     for (std::size_t i = echo_at; i < std::min(echo_end, wet_echo.left.size()); ++i)
-        echo_difference =
-            std::max(echo_difference, std::fabs(wet_echo.left[i] - dry_echo.left[i]));
+        echo_difference = std::max(echo_difference, std::fabs(wet_echo.left[i] - dry_echo.left[i]));
     INFO("echo window " << echo_level << ", difference the drive made in it " << echo_difference);
     CHECK(echo_level > 1e-4f);
     CHECK(echo_difference > 0.02f * echo_level);
@@ -958,8 +958,8 @@ TEST_CASE("limiter: the ceiling holds for anything, and a signal under it is not
     CHECK(max_abs(l) <= ceiling);
 
     // An enormous sample is caught on the sample that carries it. A limiter with a one block attack
-    // would be a limiter with a whole block of leaked signal in front of every hit, and the callback
-    // has no room for lookahead: it cannot see the sample after the one it is working on.
+    // would be a limiter with a whole block of leaked signal in front of every hit, and the
+    // callback has no room for lookahead: it cannot see the sample after the one it is working on.
     l.assign(480, 0.0f);
     r = l;
     l[100] = 100.0f; // 17 dB over the ceiling
@@ -1000,7 +1000,7 @@ TEST_CASE("limiter: the ceiling holds for anything, and a signal under it is not
     // target (measured 86.5 %, which is 1 - e^-2 to the sample). 20x the ceiling drives the gain to
     // 0.05 - far enough that a residue would still show. One time constant measures 61.7 %.
     INFO("after a hit of 20x the ceiling the gain was " << hit << ", and it recovered " << at
-         << " % of the way back in 100 ms");
+                                                        << " % of the way back in 100 ms");
     CHECK(hit < 0.06f);
     CHECK(worst_above == 0.0f); // it climbs to unity and never past it
     CHECK(at > 75);
@@ -1030,10 +1030,10 @@ TEST_CASE("limiter: the ceiling holds for anything, and a signal under it is not
     CHECK(max_abs(l) <= ceiling);
     CHECK(max_abs(r) < 0.5f); // and not because the right ear was left alone
 
-    // What the ceiling does to a tone is a claim about the *chain*, so it is measured with the curve
-    // in place, in the engine-level case below. On its own the interesting half is that the stage is
-    // a gain and not a shaper, which the two CHECKs directly under this show: a sine at four times
-    // the ceiling comes out a sine.
+    // What the ceiling does to a tone is a claim about the *chain*, so it is measured with the
+    // curve in place, in the engine-level case below. On its own the interesting half is that the
+    // stage is a gain and not a shaper, which the two CHECKs directly under this show: a sine at
+    // four times the ceiling comes out a sine.
     const std::vector<float> sine_in = sine_at(100.0, 40, 0.75f * ceiling);
     l = sine_in;
     r.assign(l.size(), 0.0f);
@@ -1079,17 +1079,20 @@ TEST_CASE("limiter: the ceiling holds for anything, and a signal under it is not
 }
 
 TEST_CASE("the master chain holds the ceiling, metered where the ceiling is decided") {
-    // Sixteen voices held for a second, at the top of the master row: the mix asks for 3.2 against a
-    // ceiling of 2.0, which is the number the meter exists to show and the number the old chain turned
-    // into a waveform pinned at full scale. The meter is per block - the last block of a render that
-    // ends in silence reads zero - so this render watches it instead of asking it afterwards.
+    // Sixteen voices held for a second, at the top of the master row: the mix asks for 3.2 against
+    // a ceiling of 2.0, which is the number the meter exists to show and the number the old chain
+    // turned into a waveform pinned at full scale. The meter is per block - the last block of a
+    // render that ends in silence reads zero - so this render watches it instead of asking it
+    // afterwards.
     struct Metered {
         FxBuffer audio;
-        float demand = 0.0f;   // the loudest sample the limiter was asked to fit
-        float peak = 0.0f;     // and the loudest thing that came out
+        float demand = 0.0f; // the loudest sample the limiter was asked to fit
+        float peak = 0.0f;   // and the loudest thing that came out
         double energy = 0.0;
         std::size_t samples = 0;
-        float rms() const { return static_cast<float>(std::sqrt(energy / static_cast<double>(samples))); }
+        float rms() const {
+            return static_cast<float>(std::sqrt(energy / static_cast<double>(samples)));
+        }
     };
     const auto render_metered = [](const Params& params) {
         Engine engine;
@@ -1108,24 +1111,24 @@ TEST_CASE("the master chain holds the ceiling, metered where the ceiling is deci
     Params top;
     top.master_gain_db = 12.0f;
     const Metered limited = render_metered(top);
-    INFO("+12 dB master, 16 voices: asked for " << limited.demand << ", came out at " << limited.peak
-         << ", rms " << limited.rms());
-    CHECK(limited.demand > 3.0f);   // 10 dB over the ceiling it was given
-    CHECK(limited.peak < 0.97f);    // tanh(2.0): the composite ceiling of the whole chain
-    CHECK(limited.peak > 0.96f);    // and it is *at* it, not under it by good fortune
+    INFO("+12 dB master, 16 voices: asked for " << limited.demand << ", came out at "
+                                                << limited.peak << ", rms " << limited.rms());
+    CHECK(limited.demand > 3.0f); // 10 dB over the ceiling it was given
+    CHECK(limited.peak < 0.97f);  // tanh(2.0): the composite ceiling of the whole chain
+    CHECK(limited.peak > 0.96f);  // and it is *at* it, not under it by good fortune
     CHECK(limited.demand > limited.peak * 3.0f); // the meter is the demand, not the result
 
     Params zero;
     zero.master_gain_db = 0.0f;
     const Metered unity = render_metered(zero);
-    INFO("0 dB master: asked for " << unity.demand << ", came out at " << unity.peak
-         << ", rms " << unity.rms());
+    INFO("0 dB master: asked for " << unity.demand << ", came out at " << unity.peak << ", rms "
+                                   << unity.rms());
     CHECK(unity.demand < Limiter::kCeiling); // a user at 0 dB never asks for limiting at all
     CHECK(unity.demand > 0.5f);
 
     // The rule PLAN states as "nothing may pass +-1.0", asserted on samples rather than on a peak
-    // that happens to be under it: at this level the old chain passed a peak test too, while writing
-    // tens of thousands of samples pinned at exactly full scale to do it.
+    // that happens to be under it: at this level the old chain passed a peak test too, while
+    // writing tens of thousands of samples pinned at exactly full scale to do it.
     for (const float v : limited.audio.left)
         REQUIRE(std::fabs(v) < 0.99f);
     for (const float v : limited.audio.right)
@@ -1160,8 +1163,9 @@ TEST_CASE("the master chain holds the ceiling, metered where the ceiling is deci
 
     // And the top of the fader still buys level, which is the difference between a limiter and a
     // mute: the peak cannot move, so the body of the sound has to.
-    INFO("twelve dB more asked for bought " << (limited.rms() / std::max(1e-9f, unity.rms()))
-         << "x the rms for " << (limited.peak / std::max(1e-9f, unity.peak)) << "x the peak");
+    INFO("twelve dB more asked for bought "
+         << (limited.rms() / std::max(1e-9f, unity.rms())) << "x the rms for "
+         << (limited.peak / std::max(1e-9f, unity.peak)) << "x the peak");
     CHECK(limited.rms() > unity.rms() * 1.5f);
     CHECK(limited.peak < unity.peak * 1.6f);
 }

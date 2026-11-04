@@ -16,9 +16,9 @@ struct AppSettings {
     std::string midi_port;    // what --midi would take, including "none" and "auto"
     std::string instrument;   // a sample library mapping; empty is the synthesiser
     std::string patch;        // the patch file that was last open, path and all
-    // How fast the spectrum panel's hold line falls, in dB per second. A string like everything else
-    // here, because this file's job is to remember what the machine said; the code that reads the
-    // number is the code that has a range to check. Empty is the analyser's own default.
+    // How fast the spectrum panel's hold line falls, in dB per second. A string like everything
+    // else here, because this file's job is to remember what the machine said; the code that reads
+    // the number is the code that has a range to check. Empty is the analyser's own default.
     std::string peak_decay;
 };
 

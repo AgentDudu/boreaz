@@ -23,7 +23,8 @@ class VoiceAllocator {
 
     // An instrument makes the pool out of sampled voices; no instrument makes it out of the synth.
     // One kind per pool, chosen before the audio thread starts - see `reallocate`.
-    explicit VoiceAllocator(int pool_size = kDefaultPoolSize, const Instrument* instrument = nullptr);
+    explicit VoiceAllocator(int pool_size = kDefaultPoolSize,
+                            const Instrument* instrument = nullptr);
 
     // Start a note, taking a free voice or stealing one. Returns the voice index.
     int allocate(const NoteRequest& request, const Params& params, double sample_rate,

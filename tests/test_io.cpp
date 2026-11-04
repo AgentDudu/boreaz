@@ -57,8 +57,8 @@ TEST_CASE("callback watchdog: a steady callback stream is never late") {
 
 TEST_CASE("callback watchdog: a gap over the margin is one late callback") {
     CallbackWatchdog watchdog;
-    watchdog.arrive(0, kPeriodNs);                                        // first: no gap to judge
-    watchdog.arrive(kPeriodNs, kPeriodNs);                                 // on time
+    watchdog.arrive(0, kPeriodNs);         // first: no gap to judge
+    watchdog.arrive(kPeriodNs, kPeriodNs); // on time
     watchdog.arrive(kPeriodNs + static_cast<std::int64_t>(2.5 * kPeriodNs), kPeriodNs); // late
     watchdog.arrive(kPeriodNs * 4, kPeriodNs);
     CHECK(watchdog.callbacks() == 4);
@@ -92,8 +92,8 @@ TEST_CASE("callback watchdog: a late gap is judged by how much of a buffer it co
     // audible, so the split is the number the exit criteria rest on.
     CallbackWatchdog watchdog;
     std::int64_t now = 0;
-    const std::int64_t gaps[] = {kPeriodNs,          // on time
-                                 kPeriodNs + 100,    // on time
+    const std::int64_t gaps[] = {kPeriodNs,       // on time
+                                 kPeriodNs + 100, // on time
                                  static_cast<std::int64_t>(1.8 * kPeriodNs),
                                  static_cast<std::int64_t>(2.5 * kPeriodNs),
                                  static_cast<std::int64_t>(6.0 * kPeriodNs),
@@ -235,7 +235,6 @@ TEST_CASE("audio render door: 512 frame blocks sound, stay finite, and stay in r
     CHECK(peak > kSilence); // the last block, 10 ms in, is a note and not a click
     CHECK(peak <= 1.0f);
 }
-
 
 namespace {
 
