@@ -181,6 +181,8 @@ void ParamsPanel::adopt_patch(const PatchEntry& patch, boreaz::engine::Engine& e
     }
     params_ = loaded;
     engine.set_params(params_); // the engine's ramp is what makes a patch change without a click
+    last_patch_ = patch.path;   // what the app remembers when it closes, even if the library below
+                                // turns out to be missing
 
     // The instrument the patch names comes with it. One that names nothing keeps the library that
     // is already playing rather than dropping to the synthesiser, and one whose library is missing

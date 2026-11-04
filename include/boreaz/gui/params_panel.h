@@ -43,6 +43,11 @@ class ParamsPanel {
     // the moment it happens is a rule about notes, not a detail of the widget that asked.
     void request(const boreaz::engine::Instrument* instrument);
 
+    // The patch file this panel adopted most recently, empty until it adopts one. The app asks when
+    // it closes: the app loaded a patch at startup and has not seen the one the player clicked
+    // since.
+    const std::string& last_patch() const { return last_patch_; }
+
     void toggle() { visible_ = !visible_; }
     bool visible() const { return visible_; }
 
@@ -89,6 +94,8 @@ class ParamsPanel {
     char patch_name_[96] = "";        // the name a save writes this panel under
     std::vector<PatchEntry> patches_; // the rows the browser is showing
     bool patches_stale_ = true;
+    // A path rather than a name: there are two patch folders and a name is not unique between them.
+    std::string last_patch_;
     std::string status_; // the last thing the panel has to say about a load
     const boreaz::engine::Instrument* pending_ = nullptr;
     bool pending_set_ = false; // distinguish "the synth is queued" from "nothing is queued"

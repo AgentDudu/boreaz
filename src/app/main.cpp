@@ -12,6 +12,7 @@
 #include <string>
 #include <thread>
 
+#include "boreaz/config/app_settings.h"
 #include "boreaz/config/params_file.h"
 #include "boreaz/engine/engine.h"
 #include "boreaz/gui/app_window.h"
@@ -59,6 +60,13 @@ void usage() {
                    with tools/mkinstrument.py; see boreaz-sfz-probe for what a mapping says.
   --no-instrument  the synthesiser, whatever else might have been configured.
 
+  The app remembers its own setup: the audio port, the MIDI port, the sample library, and the patch
+  that was open when the window last closed. That is four names in %APPDATA%\Boreaz\settings.txt,
+  read at the next start and written at the end of a window session. A flag typed at the prompt
+  outranks it, because what was typed is the newest thing said about the setup, and a remembered
+  port that is not there any more falls back to the system default rather than refusing to start.
+  It holds no sound: parameters live in patches, and closing the app never rewrites one.
+
   song.mid         a Standard MIDI file, played once through: in the window with --gui,
                    in the console without it, where the program exits when the file has
                    finished. Name it last. Format 0 or 1 with ticks per quarter note; a
@@ -80,6 +88,11 @@ struct Options {
     std::string gain;
     std::string device;
     std::string midi = "auto";
+    // Whether the player said it. An empty `device` and an `auto` `midi` are also what the program
+    // already does, so a remembered setup cannot tell "the system default" from "leave the one I
+    // wrote in the setup file alone" without being told which was spoken at the prompt.
+    bool midi_given = false;
+    bool instrument_given = false;
     int period = 512;
     bool gui = false;
     bool list_devices = false;
@@ -123,6 +136,7 @@ bool parse(int argc, char** argv, Options& options, std::string& error) {
         } else if (argument == "--midi") {
             if (!next(options.midi))
                 return false;
+            options.midi_given = true;
         } else if (argument == "--config") {
             if (!next(options.config))
                 return false;
@@ -135,6 +149,7 @@ bool parse(int argc, char** argv, Options& options, std::string& error) {
         } else if (argument == "--instrument") {
             if (!next(options.instrument))
                 return false;
+            options.instrument_given = true;
         } else if (argument == "--no-instrument") {
             options.no_instrument = true;
         } else if (argument == "--period") {
@@ -172,6 +187,30 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // What this app was closed with last time: an audio port, a MIDI port, a sample library, a
+    // patch. It is read before anything is opened, because "come back the way you left me" is a
+    // statement about what to open, not about what things sound like - and it is read line by line,
+    // so a setup file written by a newer build of the app starts anyway and says which word it did
+    // not know. The parameter file runs the opposite rule, on purpose: a half-read sound is a sound
+    // nobody wrote.
+    boreaz::config::AppSettings setup;
+    std::string setup_warning;
+    boreaz::config::load_settings(boreaz::config::settings_path(), setup, setup_warning);
+    if (!setup_warning.empty())
+        std::cout << "boreaz: " << setup_warning << "\n";
+
+    // Three sources of the same answer, newest first: what was typed at the prompt, what this app
+    // wrote when it was last closed, and what the program does when nobody said anything. A
+    // remembered library is not applied when --no-instrument was typed, because that flag is the
+    // player saying they do not want one - today's words outrank last month's.
+    const bool device_from_setup = options.device.empty() && !setup.audio_device.empty();
+    if (device_from_setup)
+        options.device = setup.audio_device;
+    if (!options.midi_given && !setup.midi_port.empty())
+        options.midi = setup.midi_port;
+    if (!options.instrument_given && !options.no_instrument && !setup.instrument.empty())
+        options.instrument = setup.instrument;
+
     // Defaults come from a file, and a file that will not load stops the app. An instrument that
     // starts with silent defaults because a config file was missing teaches the player that their
     // new synth is broken.
@@ -180,17 +219,36 @@ int main(int argc, char** argv) {
     // was used, which is the only order that lets a patch name just the keys it changes.
     const std::string defaults =
         options.config.empty() ? boreaz::config::defaults_path() : options.config;
-    if (!boreaz::config::load_params_file(defaults, params, error) ||
-        (!options.params.empty() &&
-         !boreaz::config::load_params_file(options.params, params, error))) {
+    if (!boreaz::config::load_params_file(defaults, params, error)) {
+        std::cerr << "boreaz: " << error << "\n";
+        return 1;
+    }
+
+    // The patch that was open when the app last closed, unless today's prompt named one. A path the
+    // app wrote itself is not the same kind of promise as a path someone typed: the file may have
+    // been deleted or hand-edited since, and an instrument that will not start over its own memory
+    // is an instrument with no way out. So this one reports and plays without it.
+    std::string remembered_patch = options.params;
+    if (remembered_patch.empty() && !setup.patch.empty()) {
+        std::string reason;
+        if (boreaz::config::load_params_file(setup.patch, params, reason)) {
+            remembered_patch = setup.patch;
+        } else {
+            std::cout << "boreaz: starting without the patch from last time: " << reason << "\n";
+        }
+    }
+
+    // --params layers on top of whichever file was used, and after the remembered patch: what the
+    // player typed today is the newest thing said about the sound.
+    if (!options.params.empty() &&
+        !boreaz::config::load_params_file(options.params, params, error)) {
         std::cerr << "boreaz: " << error << "\n";
         return 1;
     }
     // Last, so the flag wins over both files: what was typed at the prompt is the newest thing said
     // about the level.
-    if (!options.gain.empty() &&
-        !boreaz::config::set_param_from_text("--gain", "master_gain_db", options.gain, params,
-                                             error)) {
+    if (!options.gain.empty() && !boreaz::config::set_param_from_text(
+                                     "--gain", "master_gain_db", options.gain, params, error)) {
         std::cerr << "boreaz: " << error << "\n";
         return 1;
     }
@@ -214,6 +272,10 @@ int main(int argc, char** argv) {
     stores[0] = std::make_unique<boreaz::samples::SampleStore>();
     stores[1] = std::make_unique<boreaz::samples::SampleStore>();
     const boreaz::engine::Instrument* live_instrument = nullptr;
+    // Which library is actually playing, in the words a library field takes. Empty is the
+    // synthesiser. The window's Load button and a patch's header are the only things that change it
+    // after the start, so the app has to be told when they do - it is what the setup file gets.
+    std::string live_library;
     boreaz::engine::Engine engine(params);
     if (!options.no_instrument && !options.instrument.empty()) {
         const boreaz::samples::LoadResult loaded = stores[0]->load_mapping(options.instrument);
@@ -226,15 +288,15 @@ int main(int argc, char** argv) {
                       << "boreaz: no recorded instrument, playing the synthesiser instead\n";
         } else {
             live_instrument = stores[0].get();
+            live_library = options.instrument;
             engine.set_instrument(live_instrument);
             // What it loaded, what it cost, and what it refused: a library that arrived as 40 of
             // its 88 keys is not the library the player downloaded, and silence does not say so.
             std::cout << "samples: " << loaded.regions << " regions";
             if (loaded.releases != 0)
                 std::cout << " and " << loaded.releases << " release recordings";
-            std::cout << " from " << loaded.files
-                      << " files, " << loaded.bytes / (1024u * 1024u) << " MB resident, "
-                      << loaded.load_ms << " ms to load";
+            std::cout << " from " << loaded.files << " files, " << loaded.bytes / (1024u * 1024u)
+                      << " MB resident, " << loaded.load_ms << " ms to load";
             if (loaded.refused != 0)
                 std::cout << ", " << loaded.refused << " regions refused";
             std::cout << "\n";
@@ -267,8 +329,24 @@ int main(int argc, char** argv) {
     }
 
     if (!device.open(options.device, options.period, error)) {
-        std::cerr << "boreaz: " << error << "\n";
-        return 1;
+        if (!device_from_setup) {
+            std::cerr << "boreaz: " << error << "\n";
+            return 1;
+        }
+        // A port this app remembered is a memory, not an instruction. The interface was asleep, the
+        // cable was pulled, the laptop is somewhere else without its dock: the old device went away
+        // and the player typed nothing today. Say what was lost, then take the system default,
+        // which is the sound of the instrument starting anyway. A name typed at the prompt is
+        // different - that one fails, because a person asked for that port and deserves to be told
+        // they did not get it.
+        std::cerr << "boreaz: " << error << "\n"
+                  << "boreaz: that is the port this app last used, not one you asked for; "
+                     "opening the system default instead\n";
+        error.clear();
+        if (!device.open(std::string{}, options.period, error)) {
+            std::cerr << "boreaz: " << error << "\n";
+            return 1;
+        }
     }
     if (options.midi != "none" && !midi.open(options.midi, engine, error)) {
         // Not fatal. A synthesizer whose one MIDI keyboard is unplugged plays from the mouse, and
@@ -347,7 +425,9 @@ int main(int argc, char** argv) {
             [&](const std::string& path, std::string& reason) -> const boreaz::engine::Instrument* {
             if (path.empty()) {
                 reason.clear();
-                return nullptr; // the synthesiser, which is not an error
+                live_library
+                    .clear(); // the synthesiser, which is not an error and is worth remembering
+                return nullptr;
             }
             std::unique_ptr<boreaz::samples::SampleStore>& idle =
                 live_instrument == stores[0].get() ? stores[1] : stores[0];
@@ -365,6 +445,11 @@ int main(int argc, char** argv) {
                 std::cout << " and " << loaded.releases << " release recordings";
             std::cout << ", " << loaded.bytes / (1024u * 1024u) << " MB, " << loaded.load_ms
                       << " ms to load - switching when the notes stop.\n";
+            // What the mixer asked for and got, recorded here rather than in `applied`: a library
+            // still waiting for the notes to stop is still the library the player chose, and a
+            // session that ends mid-switch should remember the choice rather than the one before
+            // it.
+            live_library = path;
             return idle.get();
         };
         window_options.instruments.applied = [&](const boreaz::engine::Instrument* instrument) {
@@ -372,9 +457,9 @@ int main(int argc, char** argv) {
                 return;
             // The panel only fires this once the voice pool is empty, but an empty pool is still a
             // pool the callback may be rendering: adopting an instrument rebuilds it, and a rebuild
-            // that lands inside a render is a voice vanishing mid-sample. Stopping the device is the
-            // one moment that is known to be between callbacks, and the panel already promised this
-            // is not silent - the gap is a few milliseconds of buffer, once, at a switch.
+            // that lands inside a render is a voice vanishing mid-sample. Stopping the device is
+            // the one moment that is known to be between callbacks, and the panel already promised
+            // this is not silent - the gap is a few milliseconds of buffer, once, at a switch.
             device.stop();
             engine.set_instrument(instrument);
             if (playing) {
@@ -462,8 +547,32 @@ int main(int argc, char** argv) {
               << " late, " << device.restarts() << " restarts, " << engine.dropped_events()
               << " dropped, " << engine.steal_count() << " steals, position "
               << engine.sample_position() << " samples, " << (window ? window->frames() : 0.0)
-              << " frames, " << (device.cpu_fraction() * 100.0) << "% audio-thread cpu." << std::endl;
+              << " frames, " << (device.cpu_fraction() * 100.0) << "% audio-thread cpu."
+              << std::endl;
     device.stop();
+
+    // Ending a session at the mixer is when the app writes down what it was using, so the next one
+    // opens the same way. A run that never had a window does not write: playing one file from the
+    // prompt is a command, not a preference, and remembering the port a test happened to use would
+    // change what the player hears when they double click the icon.
+    //
+    // Four names, and no parameters. The sound lives in patch files a player can read and edit, and
+    // an app that rewrote one on the way out would be changing a file nobody asked it to change -
+    // so this remembers which patch was open, and the patch keeps its own bytes.
+    if (window != nullptr) {
+        boreaz::config::AppSettings closing;
+        closing.audio_device = port_name; // the port that answered, not the word that asked for it
+        closing.midi_port = midi.is_open() ? midi.port_name() : options.midi;
+        closing.instrument = live_library;
+        // What the mixer clicked since it opened, or what it was opened with. The panel has no way
+        // to un-adopt a patch, so an empty answer here means nothing was clicked and the start
+        // stands.
+        closing.patch = window->last_patch().empty() ? remembered_patch : window->last_patch();
+        std::string reason;
+        if (!boreaz::config::save_settings(boreaz::config::settings_path(), closing, reason))
+            std::cerr << "boreaz: " << reason << " - the next start will not remember this one\n";
+    }
+
     midi.close();
     device.close();
     return 0;
