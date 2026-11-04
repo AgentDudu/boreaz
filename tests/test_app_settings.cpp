@@ -152,3 +152,36 @@ TEST_CASE("the setup file is the machine's, and it is not a patch") {
     CHECK_FALSE(boreaz::config::load_params_file(file.string(), params, reason));
     CHECK(reason.find("audio_device") != std::string::npos);
 }
+
+TEST_CASE("a remembered path is remembered where the next start can find it") {
+    // Three of the four names in the setup file are paths, and a path written down relative to
+    // wherever today's process happened to begin is a path that worked exactly once. This is not
+    // hypothetical in here: the suite runs from a build tree under the repository, so the factory
+    // patches are only found at all by walking up - and the patch that gets remembered is read back
+    // by a start that may begin in any folder the player double clicked from.
+    CHECK(std::filesystem::path(boreaz::config::patches_dir()).is_absolute());
+    CHECK(std::filesystem::path(boreaz::config::user_patches_dir()).is_absolute());
+
+    // Whatever folder the walk up the tree found - the repository's, or the same one from a build
+    // tree one level down - it is named absolutely and it is there, which is what makes a patch
+    // inside it readable by the next start from any folder. Asking for the folder by a path that
+    // doubles back on itself has to land on the same name, not on a second spelling of it.
+    CHECK(std::filesystem::is_directory(boreaz::config::patches_dir()));
+    CHECK(boreaz::config::resolved_path(boreaz::config::patches_dir()) ==
+          boreaz::config::patches_dir());
+    CHECK(boreaz::config::resolved_path(
+              (std::filesystem::path(boreaz::config::patches_dir()) / ".." / "patches").string()) ==
+          boreaz::config::patches_dir());
+
+    // A path whose file does not exist yet still comes back absolute and collapsed, because the
+    // name is what the first save creates and what a failure message prints: nobody is asked to
+    // follow a `..` out of a directory they cannot see.
+    CHECK(boreaz::config::resolved_path("patches/../patches/piano-fortissimo.txt") ==
+          boreaz::config::resolved_path("patches/piano-fortissimo.txt"));
+    CHECK(std::filesystem::path(boreaz::config::resolved_path("not/here/yet.txt")).is_absolute());
+
+    // The one that must not resolve: an empty library path is the synthesiser. Turned into a path
+    // it becomes the working directory, and the next start would be told to load a folder as a
+    // piano.
+    CHECK(boreaz::config::resolved_path("").empty());
+}

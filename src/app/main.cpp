@@ -563,11 +563,19 @@ int main(int argc, char** argv) {
         boreaz::config::AppSettings closing;
         closing.audio_device = port_name; // the port that answered, not the word that asked for it
         closing.midi_port = midi.is_open() ? midi.port_name() : options.midi;
-        closing.instrument = live_library;
+        // The library that resolved, by the name it resolved under - absolute. Asked for as a path
+        // relative to where this session happened to start, remembered where the next one will find
+        // it wherever it starts. A patch file keeps the name its author typed: that one is written
+        // to travel between machines, and this one is read by a single machine about itself.
+        closing.instrument = boreaz::config::resolved_path(live_library);
         // What the mixer clicked since it opened, or what it was opened with. The panel has no way
         // to un-adopt a patch, so an empty answer here means nothing was clicked and the start
-        // stands.
-        closing.patch = window->last_patch().empty() ? remembered_patch : window->last_patch();
+        // stands. Absolute for the same reason as the library: the patch is found by a folder the
+        // app locates by walking up the tree, and the memory is read back by a start that may begin
+        // anywhere - including a build tree, which is where the suite runs from.
+        const std::string open_patch =
+            window->last_patch().empty() ? remembered_patch : window->last_patch();
+        closing.patch = boreaz::config::resolved_path(open_patch);
         std::string reason;
         if (!boreaz::config::save_settings(boreaz::config::settings_path(), closing, reason))
             std::cerr << "boreaz: " << reason << " - the next start will not remember this one\n";

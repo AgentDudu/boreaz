@@ -190,17 +190,33 @@ std::string defaults_path() {
     return "config/params.ini";
 }
 
+std::string resolved_path(const std::string& path) {
+    if (path.empty())
+        return path; // the synthesiser, not the folder this session started in
+    std::error_code ec;
+    const std::filesystem::path absolute =
+        std::filesystem::absolute(std::filesystem::path{path}, ec);
+    if (ec || absolute.empty())
+        return path;
+    // `.` and `..` collapsed lexically rather than by `weakly_canonical`, which in this standard
+    // library leaves a relative path relative when the file is not there yet - and the file is
+    // often one the first save is about to create. A message that shows `../build/../patches` is a
+    // message nobody can follow, and a remembered path that says `..` is a path that moves with the
+    // folder it was written from.
+    return absolute.lexically_normal().string();
+}
+
 std::string patches_dir() {
     for (const char* prefix : {"", "./", "../", "../../", "../../../"}) {
         const std::string candidate = std::string(prefix) + "patches";
         std::error_code ignored;
         if (std::filesystem::is_directory(candidate, ignored))
-            return candidate;
+            return resolved_path(candidate);
     }
     // No such directory anywhere near. This is the name the caller creates on the first save, and
     // the name a failure message prints, so the player sees where it was written rather than being
     // told a folder they can see is missing.
-    return "patches";
+    return resolved_path("patches");
 }
 
 // The player's own patches. Factory patches are read from `patches_dir()` and never written to:
